@@ -23,6 +23,7 @@ import {
   extractSessionId,
   extractUsageAndText,
   getPiEnvironmentVariables,
+  readSelfApprove,
   setupClaudeCodeDirectories,
   setupPiDirectories,
 } from "./run-phase.ts";
@@ -3212,7 +3213,6 @@ Deno.test("buildContextFiles: passes ollamaModels to filterPrinciples", async ()
     await Deno.remove(stateDir, { recursive: true });
   }
 });
-
 Deno.test(
   "executePhase: critique ISSUES_FOUND writes critique file and re-runs phase agent exactly once",
   async () => {
@@ -3509,3 +3509,134 @@ Deno.test(
     }
   },
 );
+
+// ── executePhase: .selfapprove sidecar ───────────────────────────────────────
+
+Deno.test(
+  "executePhase: writes .selfapprove sidecar after agent runs",
+  async () => {
+    const ticketDir = await Deno.makeTempDir();
+    const homeDir = await Deno.makeTempDir();
+    try {
+      await Deno.writeTextFile(join(ticketDir, "meta.md"), "---\n---\n");
+      const agent: CodeAgent = {
+        runPhase: () => Promise.resolve({ stdout: "", stderr: "", code: 0 }),
+      };
+      await executePhase(
+        {
+          ticketDir,
+          stateDir: dirname(ticketDir),
+          outputFile: "20260101T120000-no-such-phase.md",
+          phase: "no-such-phase",
+          scopeDirs: [],
+          prompt: "p",
+          worktrees: {},
+          homeDir,
+          provider: "anthropic",
+          model: "claude-sonnet-4-6",
+          thinking: "off",
+          agentType: "pi",
+        },
+        agent,
+      );
+      const raw = await Deno.readTextFile(
+        join(ticketDir, "20260101T120000-no-such-phase.md.selfapprove"),
+      );
+      const parsed = JSON.parse(raw);
+      assertEquals(typeof parsed.approved, "boolean");
+      assert("reason" in parsed);
+    } finally {
+      await Deno.remove(ticketDir, { recursive: true });
+      await Deno.remove(homeDir, { recursive: true });
+    }
+  },
+);
+
+// ── readSelfApprove ──────────────────────────────────────────────────────────
+
+Deno.test("readSelfApprove: returns null when no matching file exists", async () => {
+  const ticketDir = await Deno.makeTempDir();
+  try {
+    assertEquals(await readSelfApprove(ticketDir, "intake"), null);
+  } finally {
+    await Deno.remove(ticketDir, { recursive: true });
+  }
+});
+
+Deno.test(
+  "readSelfApprove: returns null when ticketDir does not exist",
+  async () => {
+    assertEquals(await readSelfApprove("/nonexistent/dir/xyz", "intake"), null);
+  },
+);
+
+Deno.test(
+  "readSelfApprove: returns parsed result from matching .selfapprove file",
+  async () => {
+    const ticketDir = await Deno.makeTempDir();
+    try {
+      await Deno.writeTextFile(
+        join(ticketDir, "20260101T120000-intake.md.selfapprove"),
+        JSON.stringify({ approved: true, reason: null }),
+      );
+      const result = await readSelfApprove(ticketDir, "intake");
+      assertEquals(result, { approved: true, reason: null });
+    } finally {
+      await Deno.remove(ticketDir, { recursive: true });
+    }
+  },
+);
+
+Deno.test(
+  "readSelfApprove: returns result from latest file when multiple matches exist",
+  async () => {
+    const ticketDir = await Deno.makeTempDir();
+    try {
+      await Deno.writeTextFile(
+        join(ticketDir, "20260101T100000-intake.md.selfapprove"),
+        JSON.stringify({ approved: false, reason: "old" }),
+      );
+      await Deno.writeTextFile(
+        join(ticketDir, "20260101T120000-intake.md.selfapprove"),
+        JSON.stringify({ approved: true, reason: null }),
+      );
+      const result = await readSelfApprove(ticketDir, "intake");
+      assertEquals(result, { approved: true, reason: null });
+    } finally {
+      await Deno.remove(ticketDir, { recursive: true });
+    }
+  },
+);
+
+Deno.test(
+  "readSelfApprove: returns null when file content is not valid JSON",
+  async () => {
+    const ticketDir = await Deno.makeTempDir();
+    try {
+      await Deno.writeTextFile(
+        join(ticketDir, "20260101T120000-intake.md.selfapprove"),
+        "not json",
+      );
+      assertEquals(await readSelfApprove(ticketDir, "intake"), null);
+    } finally {
+      await Deno.remove(ticketDir, { recursive: true });
+    }
+  },
+);
+
+Deno.test(
+  "readSelfApprove: does not match files for a different phase",
+  async () => {
+    const ticketDir = await Deno.makeTempDir();
+    try {
+      await Deno.writeTextFile(
+        join(ticketDir, "20260101T120000-spec.md.selfapprove"),
+        JSON.stringify({ approved: true, reason: null }),
+      );
+      assertEquals(await readSelfApprove(ticketDir, "intake"), null);
+    } finally {
+      await Deno.remove(ticketDir, { recursive: true });
+    }
+  },
+);
+
