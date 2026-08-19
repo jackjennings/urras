@@ -161,7 +161,7 @@ each loader returning `""` when absent so no code change is needed to add one:
 - **State dir** (`{stateDir}/prompts/{phase}.md`, via `loadStatePrompt`),
   appended last. For `implementation` the same file applies to both the normal
   and revision runs.
-- **Self-review** — see below.
+- **Self-approve** — see below.
 
 The state-dir prompts directory lives at the state-repo root, not inside a
 ticket directory:
@@ -172,16 +172,34 @@ ticket directory:
   {ticket.id}/…
 ```
 
-## Self-review
+## Self-approve
 
-`selfReview` (`src/self-review.ts`) is the only module that reads
-`*-self-review.md` prompts and makes automated-approval calls — do not add
+`selfApprove` (`src/self-approve.ts`) is the only module that reads
+`*-self-approve.md` prompts and makes automated-approval calls — do not add
 automated-approval calls anywhere else. When a prompt is present for a phase, an
 `APPROVE` response makes `advancePhase` append an `ApprovalEntry` with
 `actor: "agent"`; when absent, the ticket waits for human approval. To add
-support for a phase, create `src/phases/prompts/<phase>-self-review.md`
+support for a phase, create `src/phases/prompts/<phase>-self-approve.md`
 instructing the model to answer exactly `APPROVE` or `REJECT` — no code change.
-Prompts currently exist for `intake`, `enrichment`, `spec`.
+Prompts exist for all five phases (`intake`, `enrichment`, `spec`, `plan`,
+`implementation`).
+
+## Critique pass
+
+Drop `src/phases/prompts/<phase>-critique.md` to opt a phase into an in-process
+verification step. `executePhase` runs a second `CodeAgent` invocation after the
+draft is written — before any sidecar files — using the resolved
+`PHASE_MODEL_DEFAULTS["critique"]` model (overridable via
+`[phases.defaults.critique]` or `ticket.phases.critique`). The critique agent
+receives the draft and the latest spec file as context, plus `--add-dir` paths
+for all worktrees.
+
+The prompt must end with `VERDICT: APPROVED` or `VERDICT: ISSUES_FOUND`. On
+`ISSUES_FOUND`, a `${timestamp}-${phase}-critique.md` file is written and the
+phase agent re-runs once with the findings appended. On `APPROVED` or any
+critique failure, the original output passes through unchanged.
+
+Only `plan` ships a critique prompt currently.
 
 ## Principles file
 
@@ -536,7 +554,7 @@ thinking = "off"
 `thinking` accepts `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`.
 
 Ancillary (non-phase) LLM calls — approval classification (`src/review.ts`),
-self-review (`src/self-review.ts`), the review Q&A overlay, short-title
+self-approve (`src/self-approve.ts`), the review Q&A overlay, short-title
 generation — are **not** routed through `resolvePhaseModel` and are not
 per-phase configurable. They pin their model at the call site: cheap
 classification and validation use `claude-haiku-4-5`; a call that must reason

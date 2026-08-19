@@ -9,7 +9,7 @@ import { runGit } from "./worktree.ts";
 
 const PROMPT_DIR = new URL("./phases/prompts/", import.meta.url).pathname;
 
-export async function selfReview({
+export async function selfApprove({
   phase,
   ticketDir,
   run,
@@ -25,7 +25,7 @@ export async function selfReview({
   let systemPrompt: string;
   try {
     systemPrompt = await readTextFile(
-      join(PROMPT_DIR, `${phase}-self-review.md`),
+      join(PROMPT_DIR, `${phase}-self-approve.md`),
     );
   } catch {
     return { approved: false, reason: null };

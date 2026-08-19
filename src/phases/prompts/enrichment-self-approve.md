@@ -20,6 +20,6 @@ Criteria:
      contradiction.
    - Hedged follow-up ("worth confirming", "may also need", "untested") about a
      related but distinct sub-question.
-   - Disagreement with the technical correctness of a claim. Self-review checks
+   - Disagreement with the technical correctness of a claim. Self-approve checks
      internal consistency of what's written, not whether the underlying
      reasoning is correct.

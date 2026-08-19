@@ -18,6 +18,7 @@ import {
   type WorktreeInfo,
 } from "../state/types.ts";
 import { type ActivePhase, PHASE_SEQUENCE } from "./types.ts";
+import type { ModelablePhase } from "./model.ts";
 import { readDir, readTextFile } from "../filesystem.ts";
 
 const DEFAULT_MAX_PROMPT_TOKENS = 5_000;
@@ -32,6 +33,8 @@ export interface TickDeps {
     outputFile: string;
     model: string;
     thinking: string;
+    critiqueModel: string;
+    critiqueThinking: string;
     sessionId?: string;
     resume?: boolean;
   }) => Promise<void>;
@@ -45,10 +48,10 @@ export interface TickDeps {
   ) => Promise<void>;
   appendLog: (stateDir: string, id: string, entry: object) => Promise<void>;
   resolveModelConfig: (
-    phase: ActivePhase,
+    phase: ModelablePhase,
     ticket: TicketState,
   ) => { model: string; thinking: string };
-  selfReview: (
+  selfApprove: (
     phase: string,
     ticketDir: string,
     worktreePath?: string,
@@ -167,6 +170,8 @@ export async function advancePhase(
     }
     const { model: revisingModel, thinking: revisingThinking } = deps
       .resolveModelConfig(activePhase, ticket);
+    const { model: critiqueModel, thinking: critiqueThinking } = deps
+      .resolveModelConfig("critique", ticket);
     let sessionId: string | undefined;
     if (isImplementationRevision) {
       const stored = ticket.phaseSessionIds?.["implementation"];
@@ -181,6 +186,8 @@ export async function advancePhase(
       outputFile,
       model: revisingModel,
       thinking: revisingThinking,
+      critiqueModel,
+      critiqueThinking,
       sessionId,
       resume: sessionId !== undefined,
     });
@@ -237,6 +244,8 @@ export async function advancePhase(
     }
     const { model: intakeModel, thinking: intakeThinking } = deps
       .resolveModelConfig("intake", ticket);
+    const { model: critiqueModel, thinking: critiqueThinking } = deps
+      .resolveModelConfig("critique", ticket);
     const intakeUuid = crypto.randomUUID();
     await deps.writeTicket(stateDir, {
       ...ticket,
@@ -254,6 +263,8 @@ export async function advancePhase(
       outputFile: `${compactTimestamp(zonedNow)}-intake.md`,
       model: intakeModel,
       thinking: intakeThinking,
+      critiqueModel,
+      critiqueThinking,
       sessionId: intakeUuid,
     });
     await deps.appendLog(stateDir, ticket.id, {
@@ -311,6 +322,10 @@ export async function advancePhase(
             : ticket.phase as ActivePhase;
           const { model: resumeModel, thinking: resumeThinking } = deps
             .resolveModelConfig(resumePhase, ticket);
+          const {
+            model: resumeCritiqueModel,
+            thinking: resumeCritiqueThinking,
+          } = deps.resolveModelConfig("critique", ticket);
           await deps.spawn({
             phase: resumePhase,
             ticketDir: join(stateDir, ticket.id),
@@ -321,6 +336,8 @@ export async function advancePhase(
             outputFile,
             model: resumeModel,
             thinking: resumeThinking,
+            critiqueModel: resumeCritiqueModel,
+            critiqueThinking: resumeCritiqueThinking,
             sessionId,
             resume: true,
           });
@@ -403,6 +420,10 @@ export async function advancePhase(
               : ticket.phase as ActivePhase;
             const { model: retryModel, thinking: retryThinking } = deps
               .resolveModelConfig(retryPhase, ticket);
+            const {
+              model: retryCritiqueModel,
+              thinking: retryCritiqueThinking,
+            } = deps.resolveModelConfig("critique", ticket);
             await deps.spawn({
               phase: retryPhase,
               ticketDir: join(stateDir, ticket.id),
@@ -415,6 +436,8 @@ export async function advancePhase(
               outputFile,
               model: retryModel,
               thinking: retryThinking,
+              critiqueModel: retryCritiqueModel,
+              critiqueThinking: retryCritiqueThinking,
               sessionId,
               resume: true,
             });
@@ -529,17 +552,17 @@ export async function advancePhase(
           );
         }
       } catch {
-        // directory unreadable — proceed with normal self-review
+        // directory unreadable — proceed with normal self-approve
       }
-      const skipSelfReview = ticket.phase === "plan" &&
+      const skipSelfApprove = ticket.phase === "plan" &&
         (ticket.newRepos?.length ?? 0) > 0;
-      if (!feedbackPrecedesOutput && !skipSelfReview) {
-        let selfReviewResult: { approved: boolean; reason: string | null } = {
+      if (!feedbackPrecedesOutput && !skipSelfApprove) {
+        let selfApproveResult: { approved: boolean; reason: string | null } = {
           approved: false,
           reason: null,
         };
         try {
-          selfReviewResult = await deps.selfReview(
+          selfApproveResult = await deps.selfApprove(
             ticket.phase,
             join(stateDir, ticket.id),
             ticket.worktrees["jackjennings/lazyboy"]?.path,
@@ -547,7 +570,7 @@ export async function advancePhase(
         } catch {
           // treated as { approved: false, reason: null }
         }
-        if (selfReviewResult.approved) {
+        if (selfApproveResult.approved) {
           const agentEntry: ApprovalEntry = {
             timestamp: Temporal.Now.instant().toString(),
             actor: "agent",
@@ -561,15 +584,15 @@ export async function advancePhase(
             event: "self-approved",
             phase: ticket.phase,
           });
-        } else if (selfReviewResult.reason !== null) {
+        } else if (selfApproveResult.reason !== null) {
           const filename = `${
             compactTimestamp(zonedNow)
-          }-${ticket.phase}-self-review.md`;
+          }-${ticket.phase}-self-approve.md`;
           await deps.writePhaseOutput(
             stateDir,
             ticket.id,
             filename,
-            selfReviewResult.reason,
+            selfApproveResult.reason,
           );
         }
       }
@@ -722,6 +745,8 @@ export async function advancePhase(
     }
     const { model: nextModel, thinking: nextThinking } = deps
       .resolveModelConfig(effectiveNext, resolvedTicket);
+    const { model: critiqueModel, thinking: critiqueThinking } = deps
+      .resolveModelConfig("critique", resolvedTicket);
     const nextUuid = crypto.randomUUID();
     await deps.writeTicket(stateDir, {
       ...resolvedTicket,
@@ -742,6 +767,8 @@ export async function advancePhase(
       outputFile: `${compactTimestamp(zonedNow)}-${effectiveNext}.md`,
       model: nextModel,
       thinking: nextThinking,
+      critiqueModel,
+      critiqueThinking,
       sessionId: nextUuid,
     });
     await deps.appendLog(stateDir, ticket.id, {
