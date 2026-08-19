@@ -98,9 +98,10 @@ import { generateShortTitle as apfelGenerateShortTitle } from "./short-title.ts"
 import { makeDesktopNotifier, makeNotify } from "./notify.ts";
 import { PidFileLock } from "./lock.ts";
 import { applyLearning } from "./apply-learning.ts";
+import { applyTickActionLearning } from "./apply-tick-action-learning.ts";
 import { processLearnings as runLearnings } from "./learnings.ts";
 import { refreshAnthropicPricingIfStale } from "./anthropic-pricing.ts";
-import type { Config } from "./state/types.ts";
+import type { Config, LearningState } from "./state/types.ts";
 import {
   exists,
   existsSync,
@@ -345,6 +346,20 @@ export async function readPhaseOutput(
   } catch {
     return null;
   }
+}
+
+export function applyLearningToRepo(
+  learning: LearningState,
+  intent: string,
+  deps: {
+    prosePath: (learning: LearningState, intent: string) => Promise<string>;
+    procedurePath: (learning: LearningState, intent: string) => Promise<string>;
+  },
+): Promise<string> {
+  if ((learning as unknown as { kind?: string }).kind === "procedure") {
+    return deps.procedurePath(learning, intent);
+  }
+  return deps.prosePath(learning, intent);
 }
 
 export function composeTickDeps(
@@ -1420,68 +1435,140 @@ export function composeTickDeps(
           console.error("processLearnings:", entry);
           return Promise.resolve();
         },
-        applyToRepo: async (learning, intent) => {
-          const localRepoPath = await findLocalRepo(
-            config.codebase.roots.map(expandHome),
-            learning.repo,
-          );
-          if (localRepoPath === null) {
-            throw new Error(`local repo not found for ${learning.repo}`);
-          }
-          const wt = await createWorktree(
-            localRepoPath,
-            `learnings-${learning.id}`,
-            learning.repo.split("/")[1],
-          );
-          try {
-            const targetPath = join(wt.path, learning.targetFile);
-            const currentContent = await readTextFile(targetPath).catch(
-              () => "",
-            );
-            const applied = await applyLearning(
-              currentContent,
-              intent,
-              captureCommandRunner(),
-            );
-            if (applied === null) {
-              throw new Error("applyLearning returned no content");
-            }
-            await mkdir(
-              join(wt.path, ...learning.targetFile.split("/").slice(0, -1)),
-              { recursive: true },
-            );
-            await writeTextFile(targetPath, applied);
-            const run = (cmd: string[]) =>
-              new Deno.Command(cmd[0], {
-                args: cmd.slice(1),
-                cwd: wt.path,
-              }).output();
-            await run(["git", "add", learning.targetFile]);
-            await run(["git", "commit", "-m", learning.prTitle]);
-            const created = await run([
-              "gh",
-              "pr",
-              "create",
-              "--draft",
-              "--title",
-              learning.prTitle,
-              "--body",
-              learning.prBody,
-            ]);
-            const url = new TextDecoder()
-              .decode(created.stdout)
-              .trim()
-              .split("\n")
-              .filter((line) => line.startsWith("http"))
-              .pop();
-            if (url === undefined) {
-              throw new Error("could not parse PR URL from gh output");
-            }
-            return url;
-          } finally {
-            await removeWorktree(wt);
-          }
-        },
+        applyToRepo: (learning, intent) =>
+          applyLearningToRepo(learning, intent, {
+            prosePath: async (l, i) => {
+              const localRepoPath = await findLocalRepo(
+                config.codebase.roots.map(expandHome),
+                l.repo,
+              );
+              if (localRepoPath === null) {
+                throw new Error(`local repo not found for ${l.repo}`);
+              }
+              const wt = await createWorktree(
+                localRepoPath,
+                `learnings-${l.id}`,
+                l.repo.split("/")[1],
+              );
+              try {
+                const targetPath = join(wt.path, l.targetFile);
+                const currentContent = await readTextFile(targetPath).catch(
+                  () => "",
+                );
+                const applied = await applyLearning(
+                  currentContent,
+                  i,
+                  captureCommandRunner(),
+                );
+                if (applied === null) {
+                  throw new Error("applyLearning returned no content");
+                }
+                await mkdir(
+                  join(wt.path, ...l.targetFile.split("/").slice(0, -1)),
+                  { recursive: true },
+                );
+                await writeTextFile(targetPath, applied);
+                const run = (cmd: string[]) =>
+                  new Deno.Command(cmd[0], {
+                    args: cmd.slice(1),
+                    cwd: wt.path,
+                  }).output();
+                await run(["git", "add", l.targetFile]);
+                await run(["git", "commit", "-m", l.prTitle]);
+                const created = await run([
+                  "gh",
+                  "pr",
+                  "create",
+                  "--draft",
+                  "--title",
+                  l.prTitle,
+                  "--body",
+                  l.prBody,
+                ]);
+                const url = new TextDecoder()
+                  .decode(created.stdout)
+                  .trim()
+                  .split("\n")
+                  .filter((line) => line.startsWith("http"))
+                  .pop();
+                if (url === undefined) {
+                  throw new Error("could not parse PR URL from gh output");
+                }
+                return url;
+              } finally {
+                await removeWorktree(wt);
+              }
+            },
+            procedurePath: async (l, i) => {
+              const localRepoPath = await findLocalRepo(
+                config.codebase.roots.map(expandHome),
+                l.repo,
+              );
+              if (localRepoPath === null) {
+                throw new Error(`local repo not found for ${l.repo}`);
+              }
+              const wt = await createWorktree(
+                localRepoPath,
+                `learnings-${l.id}`,
+                l.repo.split("/")[1],
+              );
+              try {
+                const composePath = join(wt.path, "src", "compose.ts");
+                const composeContent = await readTextFile(composePath).catch(
+                  () => "",
+                );
+                const generated = await applyTickActionLearning({
+                  targetFile: l.targetFile,
+                  composeContent,
+                  intent: i,
+                  run: captureCommandRunner(),
+                });
+                if (generated === null) {
+                  throw new Error(
+                    "applyTickActionLearning returned no content",
+                  );
+                }
+                await mkdir(
+                  join(wt.path, ...l.targetFile.split("/").slice(0, -1)),
+                  { recursive: true },
+                );
+                await writeTextFile(
+                  join(wt.path, l.targetFile),
+                  generated.tickActionSource,
+                );
+                await writeTextFile(composePath, generated.updatedCompose);
+                const run = (cmd: string[]) =>
+                  new Deno.Command(cmd[0], {
+                    args: cmd.slice(1),
+                    cwd: wt.path,
+                  }).output();
+                await run(["git", "add", l.targetFile, "src/compose.ts"]);
+                await run(["git", "commit", "-m", l.prTitle]);
+                const created = await run([
+                  "gh",
+                  "pr",
+                  "create",
+                  "--draft",
+                  "--title",
+                  l.prTitle,
+                  "--body",
+                  l.prBody,
+                ]);
+                const url = new TextDecoder()
+                  .decode(created.stdout)
+                  .trim()
+                  .split("\n")
+                  .filter((line) => line.startsWith("http"))
+                  .pop();
+                if (url === undefined) {
+                  throw new Error("could not parse PR URL from gh output");
+                }
+                return url;
+              } finally {
+                await removeWorktree(wt);
+              }
+            },
+          }),
       }),
     notify: makeNotify({
       runCommand: defaultCommandRunner(),
