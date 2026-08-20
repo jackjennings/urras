@@ -2,7 +2,6 @@ import { assertEquals, assertRejects } from "@std/assert";
 import { assertSpyCalls, spy } from "@std/testing/mock";
 import {
   applyLearningToRepo,
-  deriveOrgFromTicketDir,
   ensureStatePrompts,
   GitHubAuthError,
   preflightGitHubCredentials,
