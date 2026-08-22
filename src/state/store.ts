@@ -22,6 +22,19 @@ import {
   writeTextFile,
 } from "../filesystem.ts";
 
+export class StaleTicketWriteError extends Error {}
+
+async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(text),
+  );
+  return Array.from(
+    new Uint8Array(digest),
+    (b) => b.toString(16).padStart(2, "0"),
+  ).join("");
+}
+
 function migratePhase(oldPhase: string): [TicketPhase, TicketStatus] {
   const table: Record<string, [TicketPhase, TicketStatus]> = {
     "new": ["intake", "new"],
@@ -73,6 +86,7 @@ export async function readTicket(
 ): Promise<TicketState> {
   const metaPath = join(stateDir, id, "meta.md");
   const raw = await readTextFile(metaPath);
+  const revision = await sha256Hex(raw);
   const { data, content } = matter(raw);
 
   let phase: TicketPhase;
@@ -147,10 +161,13 @@ export async function readTicket(
     ciHandledRunIds: data.ciHandledRunIds as string[] | undefined,
     phaseSessionIds: data.phaseSessionIds as TicketState["phaseSessionIds"],
     notifiedNeedsAttention: data.notifiedNeedsAttention as boolean | undefined,
+    revision,
   };
 
   if (needsMigration) {
     await writeTicket(stateDir, ticket);
+    const migratedRaw = await readTextFile(metaPath);
+    ticket.revision = await sha256Hex(migratedRaw);
   }
 
   return ticket;
@@ -163,6 +180,29 @@ export async function writeTicket(
   assertValidPhaseStatus(ticket.phase, ticket.status);
   const dir = join(stateDir, ticket.id);
   await mkdir(dir, { recursive: true });
+
+  const metaPath = join(dir, "meta.md");
+  let fileExists = false;
+  try {
+    await stat(metaPath);
+    fileExists = true;
+  } catch {
+    // not found — new-ticket path
+  }
+  if (fileExists) {
+    if (ticket.revision === undefined) {
+      throw new StaleTicketWriteError(
+        `writeTicket: ${ticket.id} has no revision token`,
+      );
+    }
+    const onDisk = await readTextFile(metaPath);
+    if (await sha256Hex(onDisk) !== ticket.revision) {
+      throw new StaleTicketWriteError(
+        `writeTicket: ${ticket.id} revision is stale`,
+      );
+    }
+  }
+
   const frontmatter: Record<string, unknown> = {
     id: ticket.id,
     provider: ticket.provider,

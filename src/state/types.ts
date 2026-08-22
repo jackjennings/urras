@@ -130,6 +130,7 @@ export interface TicketState {
   artifacts: ArtifactType[];
   documents?: { url: string; title: string }[];
   workItems?: { url: string; title: string }[];
+  revision?: string;
 }
 
 export function isApproved(ticket: TicketState): boolean {
