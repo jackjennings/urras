@@ -132,8 +132,7 @@ export function reconcilePRsAction(deps: ReconcilePRsDeps): TickAction {
         const worktreeKey = aliases.find((a) => ticket.worktrees[a]) ??
           Object.entries(ticket.worktrees).find(
             ([, wt]) => wt.branch === p.headRefName,
-          )?.[0] ??
-          Object.keys(ticket.worktrees)[0];
+          )?.[0];
         return {
           url: p.url,
           title: p.title,
