@@ -13,6 +13,7 @@ import {
 export interface CreateWorktreeDeps {
   roots: string[];
   run: CommandRunner;
+  canonicalSlugFor: (slug: string) => string;
   findLocalRepo: (roots: string[], slug: string) => Promise<string | null>;
   createWorktree: (
     repoPath: string,
@@ -95,7 +96,7 @@ export function createWorktreeAction(deps: CreateWorktreeDeps): TickAction {
 
       if (correctedTicket.provider === "github") {
         try {
-          githubSlugs.add(extractGitHubSlug(correctedTicket.url));
+          githubSlugs.add(deps.canonicalSlugFor(extractGitHubSlug(correctedTicket.url)));
         } catch {
           const updated = {
             ...correctedTicket,
@@ -133,9 +134,10 @@ export function createWorktreeAction(deps: CreateWorktreeDeps): TickAction {
         } else {
           const slug = resolveGitHubSlug(entry);
           if (slug) {
-            githubSlugs.add(slug);
-            resolvedScopeSlugs.push(slug);
-            if (isNew) newRepoSlugs.push(slug);
+            const canonical = deps.canonicalSlugFor(slug);
+            githubSlugs.add(canonical);
+            resolvedScopeSlugs.push(canonical);
+            if (isNew) newRepoSlugs.push(canonical);
           }
         }
       }

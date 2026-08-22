@@ -411,6 +411,7 @@ export function composeTickDeps(
     createWorktreeAction({
       roots: config.codebase.roots.map(expandHome),
       run: captureCommandRunner(),
+      canonicalSlugFor: (slug) => canonicalSlugFor(persistedTable, slug),
       findLocalRepo: (roots, slug) =>
         findLocalRepo(
           roots,

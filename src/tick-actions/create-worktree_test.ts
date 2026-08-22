@@ -23,6 +23,7 @@ function makeAction(
   return createWorktreeAction({
     roots: ["/code"],
     run: () => Promise.resolve({ code: 1, stdout: "" }),
+    canonicalSlugFor: (s) => s,
     findLocalRepo: () => Promise.resolve("/code/myorg/myrepo"),
     createWorktree: (_repo, _id, slug) =>
       Promise.resolve({ path: `/wt/${slug}`, branch: "gh-1" }),
@@ -615,6 +616,36 @@ Deno.test(
     }).run(makeTicket(BASE), "/state");
 
     assertEquals(result?.scope, ["other/repo"]);
+  },
+);
+
+Deno.test(
+  "createWorktreeAction: alias collision — URL slug and scope alias resolve to same canonical slug → one createWorktree call, worktrees keyed on canonical slug, scope uses canonical slug",
+  async () => {
+    const intakeContent =
+      "## Proposed Scope\n\n```yaml\nscope:\n  - org/repo-old\n```\n\n## Reasoning\n\nText.\n";
+    const createdSlugs: string[] = [];
+    const result = await makeAction({
+      readIntakeOutput: () => Promise.resolve(intakeContent),
+      canonicalSlugFor: (s) =>
+        s === "org/repo-old" || s === "org/repo-new" ? "org/repo-new" : s,
+      findLocalRepo: () => Promise.resolve("/code/org/repo-new"),
+      createWorktree: (_repo, _id, slug) => {
+        createdSlugs.push(slug);
+        return Promise.resolve({ path: `/wt/${slug}`, branch: "gh-1" });
+      },
+    }).run(
+      makeTicket({
+        ...BASE,
+        id: "github/org/repo-new/1",
+        url: "https://github.com/org/repo-new/issues/1",
+      }),
+      "/state",
+    );
+
+    assertEquals(createdSlugs, ["org/repo-new"]);
+    assertEquals(Object.keys(result?.worktrees ?? {}), ["org/repo-new"]);
+    assertEquals(result?.scope, ["org/repo-new"]);
   },
 );
 
