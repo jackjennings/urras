@@ -10,6 +10,7 @@ import type { InstallResult } from "./packages.ts";
 import { isApproved, type TicketState } from "./state/types.ts";
 import { readTextFile } from "./filesystem.ts";
 import { CorruptRepoIdentitiesError } from "./providers/github/repo-identity.ts";
+import { StaleTicketWriteError } from "./state/store.ts";
 
 const TICK_DEADLINE_MS = 4 * 60 * 60 * 1000;
 
@@ -192,6 +193,7 @@ export class TickService {
     );
 
     const processedTickets = [...migratedTickets];
+    const droppedTicketIds = new Set<string>();
     const totalNonWontDo = processedTickets.filter(
       (t) => t.phase !== "wont-do",
     ).length;
@@ -214,6 +216,15 @@ export class TickService {
             if (updated !== null) processedTickets[i] = updated;
           }
         } catch (e) {
+          if (e instanceof StaleTicketWriteError) {
+            await deps.tickDeps.appendLog(
+              deps.stateDir,
+              processedTickets[i].id,
+              { event: "stale-write", context: "tickAction" },
+            );
+            droppedTicketIds.add(processedTickets[i].id);
+            break;
+          }
           await deps.tickDeps.appendLog(
             deps.stateDir,
             processedTickets[i].id,
@@ -233,28 +244,33 @@ export class TickService {
 
     for (let i = 0; i < processedTickets.length; i++) {
       const ticket = processedTickets[i];
+      if (droppedTicketIds.has(ticket.id)) continue;
       if (
         ticket.status === "needs-attention" && !ticket.notifiedNeedsAttention
       ) {
-        const freshTicket = await deps.readTicket(ticket.id);
-        if (
-          freshTicket.status !== "needs-attention" ||
-          freshTicket.notifiedNeedsAttention
-        ) {
+        const updated = { ...ticket, notifiedNeedsAttention: true };
+        try {
+          await deps.writeTicket(updated);
+          processedTickets[i] = updated;
+        } catch (e) {
+          if (!(e instanceof StaleTicketWriteError)) throw e;
+          await deps.tickDeps.appendLog(
+            deps.stateDir,
+            ticket.id,
+            { event: "stale-write", context: "notify" },
+          );
           continue;
         }
-        await deps.notify(freshTicket);
-        const updated = { ...freshTicket, notifiedNeedsAttention: true };
-        await deps.writeTicket(updated);
-        processedTickets[i] = updated;
+        await deps.notify(ticket);
       }
     }
 
     const runningTickets = processedTickets.filter(
-      (t) => t.status === "running",
+      (t) => t.status === "running" && !droppedTicketIds.has(t.id),
     );
     const candidateTickets = processedTickets.filter(
       (t) =>
+        !droppedTicketIds.has(t.id) &&
         t.status !== "done" &&
         t.status !== "needs-attention" &&
         !(t.phase === "merge" && t.status === "waiting") &&
