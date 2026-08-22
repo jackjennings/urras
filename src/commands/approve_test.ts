@@ -6,7 +6,8 @@ import {
 } from "@std/assert";
 import { assertSpyCalls, spy } from "@std/testing/mock";
 import { join } from "@std/path";
-import { writeTicket } from "../state/store.ts";
+import { readTicket, StaleTicketWriteError, writeTicket } from "../state/store.ts";
+import type { TicketState } from "../state/types.ts";
 import { makeTicket } from "../test-support.ts";
 import { performApprove, performApproveCeremony } from "./approve.ts";
 import type { ApprovalRecord } from "../ceremonies/approvals.ts";
@@ -19,7 +20,7 @@ Deno.test(
     await writeTicket(stateDir, ticket);
     const commitFn = spy(() => Promise.resolve());
     try {
-      await performApprove(stateDir, ticket.id, commitFn);
+      await performApprove(stateDir, ticket.id, { commitFn });
       const meta = await Deno.readTextFile(
         join(stateDir, ticket.id, "meta.md"),
       );
@@ -37,7 +38,7 @@ Deno.test("performApprove: does not write approved key", async () => {
   await writeTicket(stateDir, ticket);
   const commitFn = spy(() => Promise.resolve());
   try {
-    await performApprove(stateDir, ticket.id, commitFn);
+    await performApprove(stateDir, ticket.id, { commitFn });
     const meta = await Deno.readTextFile(
       join(stateDir, ticket.id, "meta.md"),
     );
@@ -61,7 +62,7 @@ Deno.test("performApprove: accumulates multiple approvals", async () => {
   await writeTicket(stateDir, ticket);
   const commitFn = spy(() => Promise.resolve());
   try {
-    await performApprove(stateDir, ticket.id, commitFn);
+    await performApprove(stateDir, ticket.id, { commitFn });
     const meta = await Deno.readTextFile(
       join(stateDir, ticket.id, "meta.md"),
     );
@@ -80,7 +81,7 @@ Deno.test(
     await writeTicket(stateDir, ticket);
     const commitFn = spy(() => Promise.resolve());
     try {
-      await performApprove(stateDir, ticket.id, commitFn);
+      await performApprove(stateDir, ticket.id, { commitFn });
       assertSpyCalls(commitFn, 1);
       assertEquals(commitFn.calls[0].args, [
         stateDir,
@@ -92,6 +93,48 @@ Deno.test(
     }
   },
 );
+
+Deno.test("performApprove: retries once on StaleTicketWriteError", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    await writeTicket(dir, makeTicket({ id: "gh-1" }));
+    const fresh = await readTicket(dir, "gh-1");
+    let callCount = 0;
+    const writeStub = spy(async (_sd: string, _t: TicketState) => {
+      callCount++;
+      if (callCount === 1) throw new StaleTicketWriteError("stale");
+    });
+    await performApprove(dir, "gh-1", {
+      commitFn: spy(() => Promise.resolve()),
+      writeTicketFn: writeStub,
+      readTicketFn: () => Promise.resolve(fresh),
+    });
+    assertSpyCalls(writeStub, 2);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("performApprove: throws on second StaleTicketWriteError", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    await writeTicket(dir, makeTicket({ id: "gh-1" }));
+    const fresh = await readTicket(dir, "gh-1");
+    await assertRejects(
+      () =>
+        performApprove(dir, "gh-1", {
+          commitFn: spy(() => Promise.resolve()),
+          writeTicketFn: spy(async (_sd: string, _t: TicketState) => {
+            throw new StaleTicketWriteError("stale");
+          }),
+          readTicketFn: () => Promise.resolve(fresh),
+        }),
+      StaleTicketWriteError,
+    );
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
 
 async function makeTestDirs(
   name: string,

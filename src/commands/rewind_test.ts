@@ -8,7 +8,8 @@ import {
 } from "@std/assert";
 import { assertSpyCalls, spy } from "@std/testing/mock";
 import { join } from "@std/path";
-import { writeTicket } from "../state/store.ts";
+import { readTicket, StaleTicketWriteError, writeTicket } from "../state/store.ts";
+import type { TicketState } from "../state/types.ts";
 import { makeTicket } from "../test-support.ts";
 import { performRewind } from "./rewind.ts";
 
@@ -449,3 +450,45 @@ Deno.test(
     }
   },
 );
+
+Deno.test("performRewind: retries once on StaleTicketWriteError", async () => {
+  const stateDir = await Deno.makeTempDir();
+  try {
+    await writeTicket(stateDir, makeTicket({ id: "gh-1", phase: "implementation", status: "waiting" }));
+    const fresh = await readTicket(stateDir, "gh-1");
+    let callCount = 0;
+    const writeStub = spy(async (_sd: string, _t: TicketState) => {
+      callCount++;
+      if (callCount === 1) throw new StaleTicketWriteError("stale");
+    });
+    await performRewind(stateDir, "gh-1", "spec", {
+      commitFn: spy(() => Promise.resolve()),
+      writeTicketFn: writeStub,
+      readTicketFn: () => Promise.resolve(fresh),
+    });
+    assertSpyCalls(writeStub, 2);
+  } finally {
+    await Deno.remove(stateDir, { recursive: true });
+  }
+});
+
+Deno.test("performRewind: throws on second StaleTicketWriteError", async () => {
+  const stateDir = await Deno.makeTempDir();
+  try {
+    await writeTicket(stateDir, makeTicket({ id: "gh-1", phase: "implementation", status: "waiting" }));
+    const fresh = await readTicket(stateDir, "gh-1");
+    await assertRejects(
+      () =>
+        performRewind(stateDir, "gh-1", "spec", {
+          commitFn: spy(() => Promise.resolve()),
+          writeTicketFn: spy(async (_sd: string, _t: TicketState) => {
+            throw new StaleTicketWriteError("stale");
+          }),
+          readTicketFn: () => Promise.resolve(fresh),
+        }),
+      StaleTicketWriteError,
+    );
+  } finally {
+    await Deno.remove(stateDir, { recursive: true });
+  }
+});

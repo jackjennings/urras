@@ -2,6 +2,7 @@ import {
   appendTicketLog,
   commitTicket,
   readTicket,
+  StaleTicketWriteError,
   writeTicket,
 } from "../state/store.ts";
 import { join } from "@std/path";
@@ -55,13 +56,17 @@ export async function performRewind(
   {
     commitFn = commitTicket,
     killFn = defaultKillFn,
+    readTicketFn = readTicket,
+    writeTicketFn = writeTicket,
   }: {
     commitFn?: typeof commitTicket;
     killFn?: (pid: number) => void;
+    readTicketFn?: typeof readTicket;
+    writeTicketFn?: typeof writeTicket;
   } = {},
 ): Promise<{ from: TicketPhase; to: ActivePhase }> {
   const ticketDir = join(stateDir, id);
-  const ticket = await readTicket(stateDir, id);
+  let ticket = await readTicketFn(stateDir, id);
   const from = ticket.phase;
 
   const targetIdx = PHASE_SEQUENCE.indexOf(targetPhase);
@@ -115,16 +120,24 @@ export async function performRewind(
       : undefined;
   }
 
-  await writeTicket(stateDir, {
-    ...ticket,
+  const buildMutation = (t: typeof ticket) => ({
+    ...t,
     phase: targetPhase,
-    status: targetPhase === "intake" ? "new" : "waiting",
+    status: targetPhase === "intake" ? ("new" as const) : ("waiting" as const),
     approvals: newApprovals,
     phaseSessionIds: newPhaseSessionIds,
     outputRetries: undefined,
     notifiedNeedsAttention: undefined,
     updated: Temporal.Now.instant().toString(),
   });
+
+  try {
+    await writeTicketFn(stateDir, buildMutation(ticket));
+  } catch (e) {
+    if (!(e instanceof StaleTicketWriteError)) throw e;
+    ticket = await readTicketFn(stateDir, id);
+    await writeTicketFn(stateDir, buildMutation(ticket));
+  }
 
   await appendTicketLog(stateDir, id, {
     event: "phase-transition",

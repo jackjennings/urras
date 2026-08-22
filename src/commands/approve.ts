@@ -1,4 +1,9 @@
-import { commitTicket, readTicket, writeTicket } from "../state/store.ts";
+import {
+  commitTicket,
+  readTicket,
+  StaleTicketWriteError,
+  writeTicket,
+} from "../state/store.ts";
 import { expandHome, loadConfig } from "../config.ts";
 import type { ApprovalEntry } from "../state/types.ts";
 import type { Command } from "./types.ts";
@@ -23,20 +28,33 @@ import {
 export async function performApprove(
   stateDir: string,
   id: string,
-  commitFn = commitTicket,
+  {
+    commitFn = commitTicket,
+    readTicketFn = readTicket,
+    writeTicketFn = writeTicket,
+  }: {
+    commitFn?: typeof commitTicket;
+    readTicketFn?: typeof readTicket;
+    writeTicketFn?: typeof writeTicket;
+  } = {},
 ): Promise<void> {
-  const ticket = await readTicket(stateDir, id);
+  let ticket = await readTicketFn(stateDir, id);
   const now = Temporal.Now.instant().toString();
-  const entry: ApprovalEntry = {
-    timestamp: now,
-    actor: "human",
-    phase: ticket.phase,
-  };
-  await writeTicket(stateDir, {
-    ...ticket,
-    approvals: [...ticket.approvals, entry],
+  const buildMutation = (t: typeof ticket) => ({
+    ...t,
+    approvals: [
+      ...t.approvals,
+      { timestamp: now, actor: "human" as const, phase: t.phase },
+    ],
     updated: now,
   });
+  try {
+    await writeTicketFn(stateDir, buildMutation(ticket));
+  } catch (e) {
+    if (!(e instanceof StaleTicketWriteError)) throw e;
+    ticket = await readTicketFn(stateDir, id);
+    await writeTicketFn(stateDir, buildMutation(ticket));
+  }
   await commitFn(stateDir, id, `approve: ${id}`);
 }
 

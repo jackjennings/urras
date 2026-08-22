@@ -2,6 +2,7 @@ import {
   appendTicketLog,
   commitTicket,
   readTicket,
+  StaleTicketWriteError,
   writeTicket,
 } from "../state/store.ts";
 import { expandHome, loadConfig } from "../config.ts";
@@ -11,9 +12,17 @@ import type { Command } from "./types.ts";
 export async function performRetry(
   stateDir: string,
   id: string,
-  commitFn = commitTicket,
+  {
+    commitFn = commitTicket,
+    readTicketFn = readTicket,
+    writeTicketFn = writeTicket,
+  }: {
+    commitFn?: typeof commitTicket;
+    readTicketFn?: typeof readTicket;
+    writeTicketFn?: typeof writeTicket;
+  } = {},
 ): Promise<{ phase: TicketPhase; targetStatus: TicketStatus }> {
-  const ticket = await readTicket(stateDir, id);
+  let ticket = await readTicketFn(stateDir, id);
 
   if (ticket.status !== "needs-attention") {
     throw new Error(
@@ -25,11 +34,19 @@ export async function performRetry(
     ? "new"
     : "waiting";
 
-  await writeTicket(stateDir, {
-    ...ticket,
+  const buildMutation = (t: typeof ticket) => ({
+    ...t,
     status: targetStatus,
     updated: Temporal.Now.instant().toString(),
   });
+
+  try {
+    await writeTicketFn(stateDir, buildMutation(ticket));
+  } catch (e) {
+    if (!(e instanceof StaleTicketWriteError)) throw e;
+    ticket = await readTicketFn(stateDir, id);
+    await writeTicketFn(stateDir, buildMutation(ticket));
+  }
 
   await appendTicketLog(stateDir, id, {
     event: "status-transition",
