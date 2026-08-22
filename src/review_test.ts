@@ -26,7 +26,12 @@ import {
 } from "./review.ts";
 import type { OverlayHandle, TUI } from "@earendil-works/pi-tui";
 import { join } from "@std/path";
-import { readTicket, StaleTicketWriteError, writePhaseOutput, writeTicket } from "./state/store.ts";
+import {
+  readTicket,
+  StaleTicketWriteError,
+  writePhaseOutput,
+  writeTicket,
+} from "./state/store.ts";
 import type { TicketState } from "./state/types.ts";
 import { makeTicket } from "./test-support.ts";
 
@@ -1866,12 +1871,16 @@ Deno.test(
 Deno.test("applyApproval: retries once on StaleTicketWriteError", async () => {
   const dir = await Deno.makeTempDir();
   try {
-    await writeTicket(dir, makeTicket({ id: "gh-1", phase: "spec", status: "waiting" }));
+    await writeTicket(
+      dir,
+      makeTicket({ id: "gh-1", phase: "spec", status: "waiting" }),
+    );
     const ticket = await readTicket(dir, "gh-1");
     let callCount = 0;
-    const writeStub = spy(async (_sd: string, _t: TicketState) => {
+    const writeStub = spy((_sd: string, _t: TicketState): Promise<void> => {
       callCount++;
       if (callCount === 1) throw new StaleTicketWriteError("stale");
+      return Promise.resolve();
     });
     const now = Temporal.Now.zonedDateTimeISO("UTC");
     await applyApproval(dir, "gh-1", now, {
@@ -1888,16 +1897,21 @@ Deno.test("applyApproval: retries once on StaleTicketWriteError", async () => {
 Deno.test("applyApproval: throws on second StaleTicketWriteError", async () => {
   const dir = await Deno.makeTempDir();
   try {
-    await writeTicket(dir, makeTicket({ id: "gh-1", phase: "spec", status: "waiting" }));
+    await writeTicket(
+      dir,
+      makeTicket({ id: "gh-1", phase: "spec", status: "waiting" }),
+    );
     const ticket = await readTicket(dir, "gh-1");
     const now = Temporal.Now.zonedDateTimeISO("UTC");
     await assertRejects(
       () =>
         applyApproval(dir, "gh-1", now, {
           readTicketFn: () => Promise.resolve(ticket),
-          writeTicketFn: spy(async (_sd: string, _t: TicketState) => {
-            throw new StaleTicketWriteError("stale");
-          }),
+          writeTicketFn: spy(
+            (_sd: string, _t: TicketState): Promise<void> => {
+              throw new StaleTicketWriteError("stale");
+            },
+          ),
           commitFn: spy(() => Promise.resolve()),
         }),
       StaleTicketWriteError,
@@ -1910,13 +1924,22 @@ Deno.test("applyApproval: throws on second StaleTicketWriteError", async () => {
 Deno.test("review non-interactive: retries once on StaleTicketWriteError", async () => {
   const stateDir = await Deno.makeTempDir();
   try {
-    await writeTicket(stateDir, makeTicket({ id: "gh-1", phase: "spec", status: "waiting" }));
+    await writeTicket(
+      stateDir,
+      makeTicket({ id: "gh-1", phase: "spec", status: "waiting" }),
+    );
     const ticket = await readTicket(stateDir, "gh-1");
-    await writePhaseOutput(stateDir, "gh-1", "20260101T000000-spec.md", "## Spec\n\nContent");
+    await writePhaseOutput(
+      stateDir,
+      "gh-1",
+      "20260101T000000-spec.md",
+      "## Spec\n\nContent",
+    );
     let writeCount = 0;
-    const writeStub = spy(async (_sd: string, _t: TicketState) => {
+    const writeStub = spy((_sd: string, _t: TicketState): Promise<void> => {
       writeCount++;
       if (writeCount === 1) throw new StaleTicketWriteError("stale");
+      return Promise.resolve();
     });
     await withReviewConfig(stateDir, async () => {
       const exitStub = stub(Deno, "exit", (_code?: number) => {

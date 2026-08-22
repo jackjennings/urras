@@ -6,7 +6,11 @@ import {
 } from "@std/assert";
 import { assertSpyCalls, spy } from "@std/testing/mock";
 import { join } from "@std/path";
-import { readTicket, StaleTicketWriteError, writeTicket } from "../state/store.ts";
+import {
+  readTicket,
+  StaleTicketWriteError,
+  writeTicket,
+} from "../state/store.ts";
 import type { TicketState } from "../state/types.ts";
 import { makeTicket } from "../test-support.ts";
 import { performRetry } from "./retry.ts";
@@ -192,12 +196,16 @@ Deno.test(
 Deno.test("performRetry: retries once on StaleTicketWriteError", async () => {
   const stateDir = await Deno.makeTempDir();
   try {
-    await writeTicket(stateDir, makeTicket({ id: "gh-1", phase: "spec", status: "needs-attention" }));
+    await writeTicket(
+      stateDir,
+      makeTicket({ id: "gh-1", phase: "spec", status: "needs-attention" }),
+    );
     const fresh = await readTicket(stateDir, "gh-1");
     let callCount = 0;
-    const writeStub = spy(async (_sd: string, _t: TicketState) => {
+    const writeStub = spy((_sd: string, _t: TicketState): Promise<void> => {
       callCount++;
       if (callCount === 1) throw new StaleTicketWriteError("stale");
+      return Promise.resolve();
     });
     await performRetry(stateDir, "gh-1", {
       commitFn: spy(() => Promise.resolve()),
@@ -213,13 +221,16 @@ Deno.test("performRetry: retries once on StaleTicketWriteError", async () => {
 Deno.test("performRetry: throws on second StaleTicketWriteError", async () => {
   const stateDir = await Deno.makeTempDir();
   try {
-    await writeTicket(stateDir, makeTicket({ id: "gh-1", phase: "spec", status: "needs-attention" }));
+    await writeTicket(
+      stateDir,
+      makeTicket({ id: "gh-1", phase: "spec", status: "needs-attention" }),
+    );
     const fresh = await readTicket(stateDir, "gh-1");
     await assertRejects(
       () =>
         performRetry(stateDir, "gh-1", {
           commitFn: spy(() => Promise.resolve()),
-          writeTicketFn: spy(async (_sd: string, _t: TicketState) => {
+          writeTicketFn: spy((_sd: string, _t: TicketState): Promise<void> => {
             throw new StaleTicketWriteError("stale");
           }),
           readTicketFn: () => Promise.resolve(fresh),

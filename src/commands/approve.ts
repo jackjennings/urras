@@ -5,7 +5,6 @@ import {
   writeTicket,
 } from "../state/store.ts";
 import { expandHome, loadConfig } from "../config.ts";
-import type { ApprovalEntry } from "../state/types.ts";
 import type { Command } from "./types.ts";
 import { join } from "@std/path";
 import { exists, isRegularFile } from "../filesystem.ts";

@@ -975,7 +975,6 @@ Deno.test(
   },
 );
 
-
 Deno.test(
   "TickService: refreshAnthropicPricing called before installPackages",
   async () => {
@@ -1622,7 +1621,11 @@ Deno.test(
   "TickService: StaleTicketWriteError in action loop logs stale-write and drops ticket from advance pass",
   async () => {
     const logs: object[] = [];
-    const ticket = makeTicket({ id: "github/org/repo/1", phase: "intake", status: "new" });
+    const ticket = makeTicket({
+      id: "github/org/repo/1",
+      phase: "intake",
+      status: "new",
+    });
     const deps = makeTickServiceDeps({
       listTickets: () => Promise.resolve([ticket.id]),
       readTicket: () => Promise.resolve(ticket),
@@ -1643,7 +1646,7 @@ Deno.test(
       ],
     });
     const origAppend = deps.tickDeps.appendLog;
-    deps.tickDeps.appendLog = async (sd, id, entry) => {
+    deps.tickDeps.appendLog = (sd, id, entry) => {
       logs.push(entry);
       return origAppend(sd, id, entry);
     };
@@ -1672,12 +1675,14 @@ Deno.test(
       writeTicket: () => {
         throw new StaleTicketWriteError("stale");
       },
-      notify: async () => {
+      notify: () => {
         notified = true;
+        return Promise.resolve();
       },
     });
-    deps.tickDeps.appendLog = async (_sd, _id, entry) => {
+    deps.tickDeps.appendLog = (_sd, _id, entry) => {
       logs.push(entry);
+      return Promise.resolve();
     };
     await new TickService(deps).run();
     assertFalse(notified);

@@ -43,7 +43,6 @@ import {
   writePhaseOutput,
   writeTicket,
 } from "./state/store.ts";
-import type { ApprovalEntry } from "./state/types.ts";
 import { buildContextFiles } from "./run-phase.ts";
 import { CONTEXT_PHASE_SEQUENCE } from "./phases/types.ts";
 import { compactTimestamp } from "./timestamp.ts";
@@ -805,7 +804,11 @@ export async function review(
       return;
     }
     if (isApproval) {
-      await applyApproval(stateDir, id, now, { readTicketFn, writeTicketFn, commitFn });
+      await applyApproval(stateDir, id, now, {
+        readTicketFn,
+        writeTicketFn,
+        commitFn,
+      });
       killServer();
       Deno.removeSignalListener("SIGTERM", sigtermHandler);
       tui.stop();
@@ -821,11 +824,17 @@ export async function review(
       updated: now.toInstant().toString(),
     });
     try {
-      await writeTicketFn(stateDir, buildRevisingInteractive(updatedInteractive));
+      await writeTicketFn(
+        stateDir,
+        buildRevisingInteractive(updatedInteractive),
+      );
     } catch (e) {
       if (!(e instanceof StaleTicketWriteError)) throw e;
       updatedInteractive = await readTicketFn(stateDir, id);
-      await writeTicketFn(stateDir, buildRevisingInteractive(updatedInteractive));
+      await writeTicketFn(
+        stateDir,
+        buildRevisingInteractive(updatedInteractive),
+      );
     }
     await commitFn(stateDir, id, `review: ${id}`);
     killServer();

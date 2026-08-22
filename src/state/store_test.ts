@@ -1552,7 +1552,9 @@ Deno.test("readTicket: sets revision to a non-empty string", async () => {
   try {
     const ticketDir = join(dir, "gh-1");
     await Deno.mkdir(ticketDir);
-    await Deno.writeTextFile(join(ticketDir, "meta.md"), `---
+    await Deno.writeTextFile(
+      join(ticketDir, "meta.md"),
+      `---
 id: gh-1
 provider: github
 title: T
@@ -1564,7 +1566,8 @@ worktrees: {}
 created: "2026-01-01T00:00:00Z"
 updated: "2026-01-01T00:00:00Z"
 ---
-`);
+`,
+    );
     const ticket = await readTicket(dir, "gh-1");
     assert(typeof ticket.revision === "string" && ticket.revision.length > 0);
   } finally {
@@ -1577,7 +1580,9 @@ Deno.test("readTicket: successive reads of unchanged file return same revision",
   try {
     const ticketDir = join(dir, "gh-1");
     await Deno.mkdir(ticketDir);
-    await Deno.writeTextFile(join(ticketDir, "meta.md"), `---
+    await Deno.writeTextFile(
+      join(ticketDir, "meta.md"),
+      `---
 id: gh-1
 provider: github
 title: T
@@ -1589,7 +1594,8 @@ worktrees: {}
 created: "2026-01-01T00:00:00Z"
 updated: "2026-01-01T00:00:00Z"
 ---
-`);
+`,
+    );
     const t1 = await readTicket(dir, "gh-1");
     const t2 = await readTicket(dir, "gh-1");
     assertEquals(t1.revision, t2.revision);
@@ -1604,7 +1610,10 @@ Deno.test("writeTicket: throws StaleTicketWriteError when revision does not matc
     const ticket = makeTicket({ id: "gh-1" });
     await writeTicket(dir, ticket);
     const read = await readTicket(dir, "gh-1");
-    await Deno.writeTextFile(join(dir, "gh-1", "meta.md"), "---\nmangled: true\n---\n");
+    await Deno.writeTextFile(
+      join(dir, "gh-1", "meta.md"),
+      "---\nmangled: true\n---\n",
+    );
     await assertRejects(
       () => writeTicket(dir, { ...read, status: "waiting" }),
       StaleTicketWriteError,

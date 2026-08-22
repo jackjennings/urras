@@ -6,7 +6,11 @@ import {
 } from "@std/assert";
 import { assertSpyCalls, spy } from "@std/testing/mock";
 import { join } from "@std/path";
-import { readTicket, StaleTicketWriteError, writeTicket } from "../state/store.ts";
+import {
+  readTicket,
+  StaleTicketWriteError,
+  writeTicket,
+} from "../state/store.ts";
 import type { TicketState } from "../state/types.ts";
 import { makeTicket } from "../test-support.ts";
 import { performApprove, performApproveCeremony } from "./approve.ts";
@@ -100,9 +104,10 @@ Deno.test("performApprove: retries once on StaleTicketWriteError", async () => {
     await writeTicket(dir, makeTicket({ id: "gh-1" }));
     const fresh = await readTicket(dir, "gh-1");
     let callCount = 0;
-    const writeStub = spy(async (_sd: string, _t: TicketState) => {
+    const writeStub = spy((_sd: string, _t: TicketState): Promise<void> => {
       callCount++;
       if (callCount === 1) throw new StaleTicketWriteError("stale");
+      return Promise.resolve();
     });
     await performApprove(dir, "gh-1", {
       commitFn: spy(() => Promise.resolve()),
@@ -124,7 +129,7 @@ Deno.test("performApprove: throws on second StaleTicketWriteError", async () => 
       () =>
         performApprove(dir, "gh-1", {
           commitFn: spy(() => Promise.resolve()),
-          writeTicketFn: spy(async (_sd: string, _t: TicketState) => {
+          writeTicketFn: spy((_sd: string, _t: TicketState): Promise<void> => {
             throw new StaleTicketWriteError("stale");
           }),
           readTicketFn: () => Promise.resolve(fresh),
