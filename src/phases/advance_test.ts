@@ -1303,7 +1303,7 @@ Deno.test(
 );
 
 Deno.test(
-  "advancePhase: non-zero exit code transitions to needs-attention regardless of output content",
+  "advancePhase: non-zero exit code with no implementation session transitions to needs-attention",
   async () => {
     const ticket = makeTicket({ phase: "intake", status: "running" });
     const writtenTickets: TicketState[] = [];
@@ -1335,6 +1335,186 @@ Deno.test(
       ),
       true,
     );
+  },
+);
+
+Deno.test(
+  "advancePhase: non-zero exit with stale implementation session transitions to revising with resumeRetries",
+  async () => {
+    const ticket = makeTicket({
+      phase: "implementation",
+      status: "running",
+      phaseSessionIds: { implementation: "old-sess-123" },
+    });
+    const writtenTickets: TicketState[] = [];
+    const logs: object[] = [];
+    await advancePhase(
+      ticket,
+      "/state",
+      makeTickDeps({
+        writeTicket: (_dir, t) => {
+          writtenTickets.push(t);
+          return Promise.resolve();
+        },
+        appendLog: (_dir, _id, entry) => {
+          logs.push(entry);
+          return Promise.resolve();
+        },
+        resolveModelConfig: () => ({ model: "m", thinking: "off" }),
+        readPhaseExitCode: () => Promise.resolve(1),
+        readPhaseSessionId: () => Promise.resolve(null),
+      }),
+    );
+    const final = writtenTickets[writtenTickets.length - 1];
+    assertEquals(final.status, "revising");
+    assertEquals(final.resumeRetries, 1);
+    assertEquals(final.phaseSessionIds?.["implementation"], undefined);
+    const retryLog = logs.find(
+      (e) => (e as Record<string, unknown>).event === "resume-retry",
+    );
+    assert(retryLog !== undefined);
+    assertEquals(
+      (retryLog as Record<string, unknown>).staleSessionId,
+      "old-sess-123",
+    );
+    assertEquals(
+      (retryLog as Record<string, unknown>).phase,
+      "implementation",
+    );
+  },
+);
+
+Deno.test(
+  "advancePhase: non-zero exit on merge phase with stale implementation session transitions to revising",
+  async () => {
+    const ticket = makeTicket({
+      phase: "merge",
+      status: "running",
+      phaseSessionIds: { implementation: "old-sess-merge" },
+    });
+    const writtenTickets: TicketState[] = [];
+    const logs: object[] = [];
+    await advancePhase(
+      ticket,
+      "/state",
+      makeTickDeps({
+        writeTicket: (_dir, t) => {
+          writtenTickets.push(t);
+          return Promise.resolve();
+        },
+        appendLog: (_dir, _id, entry) => {
+          logs.push(entry);
+          return Promise.resolve();
+        },
+        resolveModelConfig: () => ({ model: "m", thinking: "off" }),
+        readPhaseExitCode: () => Promise.resolve(1),
+        readPhaseSessionId: () => Promise.resolve(null),
+      }),
+    );
+    const final = writtenTickets[writtenTickets.length - 1];
+    assertEquals(final.status, "revising");
+    assertEquals(final.resumeRetries, 1);
+    assertEquals(final.phaseSessionIds?.["implementation"], undefined);
+    assert(
+      logs.some(
+        (e) => (e as Record<string, unknown>).event === "resume-retry",
+      ),
+    );
+  },
+);
+
+Deno.test(
+  "advancePhase: non-zero exit with resumeRetries already set parks to needs-attention",
+  async () => {
+    const ticket = makeTicket({
+      phase: "implementation",
+      status: "running",
+      phaseSessionIds: { implementation: "old-sess-123" },
+      resumeRetries: 1,
+    });
+    const writtenTickets: TicketState[] = [];
+    const logs: object[] = [];
+    await advancePhase(
+      ticket,
+      "/state",
+      makeTickDeps({
+        writeTicket: (_dir, t) => {
+          writtenTickets.push(t);
+          return Promise.resolve();
+        },
+        appendLog: (_dir, _id, entry) => {
+          logs.push(entry);
+          return Promise.resolve();
+        },
+        resolveModelConfig: () => ({ model: "m", thinking: "off" }),
+        readPhaseExitCode: () => Promise.resolve(1),
+        readPhaseSessionId: () => Promise.resolve(null),
+      }),
+    );
+    const final = writtenTickets[writtenTickets.length - 1];
+    assertEquals(final.status, "needs-attention");
+    assert(
+      logs.some(
+        (e) =>
+          (e as Record<string, unknown>).event === "phase-output-invalid" &&
+          (e as Record<string, unknown>).reason === "non-zero-exit",
+      ),
+    );
+  },
+);
+
+Deno.test(
+  "advancePhase: non-zero exit on implementation with no phaseSessionIds parks to needs-attention",
+  async () => {
+    const ticket = makeTicket({
+      phase: "implementation",
+      status: "running",
+    });
+    const writtenTickets: TicketState[] = [];
+    await advancePhase(
+      ticket,
+      "/state",
+      makeTickDeps({
+        writeTicket: (_dir, t) => {
+          writtenTickets.push(t);
+          return Promise.resolve();
+        },
+        resolveModelConfig: () => ({ model: "m", thinking: "off" }),
+        readPhaseExitCode: () => Promise.resolve(1),
+        readPhaseSessionId: () => Promise.resolve(null),
+      }),
+    );
+    assertEquals(
+      writtenTickets[writtenTickets.length - 1].status,
+      "needs-attention",
+    );
+  },
+);
+
+Deno.test(
+  "advancePhase: implementation approved advancing to merge clears resumeRetries",
+  async () => {
+    const ticket = makeTicket({
+      phase: "implementation",
+      status: "waiting",
+      approvals: [{ timestamp: "t", actor: "human", phase: "implementation" }],
+      resumeRetries: 1,
+    });
+    const writtenTickets: TicketState[] = [];
+    await advancePhase(
+      ticket,
+      "/state",
+      makeTickDeps({
+        writeTicket: (_dir, t) => {
+          writtenTickets.push(t);
+          return Promise.resolve();
+        },
+        resolveModelConfig: () => ({ model: "m", thinking: "off" }),
+      }),
+    );
+    const mergeWrite = writtenTickets.find((t) => t.phase === "merge");
+    assert(mergeWrite !== undefined);
+    assertEquals(mergeWrite.resumeRetries, undefined);
   },
 );
 

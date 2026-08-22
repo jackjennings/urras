@@ -135,6 +135,7 @@ export async function readTicket(
     body: content.trim(),
     phases: data.phases as TicketState["phases"],
     outputRetries: data.outputRetries as number | undefined,
+    resumeRetries: data.resumeRetries as number | undefined,
     artifacts: (data.artifacts as ArtifactType[] | undefined) ?? ["code"],
     documents: data.documents as { url: string; title: string }[] | undefined,
     workItems: data.workItems as { url: string; title: string }[] | undefined,
@@ -179,6 +180,9 @@ export async function writeTicket(
   if (ticket.newRepos !== undefined) frontmatter.newRepos = ticket.newRepos;
   if (ticket.outputRetries !== undefined) {
     frontmatter.outputRetries = ticket.outputRetries;
+  }
+  if (ticket.resumeRetries !== undefined) {
+    frontmatter.resumeRetries = ticket.resumeRetries;
   }
   if (ticket.shortTitle !== undefined) {
     frontmatter.shortTitle = ticket.shortTitle;
