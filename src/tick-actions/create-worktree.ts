@@ -96,7 +96,9 @@ export function createWorktreeAction(deps: CreateWorktreeDeps): TickAction {
 
       if (correctedTicket.provider === "github") {
         try {
-          githubSlugs.add(deps.canonicalSlugFor(extractGitHubSlug(correctedTicket.url)));
+          githubSlugs.add(
+            deps.canonicalSlugFor(extractGitHubSlug(correctedTicket.url)),
+          );
         } catch {
           const updated = {
             ...correctedTicket,
