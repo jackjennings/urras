@@ -107,7 +107,10 @@ export function checkConflictsAction(deps: CheckConflictsDeps): TickAction {
                     worktreePath: wt.path,
                     pushStderr: push.stderr,
                   });
-                } else {
+                } else if (
+                  !/Everything up-to-date/i.test(push.stderr) &&
+                  !/Everything up-to-date/i.test(push.stdout)
+                ) {
                   await deps.appendLog(stateDir, ticket.id, {
                     event: "branch-pushed",
                     worktreePath: wt.path,

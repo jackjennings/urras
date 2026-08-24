@@ -221,6 +221,42 @@ Deno.test("checkConflictsAction: clean rebase with no prs → null, no push, no 
   assertEquals(logged.length, 0);
 });
 
+Deno.test("checkConflictsAction: clean rebase, no-op push (already up to date) → no branch-pushed log", async () => {
+  const logged: object[] = [];
+  const calls: string[][] = [];
+  const result = await makeAction({
+    runGit: (args) => {
+      calls.push(args);
+      if (args[0] === "push") {
+        return Promise.resolve({
+          code: 0,
+          stdout: "",
+          stderr: "Everything up-to-date",
+        });
+      }
+      return Promise.resolve({ code: 0, stdout: "", stderr: "" });
+    },
+    appendLog: (_dir, _id, entry) => {
+      logged.push(entry);
+      return Promise.resolve();
+    },
+  }).run(
+    makeTicket({
+      ...BASE,
+      prs: [{
+        url: "https://github.com/myorg/myrepo/pull/7",
+        title: "",
+        dependsOn: [],
+        merged: false,
+      }],
+    }),
+    "/state",
+  );
+  assertEquals(result, null);
+  assert(calls.some((a) => a[0] === "push"));
+  assertEquals(logged.length, 0);
+});
+
 // ── push failure after clean rebase ──────────────────────────────────────────
 
 Deno.test("checkConflictsAction: push failure logs error but returns null (transient)", async () => {
