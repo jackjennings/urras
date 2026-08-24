@@ -1,6 +1,4 @@
-import { join } from "@std/path";
 import { estimateTokenCount } from "tokenx";
-import { urrasDir } from "./paths.ts";
 import { adjudicatePhaseModel } from "./pre-phase-adjudication.ts";
 import { advancePhase, type TickDeps } from "./phases/advance.ts";
 import type { Lock } from "./lock.ts";
@@ -9,7 +7,7 @@ import type { TickAction } from "./tick-actions/types.ts";
 import type { MigrationFn } from "./migrations/runner.ts";
 import type { InstallResult } from "./packages.ts";
 import { isApproved, type TicketState } from "./state/types.ts";
-import { mkdir, readTextFile, writeTextFile } from "./filesystem.ts";
+import { readTextFile } from "./filesystem.ts";
 import { CorruptRepoIdentitiesError } from "./providers/github/repo-identity.ts";
 
 const TICK_DEADLINE_MS = 4 * 60 * 60 * 1000;
@@ -72,26 +70,6 @@ export function selectCandidates(
     result.push(candidates[(start + i) % candidates.length]);
   }
   return result;
-}
-
-export async function appendTickLog(entry: object): Promise<void> {
-  const lazyDir = urrasDir();
-  const ts = Temporal.Now.instant().toString();
-  await mkdir(lazyDir, { recursive: true });
-  await writeTextFile(
-    join(lazyDir, "tick.ndjson"),
-    JSON.stringify({ ts, ...entry }) + "\n",
-    { append: true },
-  );
-  try {
-    await writeTextFile(
-      join(lazyDir, "log.ndjson"),
-      JSON.stringify({ ts, ...entry }) + "\n",
-      { append: true },
-    );
-  } catch {
-    // combined log failure must not interrupt tick log writes
-  }
 }
 
 class TickDeadlineError extends Error {}

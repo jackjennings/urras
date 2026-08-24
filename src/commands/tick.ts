@@ -1,6 +1,7 @@
 import { loadConfig } from "../config.ts";
 import { composeTickDeps } from "../compose.ts";
-import { appendTickLog, TickService } from "../tick.ts";
+import { TickService } from "../tick.ts";
+import { appendTickLog } from "../logger.ts";
 import { runUpdate } from "./update.ts";
 import type { Divergence, UpdateOutcome } from "./update.ts";
 import {

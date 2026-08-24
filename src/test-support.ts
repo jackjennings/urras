@@ -1,7 +1,8 @@
 import type { TicketState } from "./state/types.ts";
 import { removeSync } from "./filesystem.ts";
-import { appendTickLog, type TickServiceDeps } from "./tick.ts";
+import type { TickServiceDeps } from "./tick.ts";
 import type { TickDeps } from "./phases/advance.ts";
+import { appendTickLog } from "./logger.ts";
 
 export function makeTicket(overrides: Partial<TicketState> = {}): TicketState {
   return {
