@@ -82,7 +82,8 @@ import {
 } from "./packages.ts";
 import { createMigrationRunner } from "./migrations/runner.ts";
 import type { Migration, StoreMigration } from "./migrations/types.ts";
-import { appendTickLog, type TickServiceDeps } from "./tick.ts";
+import type { TickServiceDeps } from "./tick.ts";
+import { appendTickLog } from "./logger.ts";
 import { resolvePhaseModel } from "./phases/model.ts";
 import { adjudicatePhaseModel } from "./pre-phase-adjudication.ts";
 import {

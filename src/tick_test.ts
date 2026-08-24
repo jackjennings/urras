@@ -9,7 +9,7 @@ import {
 } from "@std/assert";
 import { join } from "@std/path";
 import { assertSpyCall, assertSpyCalls, spy, stub } from "@std/testing/mock";
-import { appendTickLog, selectCandidates, TickService } from "./tick.ts";
+import { selectCandidates, TickService } from "./tick.ts";
 import { adjudicatePhaseModel } from "./pre-phase-adjudication.ts";
 import type { TickDeps } from "./phases/advance.ts";
 import type { Lock } from "./lock.ts";
@@ -30,40 +30,6 @@ Deno.test("implementation.md contains explicit draft PR instruction", async () =
     new URL("./phases/prompts/implementation.md", import.meta.url).pathname,
   );
   assertStringIncludes(content, "pull requests in draft mode");
-});
-
-// ── appendTickLog ─────────────────────────────────────────────────────────────
-
-Deno.test("appendTickLog: writes to combined log without id field", async () => {
-  using lazy = withLazyboyDir();
-  await appendTickLog({ event: "tick-failed", error: "boom" });
-  const combined = await Deno.readTextFile(
-    join(lazy.path, "log.ndjson"),
-  );
-  const parsed = JSON.parse(combined.trim());
-  assertEquals(parsed.event, "tick-failed");
-  assertEquals(parsed.id, undefined);
-});
-
-Deno.test("appendTickLog: tick log entry is unchanged", async () => {
-  using lazy = withLazyboyDir();
-  await appendTickLog({ event: "stale-lock" });
-  const tick = await Deno.readTextFile(
-    join(lazy.path, "tick.ndjson"),
-  );
-  const parsed = JSON.parse(tick.trim());
-  assertEquals(parsed.event, "stale-lock");
-  assertEquals(parsed.id, undefined);
-});
-
-Deno.test("appendTickLog: tick log write succeeds when combined log write fails", async () => {
-  using lazy = withLazyboyDir();
-  await Deno.mkdir(join(lazy.path, "log.ndjson"), { recursive: true });
-  await appendTickLog({ event: "tick-already-running" });
-  const tick = await Deno.readTextFile(
-    join(lazy.path, "tick.ndjson"),
-  );
-  assertEquals(JSON.parse(tick.trim()).event, "tick-already-running");
 });
 
 // ── TickService ────────────────────────────────────────────────────────────────
