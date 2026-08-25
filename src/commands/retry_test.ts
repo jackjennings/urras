@@ -6,12 +6,7 @@ import {
 } from "@std/assert";
 import { assertSpyCalls, spy } from "@std/testing/mock";
 import { join } from "@std/path";
-import {
-  readTicket,
-  StaleTicketWriteError,
-  writeTicket,
-} from "../state/store.ts";
-import type { TicketState } from "../state/types.ts";
+import { writeTicket } from "../state/store.ts";
 import { makeTicket } from "../test-support.ts";
 import { performRetry } from "./retry.ts";
 
@@ -192,52 +187,3 @@ Deno.test(
     }
   },
 );
-
-Deno.test("performRetry: retries once on StaleTicketWriteError", async () => {
-  const stateDir = await Deno.makeTempDir();
-  try {
-    await writeTicket(
-      stateDir,
-      makeTicket({ id: "gh-1", phase: "spec", status: "needs-attention" }),
-    );
-    const fresh = await readTicket(stateDir, "gh-1");
-    let callCount = 0;
-    const writeStub = spy((_sd: string, _t: TicketState): Promise<void> => {
-      callCount++;
-      if (callCount === 1) throw new StaleTicketWriteError("stale");
-      return Promise.resolve();
-    });
-    await performRetry(stateDir, "gh-1", {
-      commitFn: spy(() => Promise.resolve()),
-      writeTicketFn: writeStub,
-      readTicketFn: () => Promise.resolve(fresh),
-    });
-    assertSpyCalls(writeStub, 2);
-  } finally {
-    await Deno.remove(stateDir, { recursive: true });
-  }
-});
-
-Deno.test("performRetry: throws on second StaleTicketWriteError", async () => {
-  const stateDir = await Deno.makeTempDir();
-  try {
-    await writeTicket(
-      stateDir,
-      makeTicket({ id: "gh-1", phase: "spec", status: "needs-attention" }),
-    );
-    const fresh = await readTicket(stateDir, "gh-1");
-    await assertRejects(
-      () =>
-        performRetry(stateDir, "gh-1", {
-          commitFn: spy(() => Promise.resolve()),
-          writeTicketFn: spy((_sd: string, _t: TicketState): Promise<void> => {
-            throw new StaleTicketWriteError("stale");
-          }),
-          readTicketFn: () => Promise.resolve(fresh),
-        }),
-      StaleTicketWriteError,
-    );
-  } finally {
-    await Deno.remove(stateDir, { recursive: true });
-  }
-});

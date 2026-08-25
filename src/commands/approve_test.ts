@@ -6,12 +6,7 @@ import {
 } from "@std/assert";
 import { assertSpyCalls, spy } from "@std/testing/mock";
 import { join } from "@std/path";
-import {
-  readTicket,
-  StaleTicketWriteError,
-  writeTicket,
-} from "../state/store.ts";
-import type { TicketState } from "../state/types.ts";
+import { writeTicket } from "../state/store.ts";
 import { makeTicket } from "../test-support.ts";
 import { performApprove, performApproveCeremony } from "./approve.ts";
 import type { ApprovalRecord } from "../ceremonies/approvals.ts";
@@ -97,49 +92,6 @@ Deno.test(
     }
   },
 );
-
-Deno.test("performApprove: retries once on StaleTicketWriteError", async () => {
-  const dir = await Deno.makeTempDir();
-  try {
-    await writeTicket(dir, makeTicket({ id: "gh-1" }));
-    const fresh = await readTicket(dir, "gh-1");
-    let callCount = 0;
-    const writeStub = spy((_sd: string, _t: TicketState): Promise<void> => {
-      callCount++;
-      if (callCount === 1) throw new StaleTicketWriteError("stale");
-      return Promise.resolve();
-    });
-    await performApprove(dir, "gh-1", {
-      commitFn: spy(() => Promise.resolve()),
-      writeTicketFn: writeStub,
-      readTicketFn: () => Promise.resolve(fresh),
-    });
-    assertSpyCalls(writeStub, 2);
-  } finally {
-    await Deno.remove(dir, { recursive: true });
-  }
-});
-
-Deno.test("performApprove: throws on second StaleTicketWriteError", async () => {
-  const dir = await Deno.makeTempDir();
-  try {
-    await writeTicket(dir, makeTicket({ id: "gh-1" }));
-    const fresh = await readTicket(dir, "gh-1");
-    await assertRejects(
-      () =>
-        performApprove(dir, "gh-1", {
-          commitFn: spy(() => Promise.resolve()),
-          writeTicketFn: spy((_sd: string, _t: TicketState): Promise<void> => {
-            throw new StaleTicketWriteError("stale");
-          }),
-          readTicketFn: () => Promise.resolve(fresh),
-        }),
-      StaleTicketWriteError,
-    );
-  } finally {
-    await Deno.remove(dir, { recursive: true });
-  }
-});
 
 async function makeTestDirs(
   name: string,

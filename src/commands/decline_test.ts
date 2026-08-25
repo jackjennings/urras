@@ -6,12 +6,7 @@ import {
 } from "@std/assert";
 import { assertSpyCalls, spy } from "@std/testing/mock";
 import { join } from "@std/path";
-import {
-  readTicket,
-  StaleTicketWriteError,
-  writeTicket,
-} from "../state/store.ts";
-import type { TicketState } from "../state/types.ts";
+import { writeTicket } from "../state/store.ts";
 import { makeTicket } from "../test-support.ts";
 import { performDecline } from "./decline.ts";
 
@@ -205,49 +200,6 @@ Deno.test(
     }
   },
 );
-
-Deno.test("performDecline: retries once on StaleTicketWriteError", async () => {
-  const dir = await Deno.makeTempDir();
-  try {
-    await writeTicket(dir, makeTicket({ id: "gh-1" }));
-    const fresh = await readTicket(dir, "gh-1");
-    let callCount = 0;
-    const writeStub = spy((_sd: string, _t: TicketState): Promise<void> => {
-      callCount++;
-      if (callCount === 1) throw new StaleTicketWriteError("stale");
-      return Promise.resolve();
-    });
-    await performDecline(dir, "gh-1", undefined, {
-      commitFn: spy(() => Promise.resolve()),
-      writeTicketFn: writeStub,
-      readTicketFn: (_sd: string, _id: string) => Promise.resolve(fresh),
-    });
-    assertSpyCalls(writeStub, 2);
-  } finally {
-    await Deno.remove(dir, { recursive: true });
-  }
-});
-
-Deno.test("performDecline: throws on second StaleTicketWriteError", async () => {
-  const dir = await Deno.makeTempDir();
-  try {
-    await writeTicket(dir, makeTicket({ id: "gh-1" }));
-    const fresh = await readTicket(dir, "gh-1");
-    await assertRejects(
-      () =>
-        performDecline(dir, "gh-1", undefined, {
-          commitFn: spy(() => Promise.resolve()),
-          writeTicketFn: spy((_sd: string, _t: TicketState): Promise<void> => {
-            throw new StaleTicketWriteError("stale");
-          }),
-          readTicketFn: () => Promise.resolve(fresh),
-        }),
-      StaleTicketWriteError,
-    );
-  } finally {
-    await Deno.remove(dir, { recursive: true });
-  }
-});
 
 Deno.test(
   "performDecline: completes normally when killFn throws",

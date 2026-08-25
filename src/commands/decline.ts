@@ -1,9 +1,7 @@
 import {
   appendTicketLog,
   commitTicket,
-  readTicket,
-  StaleTicketWriteError,
-  writeTicket,
+  readTicketWithPatch,
 } from "../state/store.ts";
 import { join } from "@std/path";
 import { deleteRunPid, isPhaseAlive } from "../executor.ts";
@@ -27,13 +25,11 @@ export async function performDecline(
   {
     commitFn = commitTicket,
     killFn = defaultKillFn,
-    readTicketFn = readTicket,
-    writeTicketFn = writeTicket,
+    readTicketFn = readTicketWithPatch,
   }: {
     commitFn?: typeof commitTicket;
     killFn?: (pid: number) => void;
-    readTicketFn?: typeof readTicket;
-    writeTicketFn?: typeof writeTicket;
+    readTicketFn?: typeof readTicketWithPatch;
   } = {},
 ): Promise<{ from: TicketPhase }> {
   const ticketDir = join(stateDir, id);
@@ -52,24 +48,15 @@ export async function performDecline(
 
   await deleteRunPid(ticketDir);
 
-  let ticket = await readTicketFn(stateDir, id);
+  const { ticket, patchTicket } = await readTicketFn(stateDir, id);
   const from = ticket.phase;
 
-  const buildMutation = (t: typeof ticket) => ({
-    ...t,
-    phase: "wont-do" as const,
-    status: "done" as const,
+  await patchTicket({
+    phase: "wont-do",
+    status: "done",
     updated: Temporal.Now.instant().toString(),
-    body: reason ? `${t.body}\n\n---\nDeclined: ${reason}` : t.body,
+    body: reason ? `${ticket.body}\n\n---\nDeclined: ${reason}` : ticket.body,
   });
-
-  try {
-    await writeTicketFn(stateDir, buildMutation(ticket));
-  } catch (e) {
-    if (!(e instanceof StaleTicketWriteError)) throw e;
-    ticket = await readTicketFn(stateDir, id);
-    await writeTicketFn(stateDir, buildMutation(ticket));
-  }
 
   await appendTicketLog(stateDir, id, {
     event: "phase-transition",

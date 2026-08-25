@@ -264,6 +264,23 @@ export async function writeTicket(
   await writeTextFile(join(dir, "meta.md"), raw);
 }
 
+export async function readTicketWithPatch(
+  stateDir: string,
+  id: string,
+): Promise<{
+  ticket: TicketState;
+  patchTicket: (attrs: Partial<TicketState>) => Promise<void>;
+}> {
+  const ticket = await readTicket(stateDir, id);
+  return {
+    ticket,
+    patchTicket: async (attrs) => {
+      const fresh = await readTicket(stateDir, id);
+      await writeTicket(stateDir, { ...fresh, ...attrs });
+    },
+  };
+}
+
 export async function writePhaseOutput(
   stateDir: string,
   id: string,

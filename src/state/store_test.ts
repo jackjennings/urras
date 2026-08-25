@@ -14,6 +14,7 @@ import {
   listLearnings,
   listTickets,
   readTicket,
+  readTicketWithPatch,
   removeLearning,
   StaleTicketWriteError,
   writeLearning,
@@ -1660,6 +1661,35 @@ Deno.test("writeTicket: on-disk hash after write matches readTicket revision", a
     await writeTicket(dir, { ...read, status: "waiting" });
     const read2 = await readTicket(dir, "gh-1");
     assertEquals(read2.status, "waiting");
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("readTicketWithPatch: patchTicket writes attrs on top of current state", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    await writeTicket(dir, makeTicket({ id: "gh-1" }));
+    const { patchTicket } = await readTicketWithPatch(dir, "gh-1");
+    await patchTicket({ status: "waiting" });
+    const result = await readTicket(dir, "gh-1");
+    assertEquals(result.status, "waiting");
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("readTicketWithPatch: patchTicket reads fresh state before writing", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    await writeTicket(dir, makeTicket({ id: "gh-1" }));
+    const { patchTicket } = await readTicketWithPatch(dir, "gh-1");
+    const fresh = await readTicket(dir, "gh-1");
+    await writeTicket(dir, { ...fresh, shortTitle: "External change" });
+    await patchTicket({ status: "waiting" });
+    const result = await readTicket(dir, "gh-1");
+    assertEquals(result.status, "waiting");
+    assertEquals(result.shortTitle, "External change");
   } finally {
     await Deno.remove(dir, { recursive: true });
   }
