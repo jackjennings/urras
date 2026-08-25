@@ -349,6 +349,30 @@ export async function advancePhase(
         return;
       }
       if (exitCode !== 0) {
+        const staleSessionId =
+          ticket.phase === "implementation" || ticket.phase === "merge"
+            ? waitingTicket.phaseSessionIds?.["implementation"]
+            : undefined;
+        if (
+          staleSessionId !== undefined &&
+          (waitingTicket.resumeRetries ?? 0) < 1
+        ) {
+          const { implementation: _impl, ...restSessionIds } =
+            waitingTicket.phaseSessionIds ?? {};
+          await deps.writeTicket(stateDir, {
+            ...waitingTicket,
+            status: "revising",
+            phaseSessionIds: restSessionIds,
+            resumeRetries: 1,
+            updated: now,
+          });
+          await deps.appendLog(stateDir, ticket.id, {
+            event: "resume-retry",
+            phase: ticket.phase,
+            staleSessionId,
+          });
+          return;
+        }
         await deps.writeTicket(stateDir, {
           ...waitingTicket,
           status: "needs-attention",
@@ -613,6 +637,7 @@ export async function advancePhase(
       phase: "merge",
       status: mergeStatus,
       updated: now,
+      resumeRetries: undefined,
     });
     await deps.appendLog(stateDir, ticket.id, {
       event: "phase-transition",
