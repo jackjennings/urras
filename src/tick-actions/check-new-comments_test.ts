@@ -10,6 +10,7 @@ import {
   type CheckNewCommentsDeps,
 } from "./check-new-comments.ts";
 import { makeTicket } from "../test-support.ts";
+import type { TicketState } from "../state/types.ts";
 
 const BASE_GITHUB = {
   id: "github/jackjennings/lazyboy/42",
@@ -57,6 +58,7 @@ function makeDeps(
     appendLog: () => Promise.resolve(),
     fetchGitHubComments: () => Promise.resolve([]),
     fetchJiraComments: () => Promise.resolve([]),
+    fetchPrComments: () => Promise.resolve([]),
     isBot: () => false,
     judgeComment: () => Promise.resolve(true),
     writeContextFile: () => Promise.resolve(),
@@ -64,6 +66,13 @@ function makeDeps(
     ...overrides,
   };
 }
+
+const ACTIVE_PR = {
+  url: "https://github.com/jackjennings/lazyboy/pull/1",
+  title: "PR 1",
+  dependsOn: [],
+  merged: false,
+};
 
 Deno.test("checkNewCommentsAction: applies for github/spec/waiting", () => {
   assert(checkNewCommentsAction(makeDeps()).applies(makeTicket(BASE_GITHUB)));
@@ -459,5 +468,281 @@ Deno.test(
     assertStringIncludes(written[0], "---");
     assertStringIncludes(written[0], "First comment");
     assertStringIncludes(written[0], "Second comment");
+  },
+);
+
+Deno.test(
+  "checkNewCommentsAction: PR comment is kept and flips status to revising",
+  async () => {
+    const writeContextSpy = spy(() => Promise.resolve());
+    const judgeCommentSpy = spy(() => Promise.resolve(true));
+    const result = await checkNewCommentsAction(
+      makeDeps({
+        fetchPrComments: () =>
+          Promise.resolve([
+            {
+              author: "alice",
+              body: "Please fix the edge case",
+              timestamp: "2026-02-01T10:00:00Z",
+            },
+          ]),
+        judgeComment: judgeCommentSpy,
+        writeContextFile: writeContextSpy,
+      }),
+    ).run(
+      makeTicket({ ...BASE_GITHUB, prs: [ACTIVE_PR] }),
+      "/state",
+    );
+    assertEquals((result as { status: string } | null)?.status, "revising");
+    assertSpyCalls(writeContextSpy, 1);
+    assertSpyCalls(judgeCommentSpy, 0);
+  },
+);
+
+Deno.test(
+  "checkNewCommentsAction: bot-authored PR comment is skipped",
+  async () => {
+    const writeContextSpy = spy(() => Promise.resolve());
+    const result = await checkNewCommentsAction(
+      makeDeps({
+        fetchPrComments: () =>
+          Promise.resolve([
+            {
+              author: "lazyboy-bot",
+              body: "Working on it",
+              timestamp: "2026-02-01T10:00:00Z",
+            },
+          ]),
+        isBot: (author) => author === "lazyboy-bot",
+        writeContextFile: writeContextSpy,
+      }),
+    ).run(
+      makeTicket({ ...BASE_GITHUB, prs: [ACTIVE_PR] }),
+      "/state",
+    );
+    assertEquals((result as { status: string } | null)?.status, "waiting");
+    assertSpyCalls(writeContextSpy, 0);
+  },
+);
+
+Deno.test(
+  "checkNewCommentsAction: judgeComment is never called for PR comments",
+  async () => {
+    const judgeCommentSpy = spy(() => Promise.resolve(true));
+    await checkNewCommentsAction(
+      makeDeps({
+        fetchPrComments: () =>
+          Promise.resolve([
+            {
+              author: "alice",
+              body: "Looks good",
+              timestamp: "2026-02-01T10:00:00Z",
+            },
+          ]),
+        judgeComment: judgeCommentSpy,
+      }),
+    ).run(
+      makeTicket({ ...BASE_GITHUB, prs: [ACTIVE_PR] }),
+      "/state",
+    );
+    assertSpyCalls(judgeCommentSpy, 0);
+  },
+);
+
+Deno.test(
+  "checkNewCommentsAction: lastSeenPrCommentTimestamp advances independently of lastSeenCommentTimestamp",
+  async () => {
+    const written: TicketState[] = [];
+    const result = await checkNewCommentsAction(
+      makeDeps({
+        fetchPrComments: () =>
+          Promise.resolve([
+            {
+              author: "alice",
+              body: "Great work",
+              timestamp: "2026-02-01T10:00:00Z",
+            },
+          ]),
+        writeTicket: (_sd, t) => {
+          written.push(t);
+          return Promise.resolve();
+        },
+      }),
+    ).run(
+      makeTicket({
+        ...BASE_GITHUB,
+        lastSeenCommentTimestamp: "2026-01-15T00:00:00Z",
+        prs: [ACTIVE_PR],
+      }),
+      "/state",
+    );
+    assertEquals(
+      (result as TicketState | null)?.lastSeenPrCommentTimestamp,
+      "2026-02-01T10:00:00Z",
+    );
+    assertEquals(
+      (result as TicketState | null)?.lastSeenCommentTimestamp,
+      "2026-01-15T00:00:00Z",
+    );
+    assertEquals(written[0].lastSeenPrCommentTimestamp, "2026-02-01T10:00:00Z");
+    assertEquals(written[0].lastSeenCommentTimestamp, "2026-01-15T00:00:00Z");
+  },
+);
+
+Deno.test(
+  "checkNewCommentsAction: merged PR is skipped; fetchPrComments not called",
+  async () => {
+    const fetchPrSpy = spy(() => Promise.resolve([]));
+    const result = await checkNewCommentsAction(
+      makeDeps({ fetchPrComments: fetchPrSpy }),
+    ).run(
+      makeTicket({
+        ...BASE_GITHUB,
+        prs: [{ ...ACTIVE_PR, merged: true }],
+      }),
+      "/state",
+    );
+    assertEquals(result, null);
+    assertSpyCalls(fetchPrSpy, 0);
+  },
+);
+
+Deno.test(
+  "checkNewCommentsAction: closed PR is skipped; fetchPrComments not called",
+  async () => {
+    const fetchPrSpy = spy(() => Promise.resolve([]));
+    const result = await checkNewCommentsAction(
+      makeDeps({ fetchPrComments: fetchPrSpy }),
+    ).run(
+      makeTicket({
+        ...BASE_GITHUB,
+        prs: [{ ...ACTIVE_PR, closed: true }],
+      }),
+      "/state",
+    );
+    assertEquals(result, null);
+    assertSpyCalls(fetchPrSpy, 0);
+  },
+);
+
+Deno.test(
+  "checkNewCommentsAction: fetchPrComments not called when ticket.prs is empty",
+  async () => {
+    const fetchPrSpy = spy(() => Promise.resolve([]));
+    const result = await checkNewCommentsAction(
+      makeDeps({ fetchPrComments: fetchPrSpy }),
+    ).run(makeTicket({ ...BASE_GITHUB, prs: [] }), "/state");
+    assertEquals(result, null);
+    assertSpyCalls(fetchPrSpy, 0);
+  },
+);
+
+Deno.test(
+  "checkNewCommentsAction: fetchPrComments not called when ticket.prs is undefined",
+  async () => {
+    const fetchPrSpy = spy(() => Promise.resolve([]));
+    const result = await checkNewCommentsAction(
+      makeDeps({ fetchPrComments: fetchPrSpy }),
+    ).run(makeTicket(BASE_GITHUB), "/state");
+    assertEquals(result, null);
+    assertSpyCalls(fetchPrSpy, 0);
+  },
+);
+
+Deno.test(
+  "checkNewCommentsAction: both tracking and PR comments empty returns null",
+  async () => {
+    const writeTicketSpy = spy(() => Promise.resolve());
+    const result = await checkNewCommentsAction(
+      makeDeps({
+        fetchPrComments: () => Promise.resolve([]),
+        writeTicket: writeTicketSpy,
+      }),
+    ).run(
+      makeTicket({ ...BASE_GITHUB, prs: [ACTIVE_PR] }),
+      "/state",
+    );
+    assertEquals(result, null);
+    assertSpyCalls(writeTicketSpy, 0);
+  },
+);
+
+Deno.test(
+  "checkNewCommentsAction: no tracking comments but PR comments exist flips to revising",
+  async () => {
+    const writeContextSpy = spy(() => Promise.resolve());
+    const result = await checkNewCommentsAction(
+      makeDeps({
+        fetchGitHubComments: () => Promise.resolve([]),
+        fetchPrComments: () =>
+          Promise.resolve([
+            {
+              author: "alice",
+              body: "Add error handling",
+              timestamp: "2026-02-01T10:00:00Z",
+            },
+          ]),
+        writeContextFile: writeContextSpy,
+      }),
+    ).run(
+      makeTicket({ ...BASE_GITHUB, prs: [ACTIVE_PR] }),
+      "/state",
+    );
+    assertEquals((result as { status: string } | null)?.status, "revising");
+    assertSpyCalls(writeContextSpy, 1);
+  },
+);
+
+Deno.test(
+  "checkNewCommentsAction: log entry includes prFetched and prKept fields",
+  async () => {
+    const logged: Record<string, unknown>[] = [];
+    await checkNewCommentsAction(
+      makeDeps({
+        fetchPrComments: () =>
+          Promise.resolve([
+            {
+              author: "alice",
+              body: "Nice work",
+              timestamp: "2026-02-01T10:00:00Z",
+            },
+          ]),
+        appendLog: (_sd, _id, entry) => {
+          logged.push(entry as Record<string, unknown>);
+          return Promise.resolve();
+        },
+      }),
+    ).run(
+      makeTicket({ ...BASE_GITHUB, prs: [ACTIVE_PR] }),
+      "/state",
+    );
+    assertEquals(logged[0].prFetched, 1);
+    assertEquals(logged[0].prKept, 1);
+  },
+);
+
+Deno.test(
+  "checkNewCommentsAction: lastSeenPrCommentTimestamp advances even when PR comment is bot-filtered",
+  async () => {
+    const result = await checkNewCommentsAction(
+      makeDeps({
+        fetchPrComments: () =>
+          Promise.resolve([
+            {
+              author: "lazyboy-bot",
+              body: "Automated message",
+              timestamp: "2026-02-01T10:00:00Z",
+            },
+          ]),
+        isBot: (author) => author === "lazyboy-bot",
+      }),
+    ).run(
+      makeTicket({ ...BASE_GITHUB, prs: [ACTIVE_PR] }),
+      "/state",
+    );
+    assertEquals(
+      (result as TicketState | null)?.lastSeenPrCommentTimestamp,
+      "2026-02-01T10:00:00Z",
+    );
   },
 );

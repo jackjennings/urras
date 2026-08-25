@@ -117,6 +117,7 @@ export interface TicketState {
   newRepos?: string[];
   ciHandledRunIds?: string[];
   lastSeenCommentTimestamp?: string;
+  lastSeenPrCommentTimestamp?: string;
   providerDone?: boolean;
   providerPickedUp?: boolean;
   outputRetries?: number;
