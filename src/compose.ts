@@ -65,6 +65,7 @@ import { createRemoteRepoAction } from "./tick-actions/create-remote-repo.ts";
 import { checkMergedPRAction } from "./tick-actions/check-merged-pr.ts";
 import { cleanOrphanedWorktreesAction } from "./tick-actions/clean-orphaned-worktrees.ts";
 import { reconcilePRsAction } from "./tick-actions/reconcile-prs.ts";
+import { resolvePipelineAction } from "./tick-actions/resolve-pipeline.ts";
 import { checkConflictsAction } from "./tick-actions/check-conflicts.ts";
 import { resolveConflictsAction } from "./tick-actions/resolve-conflicts.ts";
 import { spawnCIFixAction } from "./tick-actions/spawn-ci-fix.ts";
@@ -113,6 +114,10 @@ import {
   writeTextFile,
 } from "./filesystem.ts";
 import { PHASE_SEQUENCE } from "./phases/types.ts";
+import {
+  formatAvailablePipelines,
+  listAvailablePipelines,
+} from "./phases/pipeline.ts";
 import { HttpClient } from "./http-client.ts";
 import { ClaudeLanguageModel } from "./models/claude.ts";
 import { unappliedMigrationsCheck } from "./doctor/checks/unapplied-migrations.ts";
@@ -466,6 +471,31 @@ export function composeTickDeps(
           );
         }
       },
+    }),
+    resolvePipelineAction({
+      readIntakeOutput: async (ticketDir: string) => {
+        const files: string[] = [];
+        try {
+          for await (const entry of readDir(ticketDir)) {
+            if (
+              entry.isFile &&
+              /^\d{8}T\d{6}-intake\.md$/.test(entry.name)
+            ) {
+              files.push(entry.name);
+            }
+          }
+        } catch {
+          return null;
+        }
+        if (files.length === 0) return null;
+        files.sort();
+        return readTextFile(join(ticketDir, files[files.length - 1]));
+      },
+      run: captureCommandRunner(),
+      extensionsDir: config.extensions.dir,
+      defaultPipelineName: config.pipelines?.default,
+      writeTicket,
+      appendLog: appendTicketLog,
     }),
     createRemoteRepoAction({
       createRepo: (slug) => githubProvider.createRepo(slug),
@@ -1134,6 +1164,10 @@ export function composeTickDeps(
           config.github.repos,
         )
           .then(formatRepoCorpus),
+      buildPipelineOptionsText: () =>
+        listAvailablePipelines(config.extensions.dir).then(
+          formatAvailablePipelines,
+        ),
       adjudicatePhaseModel,
       spawnOutlierAnalysis: async (
         ticketId,
