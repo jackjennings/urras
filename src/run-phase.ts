@@ -21,6 +21,7 @@ import { deriveProjectPath } from "./phases/project-path.ts";
 import matter from "gray-matter";
 import { captureCommandRunner, type CommandRunner } from "./apfel.ts";
 import { filterPrinciples } from "./judge-principles.ts";
+import type { OllamaLanguageModel } from "./models/ollama.ts";
 
 export function getPiEnvironmentVariables(
   home: string,
@@ -92,11 +93,13 @@ export async function buildContextFiles(
     stateDir,
     includePrinciples = true,
     run,
+    ollamaModels,
   }: {
     ticketDir: string;
     stateDir: string;
     includePrinciples?: boolean;
     run?: CommandRunner;
+    ollamaModels?: OllamaLanguageModel[];
   },
 ): Promise<{ contextFiles: string[]; tempPrinciplesFile?: string }> {
   const principlesPath = join(stateDir, "principles.md");
@@ -132,6 +135,7 @@ export async function buildContextFiles(
             filterContext,
             PRINCIPLES_TOP_K,
             run,
+            ollamaModels,
           );
           if (indices === null) throw new Error("llm-failed");
 
