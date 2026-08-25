@@ -337,7 +337,9 @@ Deno.test("selfReview: uses ollamaModels before Claude when provided", async () 
     const ollamaFetch = spy(
       (_url: unknown, _init?: RequestInit) =>
         Promise.resolve(
-          new Response(JSON.stringify({ response: "APPROVE" }), { status: 200 }),
+          new Response(JSON.stringify({ response: "APPROVE" }), {
+            status: 200,
+          }),
         ),
     ) as unknown as typeof fetch;
     const ollama = new OllamaLanguageModel(ollamaFetch, { model: "test" });

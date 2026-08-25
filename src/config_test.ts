@@ -1275,7 +1275,10 @@ Deno.test("loadConfig: [ollama] with models and url parses correctly", async () 
     `[github]\nrepos = []\n[state]\ndir = "~/tmp"\n[tick]\nconcurrency = 1\n[ollama]\nmodels = ["qwen2.5:7b"]\nurl = "http://host:11434"\n`,
   );
   const cfg = await loadConfig(join(dir, "config.toml"));
-  assertEquals(cfg.ollama, { models: ["qwen2.5:7b"], url: "http://host:11434" });
+  assertEquals(cfg.ollama, {
+    models: ["qwen2.5:7b"],
+    url: "http://host:11434",
+  });
   await Deno.remove(dir, { recursive: true });
 });
 

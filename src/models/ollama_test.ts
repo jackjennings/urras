@@ -3,7 +3,10 @@ import { spy } from "@std/testing/mock";
 import { checkOllamaAvailable, OllamaLanguageModel } from "./ollama.ts";
 
 function makeFetch(
-  handler: (url: string, init?: RequestInit) => { status: number; body?: string },
+  handler: (
+    url: string,
+    init?: RequestInit,
+  ) => { status: number; body?: string },
 ): typeof fetch {
   return spy(
     (url: unknown, init?: RequestInit) => {

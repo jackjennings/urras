@@ -412,9 +412,9 @@ export function composeTickDeps(
 
   const ollamaModels: OllamaLanguageModel[] = config.ollama
     ? config.ollama.models.map(
-        (model) =>
-          new OllamaLanguageModel(fetch, { model, url: config.ollama!.url }),
-      )
+      (model) =>
+        new OllamaLanguageModel(fetch, { model, url: config.ollama!.url }),
+    )
     : [];
 
   const tickActions = [
@@ -987,7 +987,8 @@ export function composeTickDeps(
         if (jiraEmail) botLogins.add(jiraEmail);
         return (author: string) => botLogins.has(author);
       })(),
-      judgeComment: (body) => judgeComment(body, captureCommandRunner(), ollamaModels),
+      judgeComment: (body) =>
+        judgeComment(body, captureCommandRunner(), ollamaModels),
       writeContextFile: async (ticketDir, content) => {
         const timestamp = compactTimestamp(
           Temporal.Now.zonedDateTimeISO("UTC"),
@@ -1102,7 +1103,11 @@ export function composeTickDeps(
         if (!config.tick.principles) return;
         const extracted = extractPrinciples(outputContent);
         if (!extracted) return;
-        const scope = await judgePrinciples(extracted, captureCommandRunner(), ollamaModels);
+        const scope = await judgePrinciples(
+          extracted,
+          captureCommandRunner(),
+          ollamaModels,
+        );
         if (scope === null) return;
         const globalPath = join(sd, "principles.md");
         let targetPath: string;

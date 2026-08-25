@@ -258,7 +258,9 @@ function makeOllama(responseBody: string): OllamaLanguageModel {
   const _fetch = spy(
     (_url: unknown, _init?: RequestInit) =>
       Promise.resolve(
-        new Response(JSON.stringify({ response: responseBody }), { status: 200 }),
+        new Response(JSON.stringify({ response: responseBody }), {
+          status: 200,
+        }),
       ),
   ) as unknown as typeof fetch;
   return new OllamaLanguageModel(_fetch, { model: "test" });
@@ -278,7 +280,9 @@ Deno.test("judgePrinciples: uses ollamaModels before Claude when apfel fails", a
 
 Deno.test("filterPrinciples: uses ollamaModels before Claude when apfel fails", async () => {
   const ollama = makeOllama(JSON.stringify({ indices: [1] }));
-  const run = spy((_args: string[]) => Promise.resolve({ code: 1, stdout: "" }));
+  const run = spy((_args: string[]) =>
+    Promise.resolve({ code: 1, stdout: "" })
+  );
   const result = await filterPrinciples(
     ["first", "second", "third"],
     "context",
