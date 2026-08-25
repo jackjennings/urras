@@ -89,4 +89,23 @@ For multiple artifact types:
 artifacts: [code, document]
 ```
 
+## Pipeline
+
+If an `## Available Pipeline Templates` section appears below this prompt, judge
+whether this ticket is simple enough to use one of the lighter templates listed
+there: a single, self-contained change with no interface or API changes and no
+more than one distinct acceptance criterion. If so, name it in your output file
+body as a fenced YAML block under `## Pipeline`, using the same format as
+`## Proposed Scope`, along with a one-sentence reason. Do not use the Edit tool
+to write to `meta.md`. Do not include `pipeline` in the frontmatter.
+
+```yaml
+pipeline: fast
+reason: Single-file config change, no interface changes, one acceptance criterion.
+```
+
+Omit the `## Pipeline` section entirely to use the default pipeline — absence is
+the default. If no `## Available Pipeline Templates` section appears below this
+prompt, always omit `## Pipeline`.
+
 {{principles}}
