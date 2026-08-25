@@ -134,6 +134,8 @@ export async function readTicket(
     updated: data.updated,
     body: content.trim(),
     phases: data.phases as TicketState["phases"],
+    pipeline: data.pipeline as string | undefined,
+    pipelineSteps: data.pipelineSteps as TicketState["pipelineSteps"],
     outputRetries: data.outputRetries as number | undefined,
     resumeRetries: data.resumeRetries as number | undefined,
     artifacts: (data.artifacts as ArtifactType[] | undefined) ?? ["code"],
@@ -188,6 +190,10 @@ export async function writeTicket(
     frontmatter.shortTitle = ticket.shortTitle;
   }
   if (ticket.phases !== undefined) frontmatter.phases = ticket.phases;
+  if (ticket.pipeline !== undefined) frontmatter.pipeline = ticket.pipeline;
+  if (ticket.pipelineSteps !== undefined) {
+    frontmatter.pipelineSteps = ticket.pipelineSteps;
+  }
   frontmatter.artifacts = ticket.artifacts;
   if (ticket.documents !== undefined) {
     frontmatter.documents = ticket.documents;

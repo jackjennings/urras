@@ -1545,3 +1545,28 @@ Deno.test("writeTicket/readTicket: artifacts:[code,document] round-trips", async
     await Deno.remove(dir, { recursive: true });
   }
 });
+
+Deno.test("writeTicket: round-trips pipeline and pipelineSteps through meta.md", async () => {
+  const dir = await Deno.makeTempDir();
+  const ticket: TicketState = makeTicket({
+    id: "gh-9",
+    pipeline: "fast",
+    pipelineSteps: [{ phase: "intake" }, { phase: "implementation" }],
+  });
+  await writeTicket(dir, ticket);
+  const read = await readTicket(dir, "gh-9");
+  assertEquals(read.pipeline, "fast");
+  assertEquals(read.pipelineSteps, [
+    { phase: "intake" },
+    { phase: "implementation" },
+  ]);
+  await Deno.remove(dir, { recursive: true });
+});
+
+Deno.test("writeTicket: omits pipeline and pipelineSteps from frontmatter when not set", async () => {
+  const dir = await Deno.makeTempDir();
+  await writeTicket(dir, makeTicket({ id: "gh-10" }));
+  const raw = await Deno.readTextFile(join(dir, "gh-10", "meta.md"));
+  assertFalse(raw.includes("pipeline"));
+  await Deno.remove(dir, { recursive: true });
+});

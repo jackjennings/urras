@@ -1,4 +1,4 @@
-import { FULL_PHASE_SEQUENCE } from "../phases/types.ts";
+import { type ActivePhase, FULL_PHASE_SEQUENCE } from "../phases/types.ts";
 
 export type TicketPhase = typeof FULL_PHASE_SEQUENCE[number];
 
@@ -128,6 +128,8 @@ export interface TicketState {
   body: string;
   phases?: PhaseModelConfig;
   artifacts: ArtifactType[];
+  pipeline?: string;
+  pipelineSteps?: { phase: ActivePhase }[];
   documents?: { url: string; title: string }[];
   workItems?: { url: string; title: string }[];
 }
@@ -205,4 +207,5 @@ export interface Config {
   phases?: {
     defaults?: PhaseModelConfig;
   };
+  pipelines?: { default?: string };
 }
