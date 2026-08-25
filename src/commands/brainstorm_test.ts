@@ -27,12 +27,12 @@ Deno.test("buildSystemPrompt: includes scope", () => {
   assertStringIncludes(prompt, "org/my-repo");
 });
 
-Deno.test("buildSystemPrompt: includes lazyboy capture with correct scope flag", () => {
+Deno.test("buildSystemPrompt: includes ur capture with correct scope flag", () => {
   const prompt = buildSystemPrompt({
     scope: "org/my-repo",
     provider: "github",
   });
-  assertStringIncludes(prompt, "lazyboy capture");
+  assertStringIncludes(prompt, "ur capture");
   assertStringIncludes(prompt, "--scope org/my-repo");
 });
 
@@ -112,4 +112,24 @@ Deno.test("performBrainstorm: auto-selects single scope and passes it to spawn",
   );
   assertSpyCalls(spawnSpy, 1);
   assertStringIncludes(capturedPrompt, "org/my-repo");
+});
+
+Deno.test("performBrainstorm: throws on stdin EOF during scope selection", async () => {
+  const config: Config = {
+    ...baseConfig,
+    github: { repos: ["org/a", "org/b"] },
+  };
+  await assertRejects(
+    () =>
+      performBrainstorm(
+        {},
+        {
+          loadConfig: () => Promise.resolve(config),
+          prompt: () => Promise.resolve(null),
+          spawn: () => Promise.resolve(0),
+        },
+      ),
+    Error,
+    "stdin closed",
+  );
 });

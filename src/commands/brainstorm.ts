@@ -18,14 +18,14 @@ export function buildSystemPrompt(opts: {
     "When the user is satisfied and ready to file the ticket, call the following command using the Bash tool:",
     "",
     "```",
-    `lazyboy capture --title "<concise title>" --scope ${opts.scope} --body "<markdown body>" --artifact code`,
+    `ur capture --title "<concise title>" --scope ${opts.scope} --body "<markdown body>"`,
     "```",
     "",
     "Format the --body value as Markdown with exactly two sections:",
     "  ## Problem",
     "  ## Proposed Solution",
     "",
-    "Do not call lazyboy capture until the user explicitly confirms they are done refining.",
+    "Do not call ur capture until the user explicitly confirms they are done refining.",
   ];
   if (opts.initialIdea) {
     lines.push("", `The user's initial idea: ${opts.initialIdea}`);
@@ -33,11 +33,11 @@ export function buildSystemPrompt(opts: {
   return lines.join("\n");
 }
 
-async function defaultPrompt(question: string): Promise<string> {
+async function defaultPrompt(question: string): Promise<string | null> {
   await Deno.stdout.write(new TextEncoder().encode(`${question} `));
   const buf = new Uint8Array(256);
   const n = await Deno.stdin.read(buf);
-  if (n === null) return "";
+  if (n === null) return null;
   return new TextDecoder().decode(buf.subarray(0, n)).trim();
 }
 
@@ -56,7 +56,7 @@ export async function performBrainstorm(
   opts: { initialIdea?: string },
   deps?: {
     loadConfig?: () => Promise<Config>;
-    prompt?: (question: string) => Promise<string>;
+    prompt?: (question: string) => Promise<string | null>;
     spawn?: (prompt: string) => Promise<number>;
   },
 ): Promise<number> {
@@ -85,6 +85,7 @@ export async function performBrainstorm(
     let selection = -1;
     while (selection < 1 || selection > scopes.length) {
       const raw = await promptFn(`Enter a number (1-${scopes.length}):`);
+      if (raw === null) throw new Error("brainstorm: no input (stdin closed)");
       const parsed = parseInt(raw, 10);
       if (!isNaN(parsed) && parsed >= 1 && parsed <= scopes.length) {
         selection = parsed;
@@ -108,7 +109,7 @@ export async function performBrainstorm(
 export const brainstorm: Command = {
   name: "brainstorm",
   description: "start an interactive Claude session to draft a ticket",
-  usage: "[initial idea]",
+  usage: "ur brainstorm [initial idea]",
   async run(args) {
     const initialIdea = args.length > 0 ? args.join(" ") : undefined;
     try {

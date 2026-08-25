@@ -1,5 +1,15 @@
-import { assertEquals, assertStringIncludes } from "@std/assert";
-import { collectScopes, inferProvider, validateScope } from "./capture.ts";
+import {
+  assertArrayIncludes,
+  assertEquals,
+  assertRejects,
+  assertStringIncludes,
+} from "@std/assert";
+import {
+  collectScopes,
+  inferProvider,
+  performCapture,
+  validateScope,
+} from "./capture.ts";
 import type { Config } from "../state/types.ts";
 
 const baseConfig: Config = {
@@ -51,4 +61,43 @@ Deno.test("validateScope: unknown scope returns error listing valid scopes", () 
 
 Deno.test("validateScope: jira project key matches exactly", () => {
   assertEquals(validateScope("MYPROJ", ["org/alpha", "MYPROJ"]), null);
+});
+
+Deno.test("performCapture: calls gh with --assignee @me", async () => {
+  const calls: string[][] = [];
+  const config: Config = {
+    ...baseConfig,
+    agent: { type: "claude-code" },
+    github: { repos: ["org/repo"] },
+  };
+  await performCapture(
+    { title: "test", scope: "org/repo", body: "", artifact: "code" },
+    {
+      loadConfig: () => Promise.resolve(config),
+      runGh: ({ args }) => {
+        calls.push(args);
+        return Promise.resolve({
+          code: 0,
+          stdout: "https://github.com/org/repo/issues/1",
+        });
+      },
+    },
+  );
+  assertArrayIncludes(calls[0], ["--assignee", "@me"]);
+});
+
+Deno.test("performCapture: throws on unknown scope", async () => {
+  const config: Config = {
+    ...baseConfig,
+    github: { repos: ["org/alpha"] },
+  };
+  await assertRejects(
+    () =>
+      performCapture(
+        { title: "t", scope: "org/unknown", body: "", artifact: "code" },
+        { loadConfig: () => Promise.resolve(config) },
+      ),
+    Error,
+    "org/unknown",
+  );
 });

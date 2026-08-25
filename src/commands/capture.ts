@@ -33,7 +33,9 @@ function parseFlags(args: string[]): Record<string, string> {
   return flags;
 }
 
-type GhRunner = (args: string[]) => Promise<{ code: number; stdout: string }>;
+type GhRunner = (
+  opts: { args: string[]; env?: Record<string, string> },
+) => Promise<{ code: number; stdout: string }>;
 
 export async function performCapture(
   opts: { title: string; scope: string; body: string; artifact: string },
@@ -42,21 +44,33 @@ export async function performCapture(
     runGh?: GhRunner;
     fetch?: typeof globalThis.fetch;
   },
-): Promise<void> {
+): Promise<number> {
   const config = await (deps?.loadConfig ?? defaultLoadConfig)();
   const validScopes = collectScopes(config);
   const scopeError = validateScope(opts.scope, validScopes);
   if (scopeError) {
-    console.error(scopeError);
-    Deno.exit(1);
+    throw new Error(scopeError);
   }
 
   const provider = inferProvider(opts.scope);
 
   if (provider === "github") {
-    const runGh: GhRunner = deps?.runGh ?? (async (args) => {
+    const org = opts.scope.split("/")[0];
+    const env: Record<string, string> = { ...Deno.env.toObject() };
+    if (config.github.accounts && config.github.orgs) {
+      const accountName = config.github.orgs[org];
+      if (accountName) {
+        const account = config.github.accounts[accountName];
+        if (account) {
+          const token = Deno.env.get(account.tokenEnv);
+          if (token) env["GH_TOKEN"] = token;
+        }
+      }
+    }
+    const runGh: GhRunner = deps?.runGh ?? (async ({ args, env: e }) => {
       const result = await new Deno.Command("gh", {
         args,
+        env: e,
         stdout: "piped",
         stderr: "inherit",
       }).output();
@@ -65,34 +79,81 @@ export async function performCapture(
         stdout: new TextDecoder().decode(result.stdout).trim(),
       };
     });
-    const { code, stdout } = await runGh([
-      "issue",
-      "create",
-      "--repo",
-      opts.scope,
-      "--title",
-      opts.title,
-      "--body",
-      opts.body,
-    ]);
-    if (code !== 0) Deno.exit(code);
+    const { code, stdout } = await runGh({
+      args: [
+        "issue",
+        "create",
+        "--repo",
+        opts.scope,
+        "--title",
+        opts.title,
+        "--assignee",
+        "@me",
+        "--body",
+        opts.body,
+      ],
+      env,
+    });
+    if (code !== 0) return code;
     console.log(stdout);
-    return;
+    return 0;
   }
 
   if (!config.jira) {
-    console.error("capture: Jira is not configured");
-    Deno.exit(1);
+    throw new Error("capture: Jira is not configured");
   }
   const email = Deno.env.get("JIRA_EMAIL");
   const apiToken = Deno.env.get("JIRA_API_TOKEN");
   if (!email || !apiToken) {
-    console.error("capture: JIRA_EMAIL and JIRA_API_TOKEN must be set");
-    Deno.exit(1);
+    throw new Error("capture: JIRA_EMAIL and JIRA_API_TOKEN must be set");
   }
   const auth = btoa(`${email}:${apiToken}`);
-  const url = `${config.jira.baseUrl}/rest/api/3/issue`;
   const fetchFn = deps?.fetch ?? globalThis.fetch;
+
+  let accountId: string | undefined;
+  try {
+    const myselfRes = await fetchFn(
+      `${config.jira.baseUrl}/rest/api/3/myself`,
+      {
+        headers: {
+          Authorization: `Basic ${auth}`,
+          Accept: "application/json",
+        },
+      },
+    );
+    if (myselfRes.ok) {
+      const myselfData = (await myselfRes.json()) as { accountId: string };
+      accountId = myselfData.accountId;
+    } else {
+      console.error(
+        `capture: could not fetch Jira current user (${myselfRes.status}); issue will be unassigned`,
+      );
+    }
+  } catch {
+    console.error(
+      "capture: could not fetch Jira current user; issue will be unassigned",
+    );
+  }
+
+  const url = `${config.jira.baseUrl}/rest/api/3/issue`;
+  const fields: Record<string, unknown> = {
+    project: { key: config.jira.project },
+    summary: opts.title,
+    description: {
+      type: "doc",
+      version: 1,
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: opts.body || opts.title }],
+        },
+      ],
+    },
+    issuetype: { name: "Task" },
+  };
+  if (accountId) {
+    fields.assignee = { accountId };
+  }
   const res = await fetchFn(url, {
     method: "POST",
     headers: {
@@ -100,51 +161,41 @@ export async function performCapture(
       Accept: "application/json",
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      fields: {
-        project: { key: config.jira.project },
-        summary: opts.title,
-        description: {
-          type: "doc",
-          version: 1,
-          content: [
-            {
-              type: "paragraph",
-              content: [{ type: "text", text: opts.body || opts.title }],
-            },
-          ],
-        },
-        issuetype: { name: "Task" },
-      },
-    }),
+    body: JSON.stringify({ fields }),
   });
   if (!res.ok) {
     const text = await res.text();
-    console.error(`capture: Jira API error ${res.status}: ${text}`);
-    Deno.exit(1);
+    throw new Error(`capture: Jira API error ${res.status}: ${text}`);
   }
   const data = (await res.json()) as { key: string };
   console.log(`${config.jira.baseUrl}/browse/${data.key}`);
+  return 0;
 }
 
 export const capture: Command = {
   name: "capture",
   description: "create a ticket in the configured provider",
   usage:
-    "--title <title> --scope <org/repo|project-key> [--body <text>] [--artifact code|document|work]",
+    "ur capture --title <title> --scope <org/repo|project-key> [--body <text>] [--artifact code|document|work]",
   async run(args) {
     const flags = parseFlags(args);
     if (!flags.title || !flags.scope) {
       console.error(
-        "Usage: lazyboy capture --title <title> --scope <org/repo|project-key> [--body <text>] [--artifact code|document|work]",
+        "Usage: ur capture --title <title> --scope <org/repo|project-key> [--body <text>] [--artifact code|document|work]",
       );
       Deno.exit(1);
     }
-    await performCapture({
-      title: flags.title,
-      scope: flags.scope,
-      body: flags.body ?? "",
-      artifact: flags.artifact ?? "code",
-    });
+    try {
+      const code = await performCapture({
+        title: flags.title,
+        scope: flags.scope,
+        body: flags.body ?? "",
+        artifact: flags.artifact ?? "code",
+      });
+      Deno.exit(code);
+    } catch (e) {
+      console.error(e instanceof Error ? e.message : String(e));
+      Deno.exit(1);
+    }
   },
 };
