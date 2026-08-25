@@ -509,6 +509,75 @@ model = "claude-opus-4-5"
   await Deno.remove(dir, { recursive: true });
 });
 
+Deno.test("loadConfig parses [pipelines].default", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `
+[github]
+repos = []
+
+[state]
+dir = "~/code"
+
+[tick]
+concurrency = 1
+
+[pipelines]
+default = "thorough"
+`,
+  );
+  const cfg = await loadConfig(join(dir, "config.toml"));
+  assertEquals(cfg.pipelines?.default, "thorough");
+  await Deno.remove(dir, { recursive: true });
+});
+
+Deno.test("loadConfig: pipelines is undefined when [pipelines] absent", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `
+[github]
+repos = []
+
+[state]
+dir = "~/code"
+
+[tick]
+concurrency = 1
+`,
+  );
+  const cfg = await loadConfig(join(dir, "config.toml"));
+  assertEquals(cfg.pipelines, undefined);
+  await Deno.remove(dir, { recursive: true });
+});
+
+Deno.test("loadConfig: throws when [pipelines].default is not a string", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `
+[github]
+repos = []
+
+[state]
+dir = "~/code"
+
+[tick]
+concurrency = 1
+
+[pipelines]
+default = 5
+`,
+  );
+  await assertRejects(
+    () => loadConfig(join(dir, "config.toml")),
+    Error,
+    "[pipelines].default must be a string",
+  );
+  await Deno.remove(dir, { recursive: true });
+});
+
 Deno.test("loadConfig parses [agent].type", async () => {
   const dir = await Deno.makeTempDir();
   await Deno.writeTextFile(

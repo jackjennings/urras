@@ -67,6 +67,14 @@ export async function loadConfig(path?: string): Promise<Config> {
     | undefined;
   const phasesDefaults = phasesRaw?.defaults as PhaseModelConfig | undefined;
 
+  const pipelinesRaw = parsed.pipelines as { default?: unknown } | undefined;
+  if (
+    pipelinesRaw?.default !== undefined &&
+    typeof pipelinesRaw.default !== "string"
+  ) {
+    throw new Error("config.toml: [pipelines].default must be a string");
+  }
+
   const tickRaw = parsed.tick as Record<string, unknown> | undefined;
   const resolveCIFailuresRaw = tickRaw?.resolve_ci_failures;
   if (
@@ -196,6 +204,9 @@ export async function loadConfig(path?: string): Promise<Config> {
     todoTxt,
     phases: phasesDefaults !== undefined
       ? { defaults: phasesDefaults }
+      : undefined,
+    pipelines: pipelinesRaw?.default !== undefined
+      ? { default: pipelinesRaw.default as string }
       : undefined,
   };
 }
