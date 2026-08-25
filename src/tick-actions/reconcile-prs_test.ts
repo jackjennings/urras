@@ -443,6 +443,46 @@ Deno.test(
   },
 );
 
+// ── out-of-scope PR → worktreeKey undefined ───────────────────────────────────
+
+Deno.test(
+  "reconcilePRsAction: PR from repo not in worktrees and no branch match → worktreeKey undefined",
+  async () => {
+    const result = await makeAction({
+      readImplementationOutput: () =>
+        Promise.resolve(
+          "https://github.com/myorg/main-repo/pull/1\nhttps://github.com/myorg/dep-repo/pull/2",
+        ),
+      getPRInfo: (url) =>
+        url.includes("main-repo")
+          ? Promise.resolve({
+            url,
+            title: "Main PR",
+            baseRefName: "main",
+            headRefName: "gh-42",
+          })
+          : Promise.resolve({
+            url,
+            title: "Dep PR",
+            baseRefName: "main",
+            headRefName: "dep-branch",
+          }),
+    }).run(
+      makeTicket({
+        worktrees: {
+          "myorg/main-repo": { path: "/wt/main-repo", branch: "gh-42" },
+        },
+      }),
+      "/state",
+    );
+    assertEquals(result?.prs?.length, 2);
+    const mainPr = result?.prs?.find((p) => p.url.includes("main-repo"));
+    const depPr = result?.prs?.find((p) => p.url.includes("dep-repo"));
+    assertEquals(mainPr?.worktreeKey, "myorg/main-repo");
+    assertEquals(depPr?.worktreeKey, undefined);
+  },
+);
+
 // ── writeTicket called exactly once ──────────────────────────────────────────
 
 Deno.test(
