@@ -137,6 +137,15 @@ packages = ["agent-browser"]
 # the section is present; `~/` is expanded to the home directory.
 [todo_txt]
 file = "~/todo.txt"
+
+# Enables locally-served Ollama models for ancillary LLM calls (judgePrinciples,
+# judgeComment, selfReview, filterPrinciples). Models are tried in order before
+# falling back to claude-haiku-4-5. `models` is required when the section is
+# present; omitting it or leaving it empty is a startup error. `url` defaults to
+# http://localhost:11434. Run `ur doctor` to verify Ollama is reachable.
+[ollama]
+models = ["qwen2.5:7b"]
+# url = "http://localhost:11434"  # optional; defaults to localhost
 ```
 
 ### GitHub token configuration
