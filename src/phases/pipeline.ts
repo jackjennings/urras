@@ -16,10 +16,10 @@ export const DEFAULT_PIPELINE_STEPS: PipelineStep[] = PHASE_SEQUENCE.map(
 );
 
 export function nextPipelinePhase(
-  steps: { phase: ActivePhase | string }[],
+  steps: PipelineStep[],
   current: ActivePhase,
 ): ActivePhase | "done" {
   const idx = steps.findIndex((s) => s.phase === current);
   if (idx === -1 || idx === steps.length - 1) return "done";
-  return steps[idx + 1].phase as ActivePhase | "done";
+  return steps[idx + 1].phase;
 }

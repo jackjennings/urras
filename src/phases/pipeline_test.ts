@@ -1,5 +1,9 @@
 import { assertEquals } from "@std/assert";
-import { DEFAULT_PIPELINE_STEPS, nextPipelinePhase } from "./pipeline.ts";
+import {
+  DEFAULT_PIPELINE_STEPS,
+  nextPipelinePhase,
+  type PipelineStep,
+} from "./pipeline.ts";
 
 Deno.test("DEFAULT_PIPELINE_STEPS matches the five runner phases in order", () => {
   assertEquals(DEFAULT_PIPELINE_STEPS, [
@@ -37,6 +41,9 @@ Deno.test("nextPipelinePhase: walks a short two-step template directly from inta
 });
 
 Deno.test("nextPipelinePhase: returns 'done' for a phase not present in steps", () => {
-  const steps = [{ phase: "intake" }, { phase: "implementation" }];
+  const steps: PipelineStep[] = [
+    { phase: "intake" },
+    { phase: "implementation" },
+  ];
   assertEquals(nextPipelinePhase(steps, "spec"), "done");
 });
