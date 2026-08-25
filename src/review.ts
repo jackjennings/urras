@@ -41,6 +41,7 @@ import {
   readTicketWithPatch,
   writePhaseOutput,
 } from "./state/store.ts";
+import type { TicketState } from "./state/types.ts";
 import { buildContextFiles } from "./run-phase.ts";
 import { CONTEXT_PHASE_SEQUENCE } from "./phases/types.ts";
 import { compactTimestamp } from "./timestamp.ts";
@@ -510,6 +511,42 @@ function rejectionBannerLines(
   return [header, ...bodyLines];
 }
 
+export function renderTicketTab(ticket: TicketState): string {
+  const lines: string[] = [
+    `# ${ticket.title}`,
+    "",
+    `**URL:** ${ticket.url}`,
+    `**Phase:** ${ticket.phase} / **Status:** ${ticket.status}`,
+    "",
+    "**Scope:**",
+    ...ticket.scope.map((s) => `- ${s}`),
+    "",
+    "**Approvals:**",
+    ...ticket.approvals.map((a) => {
+      const ts = Temporal.Instant.from(a.timestamp).toZonedDateTimeISO("UTC");
+      return `- ${compactTimestamp(ts)} — ${a.actor} (${a.phase})`;
+    }),
+    "",
+    "**Worktrees:**",
+    ...Object.entries(ticket.worktrees).map(
+      ([key, info]) => `- ${key}: ${info.path} (${info.branch})`,
+    ),
+    "",
+  ];
+
+  if (ticket.prs && ticket.prs.length > 0) {
+    lines.push("**PRs:**");
+    for (const pr of ticket.prs) {
+      lines.push(`- ${pr.url}`);
+    }
+    lines.push("");
+  }
+
+  lines.push("---", "", ticket.body);
+
+  return lines.join("\n");
+}
+
 export async function review(
   id: string,
   {
@@ -646,11 +683,22 @@ export async function review(
     }
   }
 
-  let activeTabIndex = tabs.length - 1;
+  const ticketContent = renderTicketTab(ticket);
+  const ticketMd = new Markdown(ticketContent, 1, 0, markdownTheme);
+  const ticketTabContent: TabContent = {
+    getLines: (w) => ticketMd.render(w),
+    onInvalidate: () => ticketMd.invalidate(),
+    headings: [],
+    totalSourceLines: 0,
+  };
+  const allTabs = [{ phaseName: "ticket" }, ...tabs];
+  const allTabContents = [ticketTabContent, ...tabContents];
+
+  let activeTabIndex = allTabs.length - 1;
   let editorVisible = true;
-  let headings = tabContents[activeTabIndex].headings;
-  let totalSourceLines = tabContents[activeTabIndex].totalSourceLines;
-  let currentOnInvalidate = tabContents[activeTabIndex].onInvalidate;
+  let headings = allTabContents[activeTabIndex].headings;
+  let totalSourceLines = allTabContents[activeTabIndex].totalSourceLines;
+  let currentOnInvalidate = allTabContents[activeTabIndex].onInvalidate;
 
   const available = await checkApfelAvailable(defaultCommandRunner());
   const server = available
@@ -687,9 +735,9 @@ export async function review(
   });
 
   const contentPane = new ScrollPane({
-    getLines: tabContents[activeTabIndex].getLines,
+    getLines: allTabContents[activeTabIndex].getLines,
     tui,
-    getTitle: () => renderTabBar(tabs, activeTabIndex),
+    getTitle: () => renderTabBar(allTabs, activeTabIndex),
     getHeight: () =>
       editorVisible
         ? Math.max(
@@ -717,12 +765,12 @@ export async function review(
   tui.setFocus(contentPane);
 
   function applyTabSwitch(): void {
-    const tabContent = tabContents[activeTabIndex];
+    const tabContent = allTabContents[activeTabIndex];
     contentPane.setContent(tabContent.getLines);
     headings = tabContent.headings;
     totalSourceLines = tabContent.totalSourceLines;
     currentOnInvalidate = tabContent.onInvalidate;
-    editorVisible = activeTabIndex === tabs.length - 1;
+    editorVisible = activeTabIndex === allTabs.length - 1;
     if (editorVisible) {
       tui.addChild(editor);
     } else {
@@ -828,7 +876,7 @@ export async function review(
     if (
       matchesKey(data, "right") &&
       focused === "content" &&
-      activeTabIndex < tabs.length - 1
+      activeTabIndex < allTabs.length - 1
     ) {
       activeTabIndex++;
       applyTabSwitch();
