@@ -7,7 +7,8 @@ Criteria:
 
 1. The output must contain the two top-level `##` sections: `Proposed Scope` and
    `Reasoning`.
-2. Optionally, there may be `Artifact type` and `Principles` sections.
+2. Optionally, there may be `Artifact type`, `Pipeline`, and `Principles`
+   sections.
 3. No additional `##` sections are present.
 4. The `## Proposed Scope` section contains a fenced code block tagged `yaml`
    with a `scope:` key whose value is a YAML list. An empty list (`scope: []` or
@@ -19,3 +20,9 @@ Criteria:
    beginning with `https://github.com/`.
 6. The `## Reasoning` section contains at least one sentence with a
    non-whitespace character.
+7. If a `## Pipeline` section is present, independently verify the chosen
+   template is justified: the ticket must describe a single, self-contained
+   change with no interface or API changes implied and no more than one distinct
+   acceptance criterion. If not justified, respond:
+
+   REJECT Pipeline choice "<name>" is not justified — <reason>.
