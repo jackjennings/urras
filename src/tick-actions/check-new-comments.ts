@@ -20,6 +20,7 @@ export interface CheckNewCommentsDeps {
     issueKey: string,
     since?: string,
   ) => Promise<RawComment[]>;
+  fetchPrComments: (prUrl: string, since?: string) => Promise<RawComment[]>;
   isBot: (author: string) => boolean;
   judgeComment: (body: string) => Promise<boolean>;
   writeContextFile: (ticketDir: string, content: string) => Promise<void>;
@@ -58,6 +59,7 @@ export function checkNewCommentsAction(deps: CheckNewCommentsDeps): TickAction {
     ): Promise<TicketState | null> {
       const ticketDir = join(stateDir, ticket.id);
       const since = ticket.lastSeenCommentTimestamp ?? ticket.created;
+      const prSince = ticket.lastSeenPrCommentTimestamp ?? ticket.created;
 
       let fetched: RawComment[];
       try {
@@ -72,14 +74,46 @@ export function checkNewCommentsAction(deps: CheckNewCommentsDeps): TickAction {
       }
 
       const comments = fetched.filter((c) => isAfter(c.timestamp, since));
-      if (comments.length === 0) return null;
 
-      const keptComments: RawComment[] = [];
+      const activePrs = (ticket.prs ?? []).filter(
+        (pr) => !pr.merged && !pr.closed,
+      );
+
+      let prFetched = 0;
+      let prKept = 0;
+      let latestPrTimestamp = "";
+      const keptPrComments: RawComment[] = [];
+
+      for (const pr of activePrs) {
+        let prComments: RawComment[];
+        try {
+          prComments = await deps.fetchPrComments(pr.url, prSince);
+        } catch {
+          continue;
+        }
+        prFetched += prComments.length;
+        for (const comment of prComments) {
+          if (
+            latestPrTimestamp === "" ||
+            isAfter(comment.timestamp, latestPrTimestamp)
+          ) {
+            latestPrTimestamp = comment.timestamp;
+          }
+          if (deps.isBot(comment.author)) continue;
+          prKept++;
+          keptPrComments.push(comment);
+        }
+      }
+
+      if (comments.length === 0 && prFetched === 0) return null;
+
+      const keptTrackingComments: RawComment[] = [];
       let latestTimestamp = "";
 
       for (const comment of comments) {
         if (
-          latestTimestamp === "" || isAfter(comment.timestamp, latestTimestamp)
+          latestTimestamp === "" ||
+          isAfter(comment.timestamp, latestTimestamp)
         ) {
           latestTimestamp = comment.timestamp;
         }
@@ -90,8 +124,10 @@ export function checkNewCommentsAction(deps: CheckNewCommentsDeps): TickAction {
         } catch {
           keep = true;
         }
-        if (keep) keptComments.push(comment);
+        if (keep) keptTrackingComments.push(comment);
       }
+
+      const keptComments = [...keptTrackingComments, ...keptPrComments];
 
       if (keptComments.length > 0) {
         const content = `## New comments on ${ticket.url}\n\n` +
@@ -109,14 +145,19 @@ export function checkNewCommentsAction(deps: CheckNewCommentsDeps): TickAction {
         since,
         fetched: fetched.length,
         stale: fetched.length - comments.length,
-        kept: keptComments.length,
+        kept: keptTrackingComments.length,
         latestTimestamp,
+        prFetched,
+        prKept,
       });
 
       const now = Temporal.Now.instant().toString();
       const updated: TicketState = {
         ...ticket,
-        lastSeenCommentTimestamp: latestTimestamp,
+        ...(latestTimestamp ? { lastSeenCommentTimestamp: latestTimestamp } : {}),
+        ...(latestPrTimestamp
+          ? { lastSeenPrCommentTimestamp: latestPrTimestamp }
+          : {}),
         status: keptComments.length > 0 ? "revising" : ticket.status,
         updated: now,
       };

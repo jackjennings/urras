@@ -878,6 +878,93 @@ export function composeTickDeps(
             timestamp: Temporal.Instant.from(c.created).toString(),
           }));
       },
+      fetchPrComments: async (prUrl, since) => {
+        const parsed = parsePrUrl(prUrl);
+        if (!parsed) return [];
+        const { org, repo, number } = parsed;
+        const slug = slugOf({ org, repo });
+        const { token, login } = resolveAccount(slug);
+        const sinceParam = since ? `?since=${encodeURIComponent(since)}` : "";
+        const baseUrl = `https://api.github.com/repos/${org}/${repo}`;
+        const authHeaders = {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github+json",
+        };
+
+        type GitHubComment = {
+          id: number;
+          user: { login: string };
+          body: string;
+          created_at: string;
+          reactions?: { "+1": number; heart: number; rocket: number };
+        };
+
+        const QUALIFYING = new Set(["+1", "heart", "rocket"]);
+
+        async function resolveComment(
+          item: GitHubComment,
+          reactionsPath: string,
+        ): Promise<RawComment | null> {
+          const author = item.user.login;
+          if (author === login) {
+            return {
+              author,
+              body: item.body ?? "",
+              timestamp: item.created_at,
+            };
+          }
+          const r = item.reactions;
+          if (!r || (r["+1"] === 0 && r.heart === 0 && r.rocket === 0)) {
+            return null;
+          }
+          const reactionsRes = await http.get(`${baseUrl}/${reactionsPath}`, {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              Accept: "application/vnd.github.squirrel-girl-preview+json",
+            },
+          });
+          if (!reactionsRes.ok) return null;
+          const reactions = (await reactionsRes.json()) as Array<{
+            user: { login: string };
+            content: string;
+          }>;
+          const userReacted = reactions.some(
+            (reaction) =>
+              reaction.user.login === login && QUALIFYING.has(reaction.content),
+          );
+          return userReacted
+            ? { author, body: item.body ?? "", timestamp: item.created_at }
+            : null;
+        }
+
+        async function fetchEndpoint(
+          path: string,
+          reactionsBase: string,
+        ): Promise<RawComment[]> {
+          const res = await http.get(`${baseUrl}/${path}${sinceParam}`, {
+            headers: authHeaders,
+          });
+          if (!res.ok) {
+            throw new Error(
+              `GitHub API ${res.status} fetching PR comments`,
+            );
+          }
+          const items = (await res.json()) as GitHubComment[];
+          const results = await Promise.all(
+            items.map((item) =>
+              resolveComment(item, `${reactionsBase}/${item.id}/reactions`)
+            ),
+          );
+          return results.filter((c): c is RawComment => c !== null);
+        }
+
+        const [reviewKept, issueKept] = await Promise.all([
+          fetchEndpoint(`pulls/${number}/comments`, "pulls/comments"),
+          fetchEndpoint(`issues/${number}/comments`, "issues/comments"),
+        ]);
+
+        return [...reviewKept, ...issueKept];
+      },
       isBot: (() => {
         const botLogins = new Set<string>();
         if (config.github.accounts) {

@@ -142,6 +142,9 @@ export async function readTicket(
     lastSeenCommentTimestamp: normalizeTimestamp(
       data.lastSeenCommentTimestamp,
     ),
+    lastSeenPrCommentTimestamp: normalizeTimestamp(
+      data.lastSeenPrCommentTimestamp,
+    ),
     providerDone: data.providerDone as boolean | undefined,
     providerPickedUp: data.providerPickedUp as boolean | undefined,
     ciHandledRunIds: data.ciHandledRunIds as string[] | undefined,
@@ -197,6 +200,9 @@ export async function writeTicket(
   }
   if (ticket.lastSeenCommentTimestamp !== undefined) {
     frontmatter.lastSeenCommentTimestamp = ticket.lastSeenCommentTimestamp;
+  }
+  if (ticket.lastSeenPrCommentTimestamp !== undefined) {
+    frontmatter.lastSeenPrCommentTimestamp = ticket.lastSeenPrCommentTimestamp;
   }
   if (ticket.providerDone !== undefined) {
     frontmatter.providerDone = ticket.providerDone;
