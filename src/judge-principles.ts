@@ -2,6 +2,7 @@ import type { CommandRunner } from "./apfel.ts";
 import { ApfelLanguageModel } from "./models/apfel.ts";
 import { ClaudeLanguageModel } from "./models/claude.ts";
 import { FallbackLanguageModel } from "./models/fallback.ts";
+import { OllamaLanguageModel } from "./models/ollama.ts";
 
 const JUDGE_SYSTEM_PROMPT =
   "You are evaluating whether content from an AI coding agent's Principles section contains substantive engineering guidance worth preserving. Reply with verdict KEEP_LOCAL, KEEP_GLOBAL, or SKIP. Default to KEEP_LOCAL unless the principle is about the urras pipeline or tooling itself — not about the specific codebase being modified — in which case use KEEP_GLOBAL. Reply SKIP if the content is meta-commentary explaining why no principles were added, a placeholder, or otherwise lacks actionable engineering guidance.";
@@ -20,9 +21,11 @@ type Scope = "local" | "global";
 export async function judgePrinciples(
   body: string,
   run: CommandRunner,
+  ollamaModels?: OllamaLanguageModel[],
 ): Promise<Scope | null> {
   const model = new FallbackLanguageModel([
     new ApfelLanguageModel(run),
+    ...(ollamaModels ?? []),
     new ClaudeLanguageModel(run, { model: "claude-haiku-4-5" }),
   ]);
   const result = await model.generateObject<
@@ -55,9 +58,11 @@ export async function filterPrinciples(
   context: string,
   topK: number,
   run: CommandRunner,
+  ollamaModels?: OllamaLanguageModel[],
 ): Promise<number[] | null> {
   const model = new FallbackLanguageModel([
     new ApfelLanguageModel(run),
+    ...(ollamaModels ?? []),
     new ClaudeLanguageModel(run, { model: "claude-haiku-4-5" }),
   ]);
   const numbered = entries.map((e, i) => `${i}: ${e}`).join("\n\n");

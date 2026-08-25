@@ -7,6 +7,7 @@ import {
   assertStringIncludes,
 } from "@std/assert";
 import { assertSpyCalls, spy } from "@std/testing/mock";
+import { OllamaLanguageModel } from "./models/ollama.ts";
 import { filterPrinciples, judgePrinciples } from "./judge-principles.ts";
 import type { CommandRunner } from "./apfel.ts";
 
@@ -251,4 +252,39 @@ Deno.test("filterPrinciples: assertFalse indices includes non-integer", async ()
   const run = runner(alwaysReturn(JSON.stringify({ indices: [0, 1] })));
   const result = await filterPrinciples(["- A", "- B"], "ctx", 5, run);
   assertFalse(result === null);
+});
+
+function makeOllama(responseBody: string): OllamaLanguageModel {
+  const _fetch = spy(
+    (_url: unknown, _init?: RequestInit) =>
+      Promise.resolve(
+        new Response(JSON.stringify({ response: responseBody }), { status: 200 }),
+      ),
+  ) as unknown as typeof fetch;
+  return new OllamaLanguageModel(_fetch, { model: "test" });
+}
+
+Deno.test("judgePrinciples: uses ollamaModels before Claude when apfel fails", async () => {
+  const ollama = makeOllama(JSON.stringify({ verdict: "KEEP_GLOBAL" }));
+  let claudeCalled = false;
+  const run = spy((args: string[]) => {
+    if (args[0] === "claude") claudeCalled = true;
+    return Promise.resolve({ code: 1, stdout: "" });
+  });
+  const result = await judgePrinciples("some principle", run, [ollama]);
+  assertEquals(result, "global");
+  assertFalse(claudeCalled);
+});
+
+Deno.test("filterPrinciples: uses ollamaModels before Claude when apfel fails", async () => {
+  const ollama = makeOllama(JSON.stringify({ indices: [1] }));
+  const run = spy((_args: string[]) => Promise.resolve({ code: 1, stdout: "" }));
+  const result = await filterPrinciples(
+    ["first", "second", "third"],
+    "context",
+    1,
+    run,
+    [ollama],
+  );
+  assertEquals(result, [1]);
 });
