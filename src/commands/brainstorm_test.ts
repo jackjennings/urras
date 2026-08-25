@@ -68,17 +68,19 @@ Deno.test("buildSystemPrompt: includes body format guidance", () => {
   assertStringIncludes(prompt, "## Proposed Solution");
 });
 
-Deno.test("performBrainstorm: throws for non-claude-code agent type", async () => {
+Deno.test("performBrainstorm: pi agent auto-selects scope and passes prompt to spawn", async () => {
   const config: Config = { ...baseConfig, agent: { type: "pi" } };
-  await assertRejects(
-    () =>
-      performBrainstorm(
-        {},
-        { loadConfig: () => Promise.resolve(config) },
-      ),
-    Error,
-    'agent type "pi"',
+  let capturedPrompt = "";
+  const spawnSpy = spy((_prompt: string) => {
+    capturedPrompt = _prompt;
+    return Promise.resolve(0);
+  });
+  await performBrainstorm(
+    {},
+    { loadConfig: () => Promise.resolve(config), spawn: spawnSpy },
   );
+  assertSpyCalls(spawnSpy, 1);
+  assertStringIncludes(capturedPrompt, "org/my-repo");
 });
 
 Deno.test("performBrainstorm: throws when no scopes configured", async () => {

@@ -41,15 +41,35 @@ async function defaultPrompt(question: string): Promise<string | null> {
   return new TextDecoder().decode(buf.subarray(0, n)).trim();
 }
 
-async function defaultSpawn(prompt: string): Promise<number> {
-  const child = new Deno.Command("claude", {
-    args: [prompt, "--dangerously-skip-permissions"],
-    stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
-  }).spawn();
-  const status = await child.status;
-  return status.code;
+function makeDefaultSpawn(config: Config): (prompt: string) => Promise<number> {
+  if (config.agent.type === "pi") {
+    return async (prompt) => {
+      const child = new Deno.Command("pi", {
+        args: [
+          "--system-prompt",
+          prompt,
+          "--approve",
+          "--provider",
+          config.pi.provider,
+        ],
+        stdin: "inherit",
+        stdout: "inherit",
+        stderr: "inherit",
+      }).spawn();
+      const status = await child.status;
+      return status.code;
+    };
+  }
+  return async (prompt) => {
+    const child = new Deno.Command("claude", {
+      args: [prompt, "--dangerously-skip-permissions"],
+      stdin: "inherit",
+      stdout: "inherit",
+      stderr: "inherit",
+    }).spawn();
+    const status = await child.status;
+    return status.code;
+  };
 }
 
 export async function performBrainstorm(
@@ -61,12 +81,6 @@ export async function performBrainstorm(
   },
 ): Promise<number> {
   const config = await (deps?.loadConfig ?? defaultLoadConfig)();
-
-  if (config.agent.type !== "claude-code") {
-    throw new Error(
-      `brainstorm is not supported with agent type "${config.agent.type}" (requires "claude-code")`,
-    );
-  }
 
   const scopes = collectScopes(config);
   if (scopes.length === 0) {
@@ -102,13 +116,13 @@ export async function performBrainstorm(
     provider,
     initialIdea: opts.initialIdea,
   });
-  const spawnFn = deps?.spawn ?? defaultSpawn;
+  const spawnFn = deps?.spawn ?? makeDefaultSpawn(config);
   return await spawnFn(systemPrompt);
 }
 
 export const brainstorm: Command = {
   name: "brainstorm",
-  description: "start an interactive Claude session to draft a ticket",
+  description: "start an interactive session to draft a ticket",
   usage: "ur brainstorm [initial idea]",
   async run(args) {
     const initialIdea = args.length > 0 ? args.join(" ") : undefined;
