@@ -1772,10 +1772,10 @@ prompt, always omit `## Pipeline`.
 
 - [ ] **Step 2: Verify the file still renders**
 
-Run: `deno task test:file src/phases/advance_test.ts`
-Expected: PASS — the existing intake-prompt tests load this file dynamically
-via `loadPromptFile`/`loadPrompt`, so they pick up the new content
-automatically; none hardcode the old text.
+Run: `deno task test:file src/phases/advance_test.ts` Expected: PASS — the
+existing intake-prompt tests load this file dynamically via
+`loadPromptFile`/`loadPrompt`, so they pick up the new content automatically;
+none hardcode the old text.
 
 - [ ] **Step 3: Format, lint, commit**
 

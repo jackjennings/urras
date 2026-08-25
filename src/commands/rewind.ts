@@ -9,6 +9,7 @@ import { deleteRunPid, isPhaseAlive } from "../executor.ts";
 import { expandHome, loadConfig } from "../config.ts";
 import { readDir, readTextFileSync, rename } from "../filesystem.ts";
 import { PHASE_SEQUENCE } from "../phases/types.ts";
+import { DEFAULT_PIPELINE_STEPS } from "../phases/pipeline.ts";
 import type { ActivePhase } from "../phases/types.ts";
 import type { TicketPhase } from "../state/types.ts";
 import type { Command } from "./types.ts";
@@ -63,6 +64,20 @@ export async function performRewind(
   const ticketDir = join(stateDir, id);
   const ticket = await readTicket(stateDir, id);
   const from = ticket.phase;
+
+  const allowedPhases = (ticket.pipelineSteps ?? DEFAULT_PIPELINE_STEPS).map(
+    (s) => s.phase,
+  );
+  if (
+    targetPhase !== "intake" &&
+    !(allowedPhases as string[]).includes(targetPhase)
+  ) {
+    throw new Error(
+      `Cannot rewind: target phase ${targetPhase} is not part of this ticket's pipeline (${
+        allowedPhases.join(", ")
+      }).`,
+    );
+  }
 
   const targetIdx = PHASE_SEQUENCE.indexOf(targetPhase);
   const rawCurrentIdx = PHASE_SEQUENCE.indexOf(ticket.phase as ActivePhase);
@@ -123,6 +138,8 @@ export async function performRewind(
     phaseSessionIds: newPhaseSessionIds,
     outputRetries: undefined,
     notifiedNeedsAttention: undefined,
+    pipeline: targetPhase === "intake" ? undefined : ticket.pipeline,
+    pipelineSteps: targetPhase === "intake" ? undefined : ticket.pipelineSteps,
     updated: Temporal.Now.instant().toString(),
   });
 

@@ -146,7 +146,11 @@ migration is needed.
 Best-of-N generation (running multiple candidate outputs at a step and judging
 between them) and template-defined phase reordering or new phase names are
 deliberately out of scope — see
-`docs/superpowers/specs/2026-08-24-pipeline-templates-design.md` for why.
+`docs/superpowers/specs/2026-08-24-pipeline-templates-design.md` for why. No
+template can currently define more phases than `default` — the validation rules
+only allow a subsequence, so every valid template today is lighter-or-equal,
+never heavier. A `thorough`-style template with identical steps to `default` is
+a no-op placeholder until best-of-N ships (see Deferred).
 
 ## Approval log
 
@@ -220,6 +224,14 @@ each loader returning `""` when absent so no code change is needed to add one:
   appended last. For `implementation` the same file applies to both the normal
   and revision runs.
 - **Self-review** — see below.
+
+Intake additionally receives a fourth, dynamically-generated block via
+`TickDeps.buildPipelineOptionsText` (wired in `compose.ts` from
+`listAvailablePipelines`/`formatAvailablePipelines`, `src/phases/pipeline.ts`).
+Unlike the `{{partial-name}}` markers above, which are always static file
+content, this one is generated per-tick from the extensions directory's current
+pipeline templates. It is intake-specific, not a new general-purpose partial
+type.
 
 The state-dir prompts directory lives at the state-repo root, not inside a
 ticket directory:
@@ -470,11 +482,12 @@ cause (`agent-failed`, `non-zero-exit`, `missing`, `output-file-missing`,
 `ci-unfixable`, `rerun-failed`, `infra-rerun-exhausted`, `no-commit`,
 `context-file-unreadable`, `new-marker-on-local-path`, `local-repo-init-failed`,
 `repo-creation-failed`, `meta-unreadable`, `llm-failed`, `template-not-found`,
-`template-parse-failed`, `template-invalid-shape`, `template-invalid-order`).
-Reuse an existing label when it fits; add a new one only for a genuinely new
-cause, and never put free prose in `reason` (that belongs in a separate field or
-the `error` message). Work-item identity is the ticket directory itself — do not
-add an `id` or `ticketId` field to per-ticket entries.
+`template-parse-failed`, `template-invalid-shape`, `template-invalid-order`,
+`phase-not-in-pipeline`). Reuse an existing label when it fits; add a new one
+only for a genuinely new cause, and never put free prose in `reason` (that
+belongs in a separate field or the `error` message). Work-item identity is the
+ticket directory itself — do not add an `id` or `ticketId` field to per-ticket
+entries.
 
 ## Failure handling
 

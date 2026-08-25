@@ -19,8 +19,10 @@ export async function extractIntakePipeline(
     type: "object",
     properties: {
       pipeline: {
-        type: ["string", "null"],
-        enum: [...availableNames, null],
+        anyOf: [
+          { type: "string", enum: availableNames },
+          { type: "null" },
+        ],
       },
     },
     required: ["pipeline"],

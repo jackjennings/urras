@@ -757,4 +757,22 @@ export async function advancePhase(
     });
     return;
   }
+
+  if (
+    ticket.status === "waiting" &&
+    isApproved(ticket) &&
+    ticket.phase !== "implementation" &&
+    !(activePhases as string[]).includes(ticket.phase)
+  ) {
+    await deps.writeTicket(stateDir, {
+      ...ticket,
+      status: "needs-attention",
+      updated: now,
+    });
+    await deps.appendLog(stateDir, ticket.id, {
+      event: "needs-attention",
+      reason: "phase-not-in-pipeline",
+    });
+    return;
+  }
 }

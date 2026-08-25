@@ -426,6 +426,75 @@ Deno.test(
 );
 
 Deno.test(
+  "performRewind: throws when target phase is not part of the ticket's pinned pipeline",
+  async () => {
+    const ticket = makeTicket({
+      phase: "implementation",
+      status: "waiting",
+      pipelineSteps: [{ phase: "intake" }, { phase: "implementation" }],
+    });
+    const stateDir = await Deno.makeTempDir();
+    await writeTicket(stateDir, ticket);
+    try {
+      await assertRejects(
+        () => performRewind(stateDir, ticket.id, "spec"),
+        Error,
+        "Cannot rewind: target phase spec is not part of this ticket's pipeline (intake, implementation).",
+      );
+    } finally {
+      await Deno.remove(stateDir, { recursive: true });
+    }
+  },
+);
+
+Deno.test(
+  "performRewind: rewinding to intake is always allowed even outside a custom pipeline",
+  async () => {
+    const ticket = makeTicket({
+      phase: "implementation",
+      status: "waiting",
+      pipelineSteps: [{ phase: "intake" }, { phase: "implementation" }],
+    });
+    const stateDir = await Deno.makeTempDir();
+    await writeTicket(stateDir, ticket);
+    const commitFn = spy(() => Promise.resolve());
+    try {
+      const result = await performRewind(stateDir, ticket.id, "intake", {
+        commitFn,
+      });
+      assertEquals(result.to, "intake");
+    } finally {
+      await Deno.remove(stateDir, { recursive: true });
+    }
+  },
+);
+
+Deno.test(
+  "performRewind: rewinding to intake clears pipeline and pipelineSteps",
+  async () => {
+    const ticket = makeTicket({
+      phase: "implementation",
+      status: "waiting",
+      pipeline: "fast",
+      pipelineSteps: [{ phase: "intake" }, { phase: "implementation" }],
+    });
+    const stateDir = await Deno.makeTempDir();
+    await writeTicket(stateDir, ticket);
+    const commitFn = spy(() => Promise.resolve());
+    try {
+      await performRewind(stateDir, ticket.id, "intake", { commitFn });
+      const meta = await Deno.readTextFile(
+        join(stateDir, ticket.id, "meta.md"),
+      );
+      assertFalse(meta.includes("pipeline:"));
+      assertFalse(meta.includes("pipelineSteps"));
+    } finally {
+      await Deno.remove(stateDir, { recursive: true });
+    }
+  },
+);
+
+Deno.test(
   "performRewind: completes normally when killFn throws",
   async () => {
     const ticket = makeTicket({ phase: "implementation", status: "running" });

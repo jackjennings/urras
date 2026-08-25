@@ -1,4 +1,4 @@
-import { assertEquals } from "@std/assert";
+import { assert, assertEquals, assertFalse } from "@std/assert";
 import { join } from "@std/path";
 import { spy } from "@std/testing/mock";
 import { resolvePipelineAction } from "./resolve-pipeline.ts";
@@ -66,41 +66,37 @@ function makeAction(
 // ── applies ──────────────────────────────────────────────────────────────────
 
 Deno.test("resolvePipelineAction: applies to approved intake/waiting with no pipelineSteps", () => {
-  assertEquals(makeAction().applies(approvedIntakeTicket()), true);
+  assert(makeAction().applies(approvedIntakeTicket()));
 });
 
 Deno.test("resolvePipelineAction: does not apply when pipelineSteps already set", () => {
-  assertEquals(
+  assertFalse(
     makeAction().applies(
       approvedIntakeTicket({ pipelineSteps: [{ phase: "intake" }] }),
     ),
-    false,
   );
 });
 
 Deno.test("resolvePipelineAction: does not apply before approval", () => {
-  assertEquals(
+  assertFalse(
     makeAction().applies(approvedIntakeTicket({ approvals: [] })),
-    false,
   );
 });
 
 Deno.test("resolvePipelineAction: does not apply outside intake phase", () => {
-  assertEquals(
+  assertFalse(
     makeAction().applies(
       approvedIntakeTicket({
         phase: "enrichment",
         approvals: [{ timestamp: "t", actor: "human", phase: "enrichment" }],
       }),
     ),
-    false,
   );
 });
 
 Deno.test("resolvePipelineAction: applies regardless of artifact type", () => {
-  assertEquals(
+  assert(
     makeAction().applies(approvedIntakeTicket({ artifacts: ["document"] })),
-    true,
   );
 });
 

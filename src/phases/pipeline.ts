@@ -27,6 +27,7 @@ export function nextPipelinePhase(
 import { join } from "@std/path";
 import { parse } from "@std/toml";
 import { readDir, readTextFile } from "../filesystem.ts";
+import { isValidCeremonyName } from "../ceremonies/types.ts";
 
 export type PipelineLoadFailureReason =
   | "template-not-found"
@@ -74,6 +75,9 @@ export async function loadPipelineTemplate(
   extensionsDir: string,
   name: string,
 ): Promise<PipelineLoadResult> {
+  if (!isValidCeremonyName(name)) {
+    return { ok: false, reason: "template-invalid-shape" };
+  }
   const path = join(extensionsDir, "pipelines", name, "pipeline.toml");
   let raw: string;
   try {
@@ -112,11 +116,16 @@ export async function listAvailablePipelines(
   const names: string[] = [];
   try {
     for await (const entry of readDir(pipelinesDir)) {
-      if (entry.isDirectory) names.push(entry.name);
+      if (
+        entry.isDirectory &&
+        entry.name !== "default" &&
+        isValidCeremonyName(entry.name)
+      ) {
+        names.push(entry.name);
+      }
     }
-  } catch (e) {
-    if (e instanceof Deno.errors.NotFound) return [];
-    throw e;
+  } catch {
+    return [];
   }
   const templates: PipelineTemplate[] = [];
   for (const name of names) {

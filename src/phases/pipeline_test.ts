@@ -241,6 +241,20 @@ phase = "implementation"
   });
 });
 
+Deno.test("loadPipelineTemplate: name containing '..' returns template-invalid-shape", async () => {
+  await withTempExtensionsDir(async (dir) => {
+    const result = await loadPipelineTemplate(dir, "..");
+    assertEquals(result, { ok: false, reason: "template-invalid-shape" });
+  });
+});
+
+Deno.test("loadPipelineTemplate: name containing '/' returns template-invalid-shape", async () => {
+  await withTempExtensionsDir(async (dir) => {
+    const result = await loadPipelineTemplate(dir, "../etc/passwd");
+    assertEquals(result, { ok: false, reason: "template-invalid-shape" });
+  });
+});
+
 Deno.test("listAvailablePipelines: empty list when pipelines directory does not exist", async () => {
   await withTempExtensionsDir(async (dir) => {
     assertEquals(await listAvailablePipelines(dir), []);
@@ -265,6 +279,69 @@ phase = "implementation"
     const templates = await listAvailablePipelines(dir);
     assertEquals(templates.length, 1);
     assertEquals(templates[0].name, "fast");
+  });
+});
+
+Deno.test("listAvailablePipelines: skips a directory whose name fails the charset check", async () => {
+  await withTempExtensionsDir(async (dir) => {
+    await writeTemplate(
+      dir,
+      "fast",
+      `name = "fast"
+
+[[steps]]
+phase = "intake"
+
+[[steps]]
+phase = "implementation"
+`,
+    );
+    const invalidName = "invalid name!";
+    await Deno.mkdir(join(dir, "pipelines", invalidName), {
+      recursive: true,
+    });
+    await Deno.writeTextFile(
+      join(dir, "pipelines", invalidName, "pipeline.toml"),
+      `name = "${invalidName}"
+
+[[steps]]
+phase = "intake"
+
+[[steps]]
+phase = "implementation"
+`,
+    );
+    const templates = await listAvailablePipelines(dir);
+    assertEquals(templates.length, 1);
+    assertEquals(templates[0].name, "fast");
+  });
+});
+
+Deno.test("listAvailablePipelines: excludes a directory literally named 'default'", async () => {
+  await withTempExtensionsDir(async (dir) => {
+    await writeTemplate(
+      dir,
+      "default",
+      `name = "default"
+
+[[steps]]
+phase = "intake"
+
+[[steps]]
+phase = "enrichment"
+
+[[steps]]
+phase = "spec"
+
+[[steps]]
+phase = "plan"
+
+[[steps]]
+phase = "implementation"
+`,
+    );
+    const templates = await listAvailablePipelines(dir);
+    assertEquals(templates, []);
   });
 });
 

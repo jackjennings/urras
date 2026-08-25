@@ -2400,6 +2400,41 @@ Deno.test(
 );
 
 Deno.test(
+  "advancePhase: waiting + approved with phase not in pinned pipelineSteps parks as needs-attention",
+  async () => {
+    const ticket = makeTicket({
+      phase: "spec",
+      status: "waiting",
+      approvals: [{ timestamp: "t", actor: "human", phase: "spec" }],
+      pipelineSteps: [{ phase: "intake" }, { phase: "implementation" }],
+    });
+    let written: TicketState | null = null;
+    const writeTicketSpy = spy((_dir: string, t: TicketState) => {
+      written = t;
+      return Promise.resolve();
+    });
+    const loggedEntries: object[] = [];
+    const appendLogSpy = spy((_dir: string, _id: string, entry: object) => {
+      loggedEntries.push(entry);
+      return Promise.resolve();
+    });
+    await advancePhase(
+      ticket,
+      "/state",
+      makeTickDeps({
+        writeTicket: writeTicketSpy,
+        appendLog: appendLogSpy,
+      }),
+    );
+    assertSpyCall(writeTicketSpy, 0);
+    assertEquals((written as unknown as TicketState).status, "needs-attention");
+    assertArrayIncludes(loggedEntries, [
+      { event: "needs-attention", reason: "phase-not-in-pipeline" },
+    ]);
+  },
+);
+
+Deno.test(
   "advancePhase: implementation/running with dead PID calls spawnOutlierAnalysis with ticket id, dir, worktree path, and phase",
   async () => {
     const ticket = makeTicket({
