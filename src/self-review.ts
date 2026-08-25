@@ -3,6 +3,8 @@ import { findLatestPhaseOutput } from "./review.ts";
 import type { CommandRunner } from "./apfel.ts";
 import { readTextFile } from "./filesystem.ts";
 import { ClaudeLanguageModel } from "./models/claude.ts";
+import { FallbackLanguageModel } from "./models/fallback.ts";
+import { OllamaLanguageModel } from "./models/ollama.ts";
 import { runGit } from "./worktree.ts";
 
 const PROMPT_DIR = new URL("./phases/prompts/", import.meta.url).pathname;
@@ -12,11 +14,13 @@ export async function selfReview({
   ticketDir,
   run,
   worktreePath,
+  ollamaModels,
 }: {
   phase: string;
   ticketDir: string;
   run: CommandRunner;
   worktreePath?: string;
+  ollamaModels?: OllamaLanguageModel[];
 }): Promise<{ approved: boolean; reason: string | null }> {
   let systemPrompt: string;
   try {
@@ -48,7 +52,10 @@ export async function selfReview({
     }
   }
 
-  const model = new ClaudeLanguageModel(run, { model: "claude-haiku-4-5" });
+  const claude = new ClaudeLanguageModel(run, { model: "claude-haiku-4-5" });
+  const model = ollamaModels && ollamaModels.length > 0
+    ? new FallbackLanguageModel([...ollamaModels, claude])
+    : claude;
   const text = await model.generateText({
     systemPrompt: systemPrompt,
     prompt: outputContent,
