@@ -38,11 +38,9 @@ import {
 import {
   commitTicket,
   readPhaseOutput,
-  readTicket,
+  readTicketWithPatch,
   writePhaseOutput,
-  writeTicket,
 } from "./state/store.ts";
-import type { ApprovalEntry } from "./state/types.ts";
 import { buildContextFiles } from "./run-phase.ts";
 import { CONTEXT_PHASE_SEQUENCE } from "./phases/types.ts";
 import { compactTimestamp } from "./timestamp.ts";
@@ -292,19 +290,24 @@ export async function applyApproval(
   stateDir: string,
   id: string,
   now: Temporal.ZonedDateTime,
+  {
+    readTicketFn = readTicketWithPatch,
+    commitFn = commitTicket,
+  }: {
+    readTicketFn?: typeof readTicketWithPatch;
+    commitFn?: typeof commitTicket;
+  } = {},
 ): Promise<void> {
-  const ticket = await readTicket(stateDir, id);
-  const entry: ApprovalEntry = {
-    timestamp: now.toInstant().toString(),
-    actor: "human",
-    phase: ticket.phase,
-  };
-  await writeTicket(stateDir, {
-    ...ticket,
-    approvals: [...ticket.approvals, entry],
-    updated: now.toInstant().toString(),
+  const { ticket, patchTicket } = await readTicketFn(stateDir, id);
+  const nowStr = now.toInstant().toString();
+  await patchTicket({
+    approvals: [
+      ...ticket.approvals,
+      { timestamp: nowStr, actor: "human" as const, phase: ticket.phase },
+    ],
+    updated: nowStr,
   });
-  await commitTicket(stateDir, id, `approve: ${id}`);
+  await commitFn(stateDir, id, `approve: ${id}`);
 }
 
 export function formatTimestamp(now: Temporal.ZonedDateTime): string {
@@ -512,16 +515,22 @@ export async function review(
   {
     isTerminal = () => Deno.stdin.isTerminal(),
     readStdin = () => new Response(Deno.stdin.readable).text(),
+    stateDir: stateDirOverride,
+    readTicketFn = readTicketWithPatch,
+    commitFn = commitTicket,
   }: {
     isTerminal?: () => boolean;
     readStdin?: () => Promise<string>;
+    stateDir?: string;
+    readTicketFn?: typeof readTicketWithPatch;
+    commitFn?: typeof commitTicket;
   } = {},
 ): Promise<void> {
-  const config = await loadConfig();
-  const stateDir = expandHome(config.state.dir);
+  const stateDir = stateDirOverride ??
+    expandHome((await loadConfig()).state.dir);
   const ticketDir = join(stateDir, id);
 
-  const ticket = await readTicket(stateDir, id);
+  const { ticket, patchTicket } = await readTicketFn(stateDir, id);
 
   if (ticket.status === "running") {
     console.error(`ticket ${id} is currently running`);
@@ -564,13 +573,11 @@ export async function review(
     const timestamp = formatTimestamp(now);
     const feedbackFile = `${timestamp}-${ticket.phase}-feedback.md`;
     await writePhaseOutput(stateDir, id, feedbackFile, text);
-    const updated = await readTicket(stateDir, id);
-    await writeTicket(stateDir, {
-      ...updated,
+    await patchTicket({
       status: "revising",
       updated: now.toInstant().toString(),
     });
-    await commitTicket(stateDir, id, `review: ${id}`);
+    await commitFn(stateDir, id, `review: ${id}`);
     Deno.exit(0);
   }
 
@@ -771,7 +778,7 @@ export async function review(
       return;
     }
     if (isApproval) {
-      await applyApproval(stateDir, id, now);
+      await applyApproval(stateDir, id, now, { readTicketFn, commitFn });
       killServer();
       Deno.removeSignalListener("SIGTERM", sigtermHandler);
       tui.stop();
@@ -780,13 +787,11 @@ export async function review(
     const timestamp = formatTimestamp(now);
     const feedbackFile = `${timestamp}-${ticket.phase}-feedback.md`;
     await writePhaseOutput(stateDir, id, feedbackFile, text);
-    const updated = await readTicket(stateDir, id);
-    await writeTicket(stateDir, {
-      ...updated,
+    await patchTicket({
       status: "revising",
       updated: now.toInstant().toString(),
     });
-    await commitTicket(stateDir, id, `review: ${id}`);
+    await commitFn(stateDir, id, `review: ${id}`);
     killServer();
     Deno.removeSignalListener("SIGTERM", sigtermHandler);
     tui.stop();

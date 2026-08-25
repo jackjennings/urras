@@ -1,8 +1,7 @@
 import {
   appendTicketLog,
   commitTicket,
-  readTicket,
-  writeTicket,
+  readTicketWithPatch,
 } from "../state/store.ts";
 import { join } from "@std/path";
 import { deleteRunPid, isPhaseAlive } from "../executor.ts";
@@ -26,9 +25,11 @@ export async function performDecline(
   {
     commitFn = commitTicket,
     killFn = defaultKillFn,
+    readTicketFn = readTicketWithPatch,
   }: {
     commitFn?: typeof commitTicket;
     killFn?: (pid: number) => void;
+    readTicketFn?: typeof readTicketWithPatch;
   } = {},
 ): Promise<{ from: TicketPhase }> {
   const ticketDir = join(stateDir, id);
@@ -47,19 +48,14 @@ export async function performDecline(
 
   await deleteRunPid(ticketDir);
 
-  const ticket = await readTicket(stateDir, id);
+  const { ticket, patchTicket } = await readTicketFn(stateDir, id);
   const from = ticket.phase;
 
-  const body = reason
-    ? `${ticket.body}\n\n---\nDeclined: ${reason}`
-    : ticket.body;
-
-  await writeTicket(stateDir, {
-    ...ticket,
+  await patchTicket({
     phase: "wont-do",
     status: "done",
     updated: Temporal.Now.instant().toString(),
-    body,
+    body: reason ? `${ticket.body}\n\n---\nDeclined: ${reason}` : ticket.body,
   });
 
   await appendTicketLog(stateDir, id, {

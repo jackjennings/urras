@@ -54,7 +54,7 @@ Deno.test(
     await writeTicket(stateDir, ticket);
     const commitFn = spy(() => Promise.resolve());
     try {
-      await performRetry(stateDir, ticket.id, commitFn);
+      await performRetry(stateDir, ticket.id, { commitFn });
       const meta = await Deno.readTextFile(
         join(stateDir, ticket.id, "meta.md"),
       );
@@ -75,7 +75,7 @@ Deno.test(
     await writeTicket(stateDir, ticket);
     const commitFn = spy(() => Promise.resolve());
     try {
-      await performRetry(stateDir, ticket.id, commitFn);
+      await performRetry(stateDir, ticket.id, { commitFn });
       const meta = await Deno.readTextFile(
         join(stateDir, ticket.id, "meta.md"),
       );
@@ -106,7 +106,7 @@ Deno.test(
     await writeTicket(stateDir, ticket);
     const commitFn = spy(() => Promise.resolve());
     try {
-      await performRetry(stateDir, ticket.id, commitFn);
+      await performRetry(stateDir, ticket.id, { commitFn });
       const meta = await Deno.readTextFile(
         join(stateDir, ticket.id, "meta.md"),
       );
@@ -126,7 +126,7 @@ Deno.test(
     await writeTicket(stateDir, ticket);
     const commitFn = spy(() => Promise.resolve());
     try {
-      await performRetry(stateDir, ticket.id, commitFn);
+      await performRetry(stateDir, ticket.id, { commitFn });
       const log = await Deno.readTextFile(
         join(stateDir, ticket.id, "log.ndjson"),
       );
@@ -149,7 +149,7 @@ Deno.test(
     await writeTicket(stateDir, ticket);
     const commitFn = spy(() => Promise.resolve());
     try {
-      await performRetry(stateDir, ticket.id, commitFn);
+      await performRetry(stateDir, ticket.id, { commitFn });
       const log = await Deno.readTextFile(
         join(stateDir, ticket.id, "log.ndjson"),
       );
@@ -175,7 +175,7 @@ Deno.test(
     await writeTicket(stateDir, ticket);
     const commitFn = spy(() => Promise.resolve());
     try {
-      await performRetry(stateDir, ticket.id, commitFn);
+      await performRetry(stateDir, ticket.id, { commitFn });
       assertSpyCalls(commitFn, 1);
       assertEquals(commitFn.calls[0].args, [
         stateDir,

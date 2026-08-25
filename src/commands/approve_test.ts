@@ -19,7 +19,7 @@ Deno.test(
     await writeTicket(stateDir, ticket);
     const commitFn = spy(() => Promise.resolve());
     try {
-      await performApprove(stateDir, ticket.id, commitFn);
+      await performApprove(stateDir, ticket.id, { commitFn });
       const meta = await Deno.readTextFile(
         join(stateDir, ticket.id, "meta.md"),
       );
@@ -37,7 +37,7 @@ Deno.test("performApprove: does not write approved key", async () => {
   await writeTicket(stateDir, ticket);
   const commitFn = spy(() => Promise.resolve());
   try {
-    await performApprove(stateDir, ticket.id, commitFn);
+    await performApprove(stateDir, ticket.id, { commitFn });
     const meta = await Deno.readTextFile(
       join(stateDir, ticket.id, "meta.md"),
     );
@@ -61,7 +61,7 @@ Deno.test("performApprove: accumulates multiple approvals", async () => {
   await writeTicket(stateDir, ticket);
   const commitFn = spy(() => Promise.resolve());
   try {
-    await performApprove(stateDir, ticket.id, commitFn);
+    await performApprove(stateDir, ticket.id, { commitFn });
     const meta = await Deno.readTextFile(
       join(stateDir, ticket.id, "meta.md"),
     );
@@ -80,7 +80,7 @@ Deno.test(
     await writeTicket(stateDir, ticket);
     const commitFn = spy(() => Promise.resolve());
     try {
-      await performApprove(stateDir, ticket.id, commitFn);
+      await performApprove(stateDir, ticket.id, { commitFn });
       assertSpyCalls(commitFn, 1);
       assertEquals(commitFn.calls[0].args, [
         stateDir,

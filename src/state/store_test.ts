@@ -14,7 +14,9 @@ import {
   listLearnings,
   listTickets,
   readTicket,
+  readTicketWithPatch,
   removeLearning,
+  StaleTicketWriteError,
   writeLearning,
   writeTicket,
 } from "./store.ts";
@@ -1541,6 +1543,153 @@ Deno.test("writeTicket/readTicket: artifacts:[code,document] round-trips", async
     assertStringIncludes(raw, "artifacts:");
     const read = await readTicket(dir, ticket.id);
     assertEquals(read.artifacts, ["code", "document"] as ArtifactType[]);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("readTicket: sets revision to a non-empty string", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    const ticketDir = join(dir, "gh-1");
+    await Deno.mkdir(ticketDir);
+    await Deno.writeTextFile(
+      join(ticketDir, "meta.md"),
+      `---
+id: gh-1
+provider: github
+title: T
+url: https://github.com/x/y/issues/1
+phase: intake
+status: new
+scope: []
+worktrees: {}
+created: "2026-01-01T00:00:00Z"
+updated: "2026-01-01T00:00:00Z"
+---
+`,
+    );
+    const ticket = await readTicket(dir, "gh-1");
+    assert(typeof ticket.revision === "string" && ticket.revision.length > 0);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("readTicket: successive reads of unchanged file return same revision", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    const ticketDir = join(dir, "gh-1");
+    await Deno.mkdir(ticketDir);
+    await Deno.writeTextFile(
+      join(ticketDir, "meta.md"),
+      `---
+id: gh-1
+provider: github
+title: T
+url: https://github.com/x/y/issues/1
+phase: intake
+status: new
+scope: []
+worktrees: {}
+created: "2026-01-01T00:00:00Z"
+updated: "2026-01-01T00:00:00Z"
+---
+`,
+    );
+    const t1 = await readTicket(dir, "gh-1");
+    const t2 = await readTicket(dir, "gh-1");
+    assertEquals(t1.revision, t2.revision);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("writeTicket: throws StaleTicketWriteError when revision does not match on-disk hash", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    const ticket = makeTicket({ id: "gh-1" });
+    await writeTicket(dir, ticket);
+    const read = await readTicket(dir, "gh-1");
+    await Deno.writeTextFile(
+      join(dir, "gh-1", "meta.md"),
+      "---\nmangled: true\n---\n",
+    );
+    await assertRejects(
+      () => writeTicket(dir, { ...read, status: "waiting" }),
+      StaleTicketWriteError,
+    );
+    const raw = await Deno.readTextFile(join(dir, "gh-1", "meta.md"));
+    assertStringIncludes(raw, "mangled: true");
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("writeTicket: throws StaleTicketWriteError when revision absent on existing file", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    await writeTicket(dir, makeTicket({ id: "gh-1" }));
+    const noRevision = makeTicket({ id: "gh-1" });
+    await assertRejects(
+      () => writeTicket(dir, noRevision),
+      StaleTicketWriteError,
+    );
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("writeTicket: succeeds without revision when meta.md does not exist", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    await writeTicket(dir, makeTicket({ id: "gh-1" }));
+    const raw = await Deno.readTextFile(join(dir, "gh-1", "meta.md"));
+    assertStringIncludes(raw, "gh-1");
+    assertFalse(raw.includes("revision:"));
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("writeTicket: on-disk hash after write matches readTicket revision", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    const ticket = makeTicket({ id: "gh-1" });
+    await writeTicket(dir, ticket);
+    const read = await readTicket(dir, "gh-1");
+    await writeTicket(dir, { ...read, status: "waiting" });
+    const read2 = await readTicket(dir, "gh-1");
+    assertEquals(read2.status, "waiting");
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("readTicketWithPatch: patchTicket writes attrs on top of current state", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    await writeTicket(dir, makeTicket({ id: "gh-1" }));
+    const { patchTicket } = await readTicketWithPatch(dir, "gh-1");
+    await patchTicket({ status: "waiting" });
+    const result = await readTicket(dir, "gh-1");
+    assertEquals(result.status, "waiting");
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("readTicketWithPatch: patchTicket reads fresh state before writing", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    await writeTicket(dir, makeTicket({ id: "gh-1" }));
+    const { patchTicket } = await readTicketWithPatch(dir, "gh-1");
+    const fresh = await readTicket(dir, "gh-1");
+    await writeTicket(dir, { ...fresh, shortTitle: "External change" });
+    await patchTicket({ status: "waiting" });
+    const result = await readTicket(dir, "gh-1");
+    assertEquals(result.status, "waiting");
+    assertEquals(result.shortTitle, "External change");
   } finally {
     await Deno.remove(dir, { recursive: true });
   }

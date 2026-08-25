@@ -1,8 +1,7 @@
 import {
   appendTicketLog,
   commitTicket,
-  readTicket,
-  writeTicket,
+  readTicketWithPatch,
 } from "../state/store.ts";
 import { expandHome, loadConfig } from "../config.ts";
 import type { TicketPhase, TicketStatus } from "../state/types.ts";
@@ -11,9 +10,15 @@ import type { Command } from "./types.ts";
 export async function performRetry(
   stateDir: string,
   id: string,
-  commitFn = commitTicket,
+  {
+    commitFn = commitTicket,
+    readTicketFn = readTicketWithPatch,
+  }: {
+    commitFn?: typeof commitTicket;
+    readTicketFn?: typeof readTicketWithPatch;
+  } = {},
 ): Promise<{ phase: TicketPhase; targetStatus: TicketStatus }> {
-  const ticket = await readTicket(stateDir, id);
+  const { ticket, patchTicket } = await readTicketFn(stateDir, id);
 
   if (ticket.status !== "needs-attention") {
     throw new Error(
@@ -25,8 +30,7 @@ export async function performRetry(
     ? "new"
     : "waiting";
 
-  await writeTicket(stateDir, {
-    ...ticket,
+  await patchTicket({
     status: targetStatus,
     updated: Temporal.Now.instant().toString(),
   });

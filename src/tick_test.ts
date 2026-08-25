@@ -22,6 +22,7 @@ import {
 } from "./test-support.ts";
 import type { Provider, WorkItem } from "./providers/types.ts";
 import { CorruptRepoIdentitiesError } from "./providers/github/repo-identity.ts";
+import { StaleTicketWriteError } from "./state/store.ts";
 
 type SpawnOpts = Parameters<TickDeps["spawn"]>[0];
 
@@ -975,38 +976,6 @@ Deno.test(
 );
 
 Deno.test(
-  "TickService: notify skipped when fresh read shows ticket no longer needs attention",
-  async () => {
-    const snapshotTicket = makeTicket({
-      id: "gh-1",
-      phase: "implementation",
-      status: "needs-attention",
-    });
-    const freshTicket = makeTicket({
-      id: "gh-1",
-      phase: "implementation",
-      status: "waiting",
-    });
-    let readCount = 0;
-    const notifySpy = spy((_t: TicketState) => Promise.resolve());
-    const writeTicketSpy = spy((_t: TicketState) => Promise.resolve());
-    const deps = makeTickServiceDeps({
-      listTickets: () => Promise.resolve(["gh-1"]),
-      readTicket: (_id) => {
-        readCount++;
-        return Promise.resolve(readCount === 1 ? snapshotTicket : freshTicket);
-      },
-      notify: notifySpy,
-      writeTicket: writeTicketSpy,
-      concurrency: 0,
-    });
-    await new TickService(deps).run();
-    assertSpyCalls(notifySpy, 0);
-    assertSpyCalls(writeTicketSpy, 0);
-  },
-);
-
-Deno.test(
   "TickService: refreshAnthropicPricing called before installPackages",
   async () => {
     const sequence: string[] = [];
@@ -1645,5 +1614,81 @@ Deno.test(
     assert(migratesCalled);
     const log = await Deno.readTextFile(join(lb.path, "tick.ndjson"));
     assertStringIncludes(log, '"repo-identity-unavailable"');
+  },
+);
+
+Deno.test(
+  "TickService: StaleTicketWriteError in action loop logs stale-write and drops ticket from advance pass",
+  async () => {
+    const logs: object[] = [];
+    const ticket = makeTicket({
+      id: "github/org/repo/1",
+      phase: "intake",
+      status: "new",
+    });
+    const deps = makeTickServiceDeps({
+      listTickets: () => Promise.resolve([ticket.id]),
+      readTicket: () => Promise.resolve(ticket),
+      tickDeps: makeTickDeps({
+        writeTicket: () => {
+          throw new StaleTicketWriteError("stale");
+        },
+        isProcessAlive: () => false,
+      }),
+      tickActions: [
+        {
+          applies: () => true,
+          run: async (t: TicketState, stateDir: string) => {
+            await deps.tickDeps.writeTicket(stateDir, t);
+            return null;
+          },
+        },
+      ],
+    });
+    const origAppend = deps.tickDeps.appendLog;
+    deps.tickDeps.appendLog = (sd, id, entry) => {
+      logs.push(entry);
+      return origAppend(sd, id, entry);
+    };
+    await new TickService(deps).run();
+    const staleEntry = logs.find(
+      (e) => (e as { event: string }).event === "stale-write",
+    );
+    assertExists(staleEntry);
+  },
+);
+
+Deno.test(
+  "TickService: StaleTicketWriteError in needs-attention pass skips notify",
+  async () => {
+    const ticket = makeTicket({
+      id: "github/org/repo/1",
+      phase: "intake",
+      status: "needs-attention",
+      notifiedNeedsAttention: undefined,
+    });
+    let notified = false;
+    const logs: object[] = [];
+    const deps = makeTickServiceDeps({
+      listTickets: () => Promise.resolve([ticket.id]),
+      readTicket: () => Promise.resolve(ticket),
+      writeTicket: () => {
+        throw new StaleTicketWriteError("stale");
+      },
+      notify: () => {
+        notified = true;
+        return Promise.resolve();
+      },
+    });
+    deps.tickDeps.appendLog = (_sd, _id, entry) => {
+      logs.push(entry);
+      return Promise.resolve();
+    };
+    await new TickService(deps).run();
+    assertFalse(notified);
+    const staleEntry = logs.find(
+      (e) => (e as { event: string }).event === "stale-write",
+    );
+    assertExists(staleEntry);
   },
 );

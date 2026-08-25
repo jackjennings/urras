@@ -1,6 +1,9 @@
-import { commitTicket, readTicket, writeTicket } from "../state/store.ts";
+import {
+  commitTicket,
+  readTicket,
+  readTicketWithPatch,
+} from "../state/store.ts";
 import { expandHome, loadConfig } from "../config.ts";
-import type { ApprovalEntry } from "../state/types.ts";
 import type { Command } from "./types.ts";
 import { join } from "@std/path";
 import { exists, isRegularFile } from "../filesystem.ts";
@@ -23,18 +26,21 @@ import {
 export async function performApprove(
   stateDir: string,
   id: string,
-  commitFn = commitTicket,
+  {
+    commitFn = commitTicket,
+    readTicketFn = readTicketWithPatch,
+  }: {
+    commitFn?: typeof commitTicket;
+    readTicketFn?: typeof readTicketWithPatch;
+  } = {},
 ): Promise<void> {
-  const ticket = await readTicket(stateDir, id);
+  const { ticket, patchTicket } = await readTicketFn(stateDir, id);
   const now = Temporal.Now.instant().toString();
-  const entry: ApprovalEntry = {
-    timestamp: now,
-    actor: "human",
-    phase: ticket.phase,
-  };
-  await writeTicket(stateDir, {
-    ...ticket,
-    approvals: [...ticket.approvals, entry],
+  await patchTicket({
+    approvals: [
+      ...ticket.approvals,
+      { timestamp: now, actor: "human" as const, phase: ticket.phase },
+    ],
     updated: now,
   });
   await commitFn(stateDir, id, `approve: ${id}`);
