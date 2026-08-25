@@ -9,7 +9,7 @@ import {
 } from "@std/assert";
 import { join } from "@std/path";
 import { assertSpyCall, assertSpyCalls, spy, stub } from "@std/testing/mock";
-import { selectCandidates, TickService } from "./tick.ts";
+import { TickService } from "./tick.ts";
 import { adjudicatePhaseModel } from "./pre-phase-adjudication.ts";
 import type { TickDeps } from "./phases/advance.ts";
 import type { Lock } from "./lock.ts";
@@ -301,7 +301,7 @@ Deno.test(
 );
 
 Deno.test(
-  "TickService: writeLastWorked called with selected candidate IDs",
+  "TickService: selectCandidates called with filtered candidate IDs and concurrency",
   async () => {
     const t1 = makeTicket({
       id: "gh-1",
@@ -314,56 +314,20 @@ Deno.test(
       status: "waiting",
     });
     const store: Record<string, TicketState> = { "gh-1": t1, "gh-2": t2 };
-    const writeLastWorkedSpy = spy((_ids: string[]) => Promise.resolve());
+    const selectCandidatesSpy = spy((ids: string[]) => Promise.resolve(ids));
     const deps = makeTickServiceDeps({
       listTickets: () => Promise.resolve(["gh-1", "gh-2"]),
       readTicket: (id) => Promise.resolve(store[id]),
-      writeLastWorked: writeLastWorkedSpy,
+      selectCandidates: selectCandidatesSpy,
       concurrency: 1,
     });
     await new TickService(deps).run();
-    assertSpyCall(writeLastWorkedSpy, 0, { args: [["gh-1"]] });
+    assertSpyCall(selectCandidatesSpy, 0, { args: [["gh-1", "gh-2"], 1] });
   },
 );
 
 Deno.test(
-  "TickService: readLastWorked shifts round-robin start position",
-  async () => {
-    const t1 = makeTicket({
-      id: "gh-1",
-      phase: "intake",
-      status: "waiting",
-    });
-    const t2 = makeTicket({
-      id: "gh-2",
-      phase: "intake",
-      status: "waiting",
-    });
-    const t3 = makeTicket({
-      id: "gh-3",
-      phase: "intake",
-      status: "waiting",
-    });
-    const store: Record<string, TicketState> = {
-      "gh-1": t1,
-      "gh-2": t2,
-      "gh-3": t3,
-    };
-    const writeLastWorkedSpy = spy((_ids: string[]) => Promise.resolve());
-    const deps = makeTickServiceDeps({
-      listTickets: () => Promise.resolve(["gh-1", "gh-2", "gh-3"]),
-      readTicket: (id) => Promise.resolve(store[id]),
-      readLastWorked: () => Promise.resolve(["gh-1"]),
-      writeLastWorked: writeLastWorkedSpy,
-      concurrency: 1,
-    });
-    await new TickService(deps).run();
-    assertSpyCall(writeLastWorkedSpy, 0, { args: [["gh-2"]] });
-  },
-);
-
-Deno.test(
-  "TickService: running tickets excluded from writeLastWorked",
+  "TickService: running tickets excluded from candidates passed to selectCandidates",
   async () => {
     const running = makeTicket({
       id: "gh-1",
@@ -379,7 +343,7 @@ Deno.test(
       "gh-1": running,
       "gh-2": waiting,
     };
-    const writeLastWorkedSpy = spy((_ids: string[]) => Promise.resolve());
+    const selectCandidatesSpy = spy((ids: string[]) => Promise.resolve(ids));
     const deps = makeTickServiceDeps({
       listTickets: () => Promise.resolve(["gh-1", "gh-2"]),
       readTicket: (id) => Promise.resolve(store[id]),
@@ -387,16 +351,16 @@ Deno.test(
         isProcessAlive: (id) => id === "gh-1",
         resolveModelConfig: () => ({ model: "m", thinking: "off" }),
       }),
-      writeLastWorked: writeLastWorkedSpy,
+      selectCandidates: selectCandidatesSpy,
       concurrency: 2,
     });
     await new TickService(deps).run();
-    assertSpyCall(writeLastWorkedSpy, 0, { args: [["gh-2"]] });
+    assertSpyCall(selectCandidatesSpy, 0, { args: [["gh-2"], 2] });
   },
 );
 
 Deno.test(
-  "TickService: writeLastWorked called with empty array when no candidates",
+  "TickService: selectCandidates called with empty array when no candidates",
   async () => {
     const running = makeTicket({
       id: "gh-1",
@@ -404,20 +368,20 @@ Deno.test(
       status: "running",
     });
     const store: Record<string, TicketState> = { "gh-1": running };
-    const writeLastWorkedSpy = spy((_ids: string[]) => Promise.resolve());
+    const selectCandidatesSpy = spy((ids: string[]) => Promise.resolve(ids));
     const deps = makeTickServiceDeps({
       listTickets: () => Promise.resolve(["gh-1"]),
       readTicket: (id) => Promise.resolve(store[id]),
-      writeLastWorked: writeLastWorkedSpy,
+      selectCandidates: selectCandidatesSpy,
       concurrency: 2,
     });
     await new TickService(deps).run();
-    assertSpyCall(writeLastWorkedSpy, 0, { args: [[]] });
+    assertSpyCall(selectCandidatesSpy, 0, { args: [[], 2] });
   },
 );
 
 Deno.test(
-  "TickService: skipped-status tickets not included in candidates or writeLastWorked",
+  "TickService: skipped-status tickets not included in candidates passed to selectCandidates",
   async () => {
     const done = makeTicket({ id: "gh-1", phase: "merge", status: "done" });
     const needsAttention = makeTicket({
@@ -435,20 +399,20 @@ Deno.test(
       "gh-2": needsAttention,
       "gh-3": mergeWaiting,
     };
-    const writeLastWorkedSpy = spy((_ids: string[]) => Promise.resolve());
+    const selectCandidatesSpy = spy((ids: string[]) => Promise.resolve(ids));
     const deps = makeTickServiceDeps({
       listTickets: () => Promise.resolve(["gh-1", "gh-2", "gh-3"]),
       readTicket: (id) => Promise.resolve(store[id]),
-      writeLastWorked: writeLastWorkedSpy,
+      selectCandidates: selectCandidatesSpy,
       concurrency: 3,
     });
     await new TickService(deps).run();
-    assertSpyCall(writeLastWorkedSpy, 0, { args: [[]] });
+    assertSpyCall(selectCandidatesSpy, 0, { args: [[], 3] });
   },
 );
 
 Deno.test(
-  "TickService: wont-do tickets not included in candidates or writeLastWorked",
+  "TickService: wont-do tickets not included in candidates passed to selectCandidates",
   async () => {
     const wontDo = makeTicket({
       id: "gh-wont-do",
@@ -456,26 +420,26 @@ Deno.test(
       status: "done",
     });
     const store: Record<string, TicketState> = { "gh-wont-do": wontDo };
-    const writeLastWorkedSpy = spy((_ids: string[]) => Promise.resolve());
+    const selectCandidatesSpy = spy((ids: string[]) => Promise.resolve(ids));
     const deps = makeTickServiceDeps({
       listTickets: () => Promise.resolve(["gh-wont-do"]),
       readTicket: (id) => Promise.resolve(store[id]),
-      writeLastWorked: writeLastWorkedSpy,
+      selectCandidates: selectCandidatesSpy,
       concurrency: 3,
     });
     await new TickService(deps).run();
-    assertSpyCall(writeLastWorkedSpy, 0, { args: [[]] });
+    assertSpyCall(selectCandidatesSpy, 0, { args: [[], 3] });
   },
 );
 
 Deno.test(
-  "TickService: commitState called after writeLastWorked",
+  "TickService: commitState called after selectCandidates",
   async () => {
     const sequence: string[] = [];
     const deps = makeTickServiceDeps({
-      writeLastWorked: spy(() => {
-        sequence.push("writeLastWorked");
-        return Promise.resolve();
+      selectCandidates: spy((ids: string[]) => {
+        sequence.push("selectCandidates");
+        return Promise.resolve(ids);
       }),
       commitState: spy(() => {
         sequence.push("commitState");
@@ -484,7 +448,7 @@ Deno.test(
     });
     await new TickService(deps).run();
     assertLess(
-      sequence.indexOf("writeLastWorked"),
+      sequence.indexOf("selectCandidates"),
       sequence.indexOf("commitState"),
     );
   },
@@ -849,58 +813,6 @@ Deno.test(
     );
   },
 );
-
-// ── selectCandidates ──────────────────────────────────────────────────────────
-
-Deno.test("selectCandidates: empty candidates returns empty", () => {
-  assertEquals(selectCandidates([], [], 2), []);
-});
-
-Deno.test("selectCandidates: no lastWorked starts at index 0", () => {
-  assertEquals(selectCandidates(["gh-1", "gh-2", "gh-3"], [], 2), [
-    "gh-1",
-    "gh-2",
-  ]);
-});
-
-Deno.test("selectCandidates: lastWorked anchor advances start by one", () => {
-  assertEquals(
-    selectCandidates(["gh-1", "gh-2", "gh-3", "gh-4", "gh-5"], ["gh-2"], 2),
-    ["gh-3", "gh-4"],
-  );
-});
-
-Deno.test("selectCandidates: anchor at last element wraps to index 0", () => {
-  assertEquals(selectCandidates(["gh-1", "gh-2", "gh-3"], ["gh-3"], 2), [
-    "gh-1",
-    "gh-2",
-  ]);
-});
-
-Deno.test("selectCandidates: wrapping selection spans end and start of list", () => {
-  assertEquals(
-    selectCandidates(["gh-1", "gh-2", "gh-3", "gh-4", "gh-5"], ["gh-4"], 3),
-    ["gh-5", "gh-1", "gh-2"],
-  );
-});
-
-Deno.test("selectCandidates: concurrency larger than candidates returns all", () => {
-  assertEquals(selectCandidates(["gh-1", "gh-2"], [], 10), ["gh-1", "gh-2"]);
-});
-
-Deno.test("selectCandidates: all lastWorked IDs absent from candidates starts at 0", () => {
-  assertEquals(
-    selectCandidates(["gh-1", "gh-3", "gh-5"], ["gh-2", "gh-4"], 2),
-    ["gh-1", "gh-3"],
-  );
-});
-
-Deno.test("selectCandidates: uses last surviving ID from end of lastWorked as anchor", () => {
-  assertEquals(
-    selectCandidates(["gh-1", "gh-2", "gh-3"], ["gh-1", "gh-99", "gh-2"], 1),
-    ["gh-3"],
-  );
-});
 
 Deno.test(
   "TickService: notify called for needs-attention ticket",

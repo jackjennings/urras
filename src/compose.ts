@@ -84,6 +84,7 @@ import { createMigrationRunner } from "./migrations/runner.ts";
 import type { Migration, StoreMigration } from "./migrations/types.ts";
 import type { TickServiceDeps } from "./tick.ts";
 import { appendTickLog } from "./logger.ts";
+import { makeCandidateSelector } from "./candidate-selection.ts";
 import { resolvePhaseModel } from "./phases/model.ts";
 import { adjudicatePhaseModel } from "./pre-phase-adjudication.ts";
 import {
@@ -1211,23 +1212,25 @@ export function composeTickDeps(
         writeTextFile(join(dir, ".migrations"), ids.join("\n") + "\n"),
       writeTicket,
     }),
-    readLastWorked: async () => {
-      try {
-        const raw = await readTextFile(lastWorkedPath);
-        const parsed = JSON.parse(raw);
-        if (
-          !Array.isArray(parsed) ||
-          !parsed.every((x) => typeof x === "string")
-        ) {
+    selectCandidates: makeCandidateSelector({
+      readLastWorked: async () => {
+        try {
+          const raw = await readTextFile(lastWorkedPath);
+          const parsed = JSON.parse(raw);
+          if (
+            !Array.isArray(parsed) ||
+            !parsed.every((x) => typeof x === "string")
+          ) {
+            return [];
+          }
+          return parsed as string[];
+        } catch {
           return [];
         }
-        return parsed as string[];
-      } catch {
-        return [];
-      }
-    },
-    writeLastWorked: (ids) =>
-      writeTextFile(lastWorkedPath, JSON.stringify(ids)),
+      },
+      writeLastWorked: (ids) =>
+        writeTextFile(lastWorkedPath, JSON.stringify(ids)),
+    }),
     listTickets: () => listTickets(stateDir),
     readTicket: (id) => readTicket(stateDir, id),
     writeTicket: (t) => writeTicket(stateDir, t),
