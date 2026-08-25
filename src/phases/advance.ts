@@ -8,8 +8,8 @@ import {
   loadProviderPrompt,
   loadRevisionPrompt,
   loadStatePrompt,
-  nextPhase,
 } from "./runners.ts";
+import { DEFAULT_PIPELINE_STEPS, nextPipelinePhase } from "./pipeline.ts";
 import { compactTimestamp } from "../timestamp.ts";
 import {
   type ApprovalEntry,
@@ -17,7 +17,7 @@ import {
   type TicketState,
   type WorktreeInfo,
 } from "../state/types.ts";
-import { type ActivePhase, PHASE_SEQUENCE } from "./types.ts";
+import type { ActivePhase } from "./types.ts";
 import { readDir, readTextFile } from "../filesystem.ts";
 
 const DEFAULT_MAX_PROMPT_TOKENS = 5_000;
@@ -74,6 +74,7 @@ export interface TickDeps {
   ) => Promise<string | null>;
   maxPromptTokens?: number;
   buildRepoCorpusText: () => Promise<string>;
+  buildPipelineOptionsText: () => Promise<string>;
   spawnOutlierAnalysis: (
     ticketId: string,
     ticketDir: string,
@@ -210,6 +211,7 @@ export async function advancePhase(
       ticket.artifacts,
     );
     const corpusText = await deps.buildRepoCorpusText();
+    const pipelineOptionsText = await deps.buildPipelineOptionsText();
     const intakeStatePrompt = await loadStatePrompt(
       "intake",
       stateDir,
@@ -221,6 +223,7 @@ export async function advancePhase(
       intakeSupplement,
       intakeArtifactSupplement,
       corpusText,
+      pipelineOptionsText,
       intakeStatePrompt,
     ]
       .filter((part) => part.length > 0)
@@ -647,19 +650,22 @@ export async function advancePhase(
     return;
   }
 
-  const activePhases = PHASE_SEQUENCE.filter((p) => p !== "implementation");
+  const pipelineSteps = ticket.pipelineSteps ?? DEFAULT_PIPELINE_STEPS;
+  const activePhases = pipelineSteps
+    .map((s) => s.phase)
+    .filter((p) => p !== "implementation");
   if (
     ticket.status === "waiting" &&
     isApproved(ticket) &&
     (activePhases as string[]).includes(ticket.phase)
   ) {
     const activePhase = ticket.phase as ActivePhase;
-    const next = nextPhase(activePhase);
+    const next = nextPipelinePhase(pipelineSteps, activePhase);
     if (next === "done") return;
     const effectiveNext: ActivePhase = activePhase === "spec" &&
         ticket.phases?.plan?.skip === true &&
         next === "plan"
-      ? nextPhase("plan") as ActivePhase
+      ? nextPipelinePhase(pipelineSteps, "plan") as ActivePhase
       : next;
     if (
       effectiveNext === "implementation" &&

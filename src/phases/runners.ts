@@ -1,7 +1,6 @@
 import { join } from "@std/path";
 import type { ActivePhase } from "./types.ts";
 import type { ArtifactType } from "../state/types.ts";
-import { PHASE_SEQUENCE } from "./types.ts";
 import { readTextFile } from "../filesystem.ts";
 import { deriveProjectPath } from "./project-path.ts";
 
@@ -120,10 +119,4 @@ export async function loadStatePrompt(
   }
 
   return parts.join("\n\n");
-}
-
-export function nextPhase(current: ActivePhase): ActivePhase | "done" {
-  const idx = PHASE_SEQUENCE.indexOf(current);
-  if (idx === -1 || idx === PHASE_SEQUENCE.length - 1) return "done";
-  return PHASE_SEQUENCE[idx + 1];
 }

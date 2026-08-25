@@ -39,6 +39,7 @@ export function makeTickDeps(overrides: Partial<TickDeps> = {}): TickDeps {
     readPhaseExitCode: () => Promise.resolve(0),
     readPhaseSessionId: () => Promise.resolve(null),
     buildRepoCorpusText: () => Promise.resolve(""),
+    buildPipelineOptionsText: () => Promise.resolve(""),
     spawnOutlierAnalysis: () => Promise.resolve(),
     adjudicatePhaseModel: () => Promise.resolve(null),
     readRunPidBootStamp: () => Promise.resolve(null),

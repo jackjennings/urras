@@ -2269,6 +2269,137 @@ Deno.test(
 );
 
 Deno.test(
+  "advancePhase: new ticket intake prompt appends pipeline options text when present",
+  async () => {
+    const ticket = makeTicket({
+      phase: "intake",
+      status: "new",
+      provider: "jira",
+    });
+    let spawnedPrompt = "";
+    const spawnSpy = spy((opts: SpawnOpts) => {
+      spawnedPrompt = opts.prompt;
+      return Promise.resolve();
+    });
+    await advancePhase(
+      ticket,
+      "/state",
+      makeTickDeps({
+        spawn: spawnSpy,
+        resolveModelConfig: () => ({
+          model: "claude-sonnet-4-6",
+          thinking: "off",
+        }),
+        buildPipelineOptionsText: () =>
+          Promise.resolve(
+            "## Available Pipeline Templates\n\n- fast: Skips planning.\n",
+          ),
+      }),
+    );
+    assertSpyCall(spawnSpy, 0);
+    const basePrompt = await loadPromptFile("intake.md");
+    assertEquals(
+      spawnedPrompt,
+      basePrompt +
+        "\n\n## Available Pipeline Templates\n\n" +
+        "- fast: Skips planning.\n",
+    );
+  },
+);
+
+Deno.test(
+  "advancePhase: new ticket intake prompt has no trailing pipeline block when buildPipelineOptionsText is absent",
+  async () => {
+    const ticket = makeTicket({
+      phase: "intake",
+      status: "new",
+      provider: "jira",
+    });
+    let spawnedPrompt = "";
+    const spawnSpy = spy((opts: SpawnOpts) => {
+      spawnedPrompt = opts.prompt;
+      return Promise.resolve();
+    });
+    await advancePhase(
+      ticket,
+      "/state",
+      makeTickDeps({
+        spawn: spawnSpy,
+        resolveModelConfig: () => ({
+          model: "claude-sonnet-4-6",
+          thinking: "off",
+        }),
+      }),
+    );
+    assertSpyCall(spawnSpy, 0);
+    const basePrompt = await loadPromptFile("intake.md");
+    assertEquals(spawnedPrompt, basePrompt);
+  },
+);
+
+Deno.test(
+  "advancePhase: intake/waiting + approved with a two-step pipeline advances directly to implementation",
+  async () => {
+    const ticket = makeTicket({
+      phase: "intake",
+      status: "waiting",
+      approvals: [{ timestamp: "t", actor: "human", phase: "intake" }],
+      pipelineSteps: [{ phase: "intake" }, { phase: "implementation" }],
+      worktrees: {
+        "jackjennings/lazyboy": { path: "/tmp/wt", branch: "gh-1" },
+      },
+    });
+    let spawnedPhase = "";
+    const spawnSpy = spy((opts: SpawnOpts) => {
+      spawnedPhase = opts.phase;
+      return Promise.resolve();
+    });
+    await advancePhase(
+      ticket,
+      "/state",
+      makeTickDeps({
+        spawn: spawnSpy,
+        resolveModelConfig: () => ({
+          model: "claude-sonnet-4-6",
+          thinking: "off",
+        }),
+        readPhaseExitCode: () => Promise.resolve(null),
+      }),
+    );
+    assertEquals(spawnedPhase, "implementation");
+  },
+);
+
+Deno.test(
+  "advancePhase: intake/waiting + approved with no pipelineSteps falls back to the default sequence and advances to enrichment",
+  async () => {
+    const ticket = makeTicket({
+      phase: "intake",
+      status: "waiting",
+      approvals: [{ timestamp: "t", actor: "human", phase: "intake" }],
+    });
+    let spawnedPhase = "";
+    const spawnSpy = spy((opts: SpawnOpts) => {
+      spawnedPhase = opts.phase;
+      return Promise.resolve();
+    });
+    await advancePhase(
+      ticket,
+      "/state",
+      makeTickDeps({
+        spawn: spawnSpy,
+        resolveModelConfig: () => ({
+          model: "claude-sonnet-4-6",
+          thinking: "off",
+        }),
+        readPhaseExitCode: () => Promise.resolve(null),
+      }),
+    );
+    assertEquals(spawnedPhase, "enrichment");
+  },
+);
+
+Deno.test(
   "advancePhase: implementation/running with dead PID calls spawnOutlierAnalysis with ticket id, dir, worktree path, and phase",
   async () => {
     const ticket = makeTicket({
