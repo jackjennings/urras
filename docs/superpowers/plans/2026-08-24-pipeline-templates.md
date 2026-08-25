@@ -1770,7 +1770,6 @@ Omit the `## Pipeline` section entirely to use the default pipeline — absence 
 the default. If no `## Available Pipeline Templates` section appears below this
 prompt, always omit `## Pipeline`.
 
-````
 - [ ] **Step 2: Verify the file still renders**
 
 Run: `deno task test:file src/phases/advance_test.ts`
@@ -1785,7 +1784,7 @@ deno fmt src/phases/prompts/intake.md
 deno lint src/phases/prompts/intake.md
 git add src/phases/prompts/intake.md
 git commit -m "docs(prompts): add pipeline selection to the intake prompt"
-````
+```
 
 ---
 
