@@ -73,7 +73,9 @@ Tickets carry `phase: TicketPhase` and `status: TicketStatus`.
 
 - `PHASE_SEQUENCE` covers only the five runner phases (`intake` →
   `implementation`), cycling `new → running → waiting → (approved) → running`;
-  `merge` is handled explicitly in `advancePhase`.
+  `merge` is handled explicitly in `advancePhase`. It is the master list a
+  per-ticket pipeline template subsequences from, not necessarily a given
+  ticket's actual path — see Pipeline templates below.
 - Implementation agents leave the ticket in `implementation/waiting` for review;
   once approved it moves to `merge/waiting`.
 - Any phase can transition to `needs-attention` on subprocess failure.
@@ -89,6 +91,62 @@ present, `outputRetries` is cleared to `undefined` when the ticket is written to
 `waiting`. If the file is still absent, the ticket transitions to
 `needs-attention` as normal. Recovery is skipped when no session ID was recorded
 for the phase.
+
+## Pipeline templates
+
+A ticket's phase sequence is not always the fixed
+`intake → enrichment → spec → plan → implementation` order.
+`TicketState.pipeline` (a template name) and `TicketState.pipelineSteps`
+(`{ phase: ActivePhase }[]`) are resolved once, right after intake is approved,
+and pinned for the ticket's lifetime — `advancePhase` walks `pipelineSteps` (via
+`nextPipelinePhase`, `src/phases/pipeline.ts`) instead of `PHASE_SEQUENCE`
+directly. `PHASE_SEQUENCE` remains the master list of valid phase names in
+canonical order; a template's `steps` is always an in-order subsequence of it,
+never a reordering or a superset.
+
+Templates are TOML files at `{extensionsDir}/pipelines/<name>/pipeline.toml`:
+
+```toml
+name = "fast"
+description = "Skips enrichment, spec, and plan for a single, self-contained change."
+
+[[steps]]
+phase = "intake"
+
+[[steps]]
+phase = "implementation"
+```
+
+`name` must match the directory name exactly — a mismatch is
+`template-invalid-shape`. `steps` must start with `intake` and end with
+`implementation` (`merge`/`wont-do` are never part of a template — the state
+machine appends them) and list any of `enrichment`/`spec`/`plan` in between, in
+the same relative order as `PHASE_SEQUENCE`, with no reordering and no
+duplicates. urras ships exactly one built-in template, `default`
+(`DEFAULT_PIPELINE_STEPS`, equivalent to today's fixed `PHASE_SEQUENCE`) —
+everything else is extensions-dir content only.
+
+Intake judges whether a ticket is simple enough for a lighter template and, if
+so, names it in its own output under a `## Pipeline` section (same
+omit-means-default convention as `## Artifact type`) — never by editing
+`meta.md` directly, since `selfReview` only reads a phase's output file.
+`intake-self-review.md` independently re-derives whether the choice is
+justified, the same way `spec-self-review.md` re-derives spec triviality.
+
+`resolvePipelineAction` (`src/tick-actions/resolve-pipeline.ts`) fires once,
+after intake is approved, extracts the requested name (via
+`extractIntakePipeline`, an LLM classification call constrained to the templates
+`listAvailablePipelines` currently finds — same pattern as
+`extractIntakeArtifacts`), resolves it against `config.pipelines?.default` and
+the built-in `default` as fallbacks, and pins the result onto
+`pipeline`/`pipelineSteps`. A ticket written before this feature shipped has no
+`pipelineSteps` — `advancePhase` treats that as `DEFAULT_PIPELINE_STEPS`, so no
+migration is needed.
+
+Best-of-N generation (running multiple candidate outputs at a step and judging
+between them) and template-defined phase reordering or new phase names are
+deliberately out of scope — see
+`docs/superpowers/specs/2026-08-24-pipeline-templates-design.md` for why.
 
 ## Approval log
 
@@ -399,6 +457,9 @@ event rather than coining a synonym:
 | `reconciled-prs`                                                                   | `reconcilePRsAction` populated `prs`; carries `count`.                                                     |
 | `artifact-corrected`                                                               | Intake artifact parsed; `artifacts` corrected in `meta.md`; carries `artifacts`.                           |
 | `artifact-defaulted`                                                               | Artifact type absent in intake output; default `["code"]` applied.                                         |
+| `pipeline-corrected`                                                               | Intake pipeline choice parsed and validated; `pipeline`/`pipelineSteps` pinned; carries `pipeline`.        |
+| `pipeline-defaulted`                                                               | No pipeline requested; default pipeline pinned silently; carries `pipeline`.                               |
+| `pipeline-invalid`                                                                 | A requested or configured pipeline name failed to load or validate; carries `requestedName` and `reason`.  |
 | `error`                                                                            | An action or phase threw; carries the error message.                                                       |
 
 A `reason` field, where present, is a lowercase kebab-case label naming the
@@ -408,11 +469,12 @@ cause (`agent-failed`, `non-zero-exit`, `missing`, `output-file-missing`,
 `push-failed`, `no-verdict-line`, `incomplete`, `pr-fetch-failed`,
 `ci-unfixable`, `rerun-failed`, `infra-rerun-exhausted`, `no-commit`,
 `context-file-unreadable`, `new-marker-on-local-path`, `local-repo-init-failed`,
-`repo-creation-failed`, `meta-unreadable`, `llm-failed`). Reuse an existing
-label when it fits; add a new one only for a genuinely new cause, and never put
-free prose in `reason` (that belongs in a separate field or the `error`
-message). Work-item identity is the ticket directory itself — do not add an `id`
-or `ticketId` field to per-ticket entries.
+`repo-creation-failed`, `meta-unreadable`, `llm-failed`, `template-not-found`,
+`template-parse-failed`, `template-invalid-shape`, `template-invalid-order`).
+Reuse an existing label when it fits; add a new one only for a genuinely new
+cause, and never put free prose in `reason` (that belongs in a separate field or
+the `error` message). Work-item identity is the ticket directory itself — do not
+add an `id` or `ticketId` field to per-ticket entries.
 
 ## Failure handling
 
