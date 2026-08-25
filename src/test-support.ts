@@ -3,6 +3,7 @@ import { removeSync } from "./filesystem.ts";
 import type { TickServiceDeps } from "./tick.ts";
 import type { TickDeps } from "./phases/advance.ts";
 import { appendTickLog } from "./logger.ts";
+import { selectCandidates } from "./candidate-selection.ts";
 
 export function makeTicket(overrides: Partial<TicketState> = {}): TicketState {
   return {
@@ -58,8 +59,8 @@ export function makeTickServiceDeps(
     tickActions: [],
     tickDeps: makeTickDeps(),
     runMigrations: (_dir, tickets) => Promise.resolve(tickets),
-    readLastWorked: () => Promise.resolve([]),
-    writeLastWorked: () => Promise.resolve(),
+    selectCandidates: (candidates, concurrency) =>
+      Promise.resolve(selectCandidates(candidates, [], concurrency)),
     listTickets: () => Promise.resolve([]),
     readTicket: (_id) => Promise.resolve(makeTicket()),
     writeTicket: () => Promise.resolve(),

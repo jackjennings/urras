@@ -1,6 +1,7 @@
 import { estimateTokenCount } from "tokenx";
 import { adjudicatePhaseModel } from "./pre-phase-adjudication.ts";
 import { advancePhase, type TickDeps } from "./phases/advance.ts";
+import type { CandidateSelector } from "./candidate-selection.ts";
 import type { Lock } from "./lock.ts";
 import type { Provider } from "./providers/types.ts";
 import type { TickAction } from "./tick-actions/types.ts";
@@ -21,8 +22,7 @@ export interface TickServiceDeps {
   tickActions: TickAction[];
   tickDeps: TickDeps;
   runMigrations: MigrationFn;
-  readLastWorked(): Promise<string[]>;
-  writeLastWorked(ids: string[]): Promise<void>;
+  selectCandidates: CandidateSelector;
   listTickets(): Promise<string[]>;
   readTicket(id: string): Promise<TicketState>;
   writeTicket(ticket: TicketState): Promise<void>;
@@ -46,30 +46,6 @@ export interface TickServiceDeps {
   reconcileRepoIdentities(): Promise<void>;
   writeTickProgress: (label: string | null) => Promise<void>;
   deadlineMs?: number;
-}
-
-export function selectCandidates(
-  candidates: string[],
-  lastWorked: string[],
-  concurrency: number,
-): string[] {
-  if (candidates.length === 0) return [];
-
-  let start = 0;
-  for (let i = lastWorked.length - 1; i >= 0; i--) {
-    const idx = candidates.indexOf(lastWorked[i]);
-    if (idx !== -1) {
-      start = (idx + 1) % candidates.length;
-      break;
-    }
-  }
-
-  const count = Math.min(concurrency, candidates.length);
-  const result: string[] = [];
-  for (let i = 0; i < count; i++) {
-    result.push(candidates[(start + i) % candidates.length]);
-  }
-  return result;
 }
 
 class TickDeadlineError extends Error {}
@@ -286,10 +262,8 @@ export class TickService {
         t.phase !== "wont-do",
     );
 
-    const lastWorked = await deps.readLastWorked();
-    const selectedIds = selectCandidates(
+    const selectedIds = await deps.selectCandidates(
       candidateTickets.map((t) => t.id),
-      lastWorked,
       deps.concurrency,
     );
     const selectedSet = new Set(selectedIds);
@@ -332,7 +306,6 @@ export class TickService {
       await advancePhase(ticket, deps.stateDir, deps.tickDeps);
     }
 
-    await deps.writeLastWorked(selectedIds);
     await deps.scaffoldStatePrompts();
     await deps.commitState();
     await deps.runCeremonies();
