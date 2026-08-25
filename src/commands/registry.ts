@@ -16,6 +16,8 @@ import { hud } from "./hud.ts";
 import { usage } from "./usage.ts";
 import { rewind } from "./rewind.ts";
 import { doctor } from "./doctor.ts";
+import { capture } from "./capture.ts";
+import { brainstorm } from "./brainstorm.ts";
 import type { Command } from "./types.ts";
 
 export const commands: Command[] = [
@@ -37,4 +39,6 @@ export const commands: Command[] = [
   update,
   hud,
   doctor,
+  capture,
+  brainstorm,
 ];

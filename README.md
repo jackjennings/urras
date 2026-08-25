@@ -344,6 +344,8 @@ completion setup is needed when using the plugin.
 | `uup` | `ur update`     |
 | `uhd` | `ur hud`        |
 | `uus` | `ur usage`      |
+| `uca` | `ur capture`    |
+| `ubr` | `ur brainstorm` |
 
 ---
 

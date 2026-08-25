@@ -19,6 +19,8 @@ alias uta='ur tail'
 alias uup='ur update'
 alias uhd='ur hud'
 alias uus='ur usage'
+alias uca='ur capture'
+alias ubr='ur brainstorm'
 
 source <(ur completion zsh)
 
