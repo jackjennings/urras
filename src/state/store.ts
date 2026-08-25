@@ -80,6 +80,160 @@ function normalizePrEntry(raw: unknown): PrEntry | null {
   return entry;
 }
 
+const NOT_FRONTMATTER = Symbol("NOT_FRONTMATTER");
+
+type FieldCodec<K extends keyof TicketState> = {
+  write(t: TicketState): unknown;
+  read(d: Record<string, unknown>): TicketState[K];
+};
+
+type Field<K extends keyof TicketState> =
+  | FieldCodec<K>
+  | typeof NOT_FRONTMATTER;
+
+const FIELDS: { [K in keyof TicketState]-?: Field<K> } = {
+  id: {
+    write: (t) => t.id,
+    read: (d) => d.id as string,
+  },
+  provider: {
+    write: (t) => t.provider,
+    read: (d) => d.provider as string,
+  },
+  title: {
+    write: (t) => t.title,
+    read: (d) => d.title as string,
+  },
+  shortTitle: {
+    write: (t) => t.shortTitle,
+    read: (d) => d.shortTitle as string | undefined,
+  },
+  url: {
+    write: (t) => t.url,
+    read: (d) => d.url as string,
+  },
+  phase: {
+    write: (t) => t.phase,
+    read: (d) => d.phase as TicketPhase,
+  },
+  status: {
+    write: (t) => t.status,
+    read: (d) => d.status as TicketStatus,
+  },
+  approvals: {
+    write: (t) => t.approvals,
+    read: (d) => (d.approvals as ApprovalEntry[] | undefined) ?? [],
+  },
+  scope: {
+    write: (t) => t.scope,
+    read: (d) => (d.scope as string[] | undefined) ?? [],
+  },
+  worktrees: {
+    write: (t) => t.worktrees,
+    read: (d) => {
+      const raw = d.worktrees as
+        | Record<string, { path: string; branch: string }>
+        | undefined;
+      const worktrees: Record<string, WorktreeInfo> = {};
+      if (raw) {
+        for (const [slug, info] of Object.entries(raw)) {
+          worktrees[slug] = { path: info.path, branch: info.branch };
+        }
+      }
+      return worktrees;
+    },
+  },
+  prs: {
+    write: (t) => t.prs,
+    read: (d) => {
+      const rawPrs = d.prs;
+      if (!Array.isArray(rawPrs)) return undefined;
+      return (rawPrs as unknown[]).flatMap((entry) => {
+        const normalized = normalizePrEntry(entry);
+        if (!normalized) {
+          console.error("readTicket: dropping prs entry without url");
+          return [];
+        }
+        return [normalized];
+      });
+    },
+  },
+  newRepos: {
+    write: (t) => t.newRepos,
+    read: (d) => d.newRepos as string[] | undefined,
+  },
+  ciHandledRunIds: {
+    write: (t) => t.ciHandledRunIds,
+    read: (d) => d.ciHandledRunIds as string[] | undefined,
+  },
+  lastSeenCommentTimestamp: {
+    write: (t) => t.lastSeenCommentTimestamp,
+    read: (d) => normalizeTimestamp(d.lastSeenCommentTimestamp),
+  },
+  lastSeenPrCommentTimestamp: {
+    write: (t) => t.lastSeenPrCommentTimestamp,
+    read: (d) => normalizeTimestamp(d.lastSeenPrCommentTimestamp),
+  },
+  providerDone: {
+    write: (t) => t.providerDone,
+    read: (d) => d.providerDone as boolean | undefined,
+  },
+  providerPickedUp: {
+    write: (t) => t.providerPickedUp,
+    read: (d) => d.providerPickedUp as boolean | undefined,
+  },
+  outputRetries: {
+    write: (t) => t.outputRetries,
+    read: (d) => d.outputRetries as number | undefined,
+  },
+  resumeRetries: {
+    write: (t) => t.resumeRetries,
+    read: (d) => d.resumeRetries as number | undefined,
+  },
+  phaseSessionIds: {
+    write: (t) => {
+      if (t.phaseSessionIds === undefined) return undefined;
+      const defined = Object.fromEntries(
+        Object.entries(t.phaseSessionIds).filter(
+          ([, sessionId]) => sessionId !== undefined,
+        ),
+      );
+      return Object.keys(defined).length > 0 ? defined : undefined;
+    },
+    read: (d) => d.phaseSessionIds as TicketState["phaseSessionIds"],
+  },
+  notifiedNeedsAttention: {
+    write: (t) => t.notifiedNeedsAttention,
+    read: (d) => d.notifiedNeedsAttention as boolean | undefined,
+  },
+  created: {
+    write: (t) => t.created,
+    read: (d) => d.created as string,
+  },
+  updated: {
+    write: (t) => t.updated,
+    read: (d) => d.updated as string,
+  },
+  body: NOT_FRONTMATTER,
+  revision: NOT_FRONTMATTER,
+  phases: {
+    write: (t) => t.phases,
+    read: (d) => d.phases as TicketState["phases"],
+  },
+  artifacts: {
+    write: (t) => t.artifacts,
+    read: (d) => (d.artifacts as ArtifactType[] | undefined) ?? ["code"],
+  },
+  documents: {
+    write: (t) => t.documents,
+    read: (d) => d.documents as { url: string; title: string }[] | undefined,
+  },
+  workItems: {
+    write: (t) => t.workItems,
+    read: (d) => d.workItems as { url: string; title: string }[] | undefined,
+  },
+};
+
 export async function readTicket(
   stateDir: string,
   id: string,
@@ -109,63 +263,18 @@ export async function readTicket(
     );
   }
 
-  const worktreesRaw = data.worktrees as
-    | Record<string, { path: string; branch: string }>
-    | undefined;
-  const worktrees: Record<string, WorktreeInfo> = {};
-  if (worktreesRaw) {
-    for (const [slug, info] of Object.entries(worktreesRaw)) {
-      worktrees[slug] = { path: info.path, branch: info.branch };
-    }
+  data.phase = phase;
+  data.status = status;
+
+  const result: Record<string, unknown> = {};
+  for (const [key, field] of Object.entries(FIELDS)) {
+    if (field === NOT_FRONTMATTER) continue;
+    const f = field as FieldCodec<keyof TicketState>;
+    result[key] = f.read(data);
   }
-
-  const rawPrs = data.prs;
-  const prs: PrEntry[] | undefined = Array.isArray(rawPrs)
-    ? (rawPrs as unknown[]).flatMap((entry) => {
-      const normalized = normalizePrEntry(entry);
-      if (!normalized) {
-        console.error(`readTicket: dropping prs entry without url in ${id}`);
-        return [];
-      }
-      return [normalized];
-    })
-    : undefined;
-
-  const ticket: TicketState = {
-    id: data.id,
-    provider: data.provider,
-    title: data.title,
-    shortTitle: data.shortTitle as string | undefined,
-    url: data.url,
-    phase,
-    status,
-    approvals: (data.approvals as ApprovalEntry[] | undefined) ?? [],
-    scope: data.scope ?? [],
-    worktrees,
-    prs,
-    newRepos: data.newRepos as string[] | undefined,
-    created: data.created,
-    updated: data.updated,
-    body: content.trim(),
-    phases: data.phases as TicketState["phases"],
-    outputRetries: data.outputRetries as number | undefined,
-    resumeRetries: data.resumeRetries as number | undefined,
-    artifacts: (data.artifacts as ArtifactType[] | undefined) ?? ["code"],
-    documents: data.documents as { url: string; title: string }[] | undefined,
-    workItems: data.workItems as { url: string; title: string }[] | undefined,
-    lastSeenCommentTimestamp: normalizeTimestamp(
-      data.lastSeenCommentTimestamp,
-    ),
-    lastSeenPrCommentTimestamp: normalizeTimestamp(
-      data.lastSeenPrCommentTimestamp,
-    ),
-    providerDone: data.providerDone as boolean | undefined,
-    providerPickedUp: data.providerPickedUp as boolean | undefined,
-    ciHandledRunIds: data.ciHandledRunIds as string[] | undefined,
-    phaseSessionIds: data.phaseSessionIds as TicketState["phaseSessionIds"],
-    notifiedNeedsAttention: data.notifiedNeedsAttention as boolean | undefined,
-    revision,
-  };
+  result.body = content.trim();
+  result.revision = revision;
+  const ticket = result as unknown as TicketState;
 
   if (needsMigration) {
     await writeTicket(stateDir, ticket);
@@ -206,65 +315,14 @@ export async function writeTicket(
     }
   }
 
-  const frontmatter: Record<string, unknown> = {
-    id: ticket.id,
-    provider: ticket.provider,
-    title: ticket.title,
-    url: ticket.url,
-    phase: ticket.phase,
-    status: ticket.status,
-    approvals: ticket.approvals,
-    scope: ticket.scope,
-    worktrees: ticket.worktrees,
-    created: ticket.created,
-    updated: ticket.updated,
-  };
-  if (ticket.prs !== undefined) frontmatter.prs = ticket.prs;
-  if (ticket.newRepos !== undefined) frontmatter.newRepos = ticket.newRepos;
-  if (ticket.outputRetries !== undefined) {
-    frontmatter.outputRetries = ticket.outputRetries;
-  }
-  if (ticket.resumeRetries !== undefined) {
-    frontmatter.resumeRetries = ticket.resumeRetries;
-  }
-  if (ticket.shortTitle !== undefined) {
-    frontmatter.shortTitle = ticket.shortTitle;
-  }
-  if (ticket.phases !== undefined) frontmatter.phases = ticket.phases;
-  frontmatter.artifacts = ticket.artifacts;
-  if (ticket.documents !== undefined) {
-    frontmatter.documents = ticket.documents;
-  }
-  if (ticket.workItems !== undefined) {
-    frontmatter.workItems = ticket.workItems;
-  }
-  if (ticket.lastSeenCommentTimestamp !== undefined) {
-    frontmatter.lastSeenCommentTimestamp = ticket.lastSeenCommentTimestamp;
-  }
-  if (ticket.lastSeenPrCommentTimestamp !== undefined) {
-    frontmatter.lastSeenPrCommentTimestamp = ticket.lastSeenPrCommentTimestamp;
-  }
-  if (ticket.providerDone !== undefined) {
-    frontmatter.providerDone = ticket.providerDone;
-  }
-  if (ticket.providerPickedUp !== undefined) {
-    frontmatter.providerPickedUp = ticket.providerPickedUp;
-  }
-  if (ticket.ciHandledRunIds !== undefined) {
-    frontmatter.ciHandledRunIds = ticket.ciHandledRunIds;
-  }
-  if (ticket.phaseSessionIds !== undefined) {
-    const definedSessionIds = Object.fromEntries(
-      Object.entries(ticket.phaseSessionIds).filter(
-        ([, sessionId]) => sessionId !== undefined,
-      ),
-    );
-    if (Object.keys(definedSessionIds).length > 0) {
-      frontmatter.phaseSessionIds = definedSessionIds;
+  const frontmatter: Record<string, unknown> = {};
+  for (const [key, field] of Object.entries(FIELDS)) {
+    if (field === NOT_FRONTMATTER) continue;
+    const f = field as FieldCodec<keyof TicketState>;
+    const value = f.write(ticket);
+    if (value !== undefined) {
+      frontmatter[key] = value;
     }
-  }
-  if (ticket.notifiedNeedsAttention !== undefined) {
-    frontmatter.notifiedNeedsAttention = ticket.notifiedNeedsAttention;
   }
   const raw = matter.stringify(ticket.body, frontmatter);
   await writeTextFile(join(dir, "meta.md"), raw);
