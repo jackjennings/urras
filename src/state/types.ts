@@ -207,4 +207,5 @@ export interface Config {
   phases?: {
     defaults?: PhaseModelConfig;
   };
+  ollama?: { models: string[]; url?: string };
 }
