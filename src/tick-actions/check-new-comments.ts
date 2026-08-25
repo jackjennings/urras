@@ -154,7 +154,9 @@ export function checkNewCommentsAction(deps: CheckNewCommentsDeps): TickAction {
       const now = Temporal.Now.instant().toString();
       const updated: TicketState = {
         ...ticket,
-        ...(latestTimestamp ? { lastSeenCommentTimestamp: latestTimestamp } : {}),
+        ...(latestTimestamp
+          ? { lastSeenCommentTimestamp: latestTimestamp }
+          : {}),
         ...(latestPrTimestamp
           ? { lastSeenPrCommentTimestamp: latestPrTimestamp }
           : {}),
