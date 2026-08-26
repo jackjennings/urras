@@ -10,6 +10,7 @@ import {
   assertStringIncludes,
 } from "@std/assert";
 import { assertSpyCalls, spy } from "@std/testing/mock";
+import { OllamaLanguageModel } from "./models/ollama.ts";
 import { dirname, join } from "@std/path";
 import {
   appendPhaseLog,
@@ -3065,3 +3066,47 @@ Deno.test(
     }
   },
 );
+
+Deno.test("buildContextFiles: passes ollamaModels to filterPrinciples", async () => {
+  const stateDir = await Deno.makeTempDir();
+  const ticketDir = join(stateDir, "github", "test-org", "test-repo", "1");
+  await Deno.mkdir(ticketDir, { recursive: true });
+  try {
+    const principles = Array.from(
+      { length: 21 },
+      (_, i) => `- principle ${i}`,
+    ).join("\n");
+    await Deno.writeTextFile(join(stateDir, "principles.md"), principles);
+    await Deno.writeTextFile(
+      join(ticketDir, "meta.md"),
+      "---\ntitle: Test\n---\n## Problem\nsome problem",
+    );
+    const ollamaFetch = spy(
+      (_url: unknown, _init?: RequestInit) =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({ response: JSON.stringify({ indices: [3] }) }),
+            { status: 200 },
+          ),
+        ),
+    ) as unknown as typeof fetch;
+    const ollama = new OllamaLanguageModel(ollamaFetch, { model: "test" });
+    const run = spy((_args: string[]) =>
+      Promise.resolve({ code: 1, stdout: "" })
+    );
+    const { contextFiles, tempPrinciplesFile } = await buildContextFiles({
+      ticketDir,
+      stateDir,
+      run,
+      ollamaModels: [ollama],
+    });
+    assert(
+      contextFiles.some((f) => f.includes("principles-filtered")),
+      "filtered principles not in contextFiles",
+    );
+    const content = await Deno.readTextFile(tempPrinciplesFile!);
+    assertStringIncludes(content, "principle 3");
+  } finally {
+    await Deno.remove(stateDir, { recursive: true });
+  }
+});

@@ -1245,3 +1245,81 @@ done = 99
   );
   await Deno.remove(dir, { recursive: true });
 });
+
+Deno.test("loadConfig: absent [ollama] section leaves config.ollama undefined", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `[github]\nrepos = []\n[state]\ndir = "~/tmp"\n[tick]\nconcurrency = 1\n`,
+  );
+  const cfg = await loadConfig(join(dir, "config.toml"));
+  assertEquals(cfg.ollama, undefined);
+  await Deno.remove(dir, { recursive: true });
+});
+
+Deno.test("loadConfig: [ollama] with models parses correctly", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `[github]\nrepos = []\n[state]\ndir = "~/tmp"\n[tick]\nconcurrency = 1\n[ollama]\nmodels = ["qwen2.5:7b"]\n`,
+  );
+  const cfg = await loadConfig(join(dir, "config.toml"));
+  assertEquals(cfg.ollama, { models: ["qwen2.5:7b"], url: undefined });
+  await Deno.remove(dir, { recursive: true });
+});
+
+Deno.test("loadConfig: [ollama] with models and url parses correctly", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `[github]\nrepos = []\n[state]\ndir = "~/tmp"\n[tick]\nconcurrency = 1\n[ollama]\nmodels = ["qwen2.5:7b"]\nurl = "http://host:11434"\n`,
+  );
+  const cfg = await loadConfig(join(dir, "config.toml"));
+  assertEquals(cfg.ollama, {
+    models: ["qwen2.5:7b"],
+    url: "http://host:11434",
+  });
+  await Deno.remove(dir, { recursive: true });
+});
+
+Deno.test("loadConfig: [ollama] without models throws", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `[github]\nrepos = []\n[state]\ndir = "~/tmp"\n[tick]\nconcurrency = 1\n[ollama]\n`,
+  );
+  await assertRejects(
+    () => loadConfig(join(dir, "config.toml")),
+    Error,
+    "config.toml: [ollama].models must be a non-empty array of strings",
+  );
+  await Deno.remove(dir, { recursive: true });
+});
+
+Deno.test("loadConfig: [ollama] with empty models array throws", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `[github]\nrepos = []\n[state]\ndir = "~/tmp"\n[tick]\nconcurrency = 1\n[ollama]\nmodels = []\n`,
+  );
+  await assertRejects(
+    () => loadConfig(join(dir, "config.toml")),
+    Error,
+    "config.toml: [ollama].models must be a non-empty array of strings",
+  );
+  await Deno.remove(dir, { recursive: true });
+});
+
+Deno.test("loadConfig: [ollama] with non-string url throws", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `[github]\nrepos = []\n[state]\ndir = "~/tmp"\n[tick]\nconcurrency = 1\n[ollama]\nmodels = ["qwen2.5:7b"]\nurl = 42\n`,
+  );
+  await assertRejects(
+    () => loadConfig(join(dir, "config.toml")),
+    Error,
+    "config.toml: [ollama].url must be a string",
+  );
+  await Deno.remove(dir, { recursive: true });
+});

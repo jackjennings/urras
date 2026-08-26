@@ -1,11 +1,13 @@
 import {
   assert,
   assertEquals,
+  assertFalse,
   assertNotEquals,
   assertStringIncludes,
 } from "@std/assert";
 import { assertSpyCalls, spy } from "@std/testing/mock";
 import { join } from "@std/path";
+import { OllamaLanguageModel } from "./models/ollama.ts";
 import { selfReview } from "./self-review.ts";
 import type { CommandRunner } from "./apfel.ts";
 
@@ -322,6 +324,40 @@ Deno.test("selfReview: appends changed files list to content when worktreePath i
     await Deno.remove(tempDir, { recursive: true });
     await Deno.remove(worktreeDir, { recursive: true });
     await Deno.remove(originDir, { recursive: true });
+  }
+});
+
+Deno.test("selfReview: uses ollamaModels before Claude when provided", async () => {
+  const tempDir = await Deno.makeTempDir();
+  try {
+    await Deno.writeTextFile(
+      join(tempDir, "20260101T000000-intake.md"),
+      "Some intake output",
+    );
+    const ollamaFetch = spy(
+      (_url: unknown, _init?: RequestInit) =>
+        Promise.resolve(
+          new Response(JSON.stringify({ response: "APPROVE" }), {
+            status: 200,
+          }),
+        ),
+    ) as unknown as typeof fetch;
+    const ollama = new OllamaLanguageModel(ollamaFetch, { model: "test" });
+    let claudeCalled = false;
+    const run = spy((args: string[]) => {
+      if (args[0] === "claude") claudeCalled = true;
+      return Promise.resolve({ code: 1, stdout: "" });
+    });
+    const result = await selfReview({
+      phase: "intake",
+      ticketDir: tempDir,
+      run,
+      ollamaModels: [ollama],
+    });
+    assert(result.approved);
+    assertFalse(claudeCalled);
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
   }
 });
 

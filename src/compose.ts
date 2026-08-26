@@ -115,6 +115,7 @@ import {
 import { PHASE_SEQUENCE } from "./phases/types.ts";
 import { HttpClient } from "./http-client.ts";
 import { ClaudeLanguageModel } from "./models/claude.ts";
+import { OllamaLanguageModel } from "./models/ollama.ts";
 import { unappliedMigrationsCheck } from "./doctor/checks/unapplied-migrations.ts";
 import { launchagentHealthCheck } from "./doctor/checks/launchagent-health.ts";
 import { tickFreshnessCheck } from "./doctor/checks/tick-freshness.ts";
@@ -126,6 +127,7 @@ import { hostDependenciesCheck } from "./doctor/checks/host-dependencies.ts";
 import { requiredEnvVarsCheck } from "./doctor/checks/required-env-vars.ts";
 import { staleHudProcessCheck } from "./doctor/checks/stale-hud-process.ts";
 import { launchdSpawnSuppressionCheck } from "./doctor/checks/launchd-spawn-suppression.ts";
+import { ollamaAvailabilityCheck } from "./doctor/checks/ollama-availability.ts";
 import type { Check } from "./doctor/checks/types.ts";
 import { plistPath } from "./launchd.ts";
 
@@ -408,6 +410,13 @@ export function composeTickDeps(
   if (config.todoTxt) {
     providers.push(new TodoTxtProvider({ file: config.todoTxt.file }));
   }
+
+  const ollamaModels: OllamaLanguageModel[] = config.ollama
+    ? config.ollama.models.map(
+      (model) =>
+        new OllamaLanguageModel(fetch, { model, url: config.ollama!.url }),
+    )
+    : [];
 
   const tickActions = [
     createWorktreeAction({
@@ -979,7 +988,8 @@ export function composeTickDeps(
         if (jiraEmail) botLogins.add(jiraEmail);
         return (author: string) => botLogins.has(author);
       })(),
-      judgeComment: (body) => judgeComment(body, captureCommandRunner()),
+      judgeComment: (body) =>
+        judgeComment(body, captureCommandRunner(), ollamaModels),
       writeContextFile: async (ticketDir, content) => {
         const timestamp = compactTimestamp(
           Temporal.Now.zonedDateTimeISO("UTC"),
@@ -1087,13 +1097,18 @@ export function composeTickDeps(
           ticketDir,
           run: captureCommandRunner(),
           worktreePath,
+          ollamaModels,
         }),
       readPhaseOutput,
       appendPrinciples: async (sd, ticketId, phase, outputContent) => {
         if (!config.tick.principles) return;
         const extracted = extractPrinciples(outputContent);
         if (!extracted) return;
-        const scope = await judgePrinciples(extracted, captureCommandRunner());
+        const scope = await judgePrinciples(
+          extracted,
+          captureCommandRunner(),
+          ollamaModels,
+        );
         if (scope === null) return;
         const globalPath = join(sd, "principles.md");
         let targetPath: string;
@@ -1547,5 +1562,6 @@ export function composeDoctorChecks(config: Config): Check[] {
       plistPath: installedPlistPath,
       now,
     }),
+    ollamaAvailabilityCheck({ config, fetch }),
   ];
 }

@@ -44,6 +44,28 @@ export async function loadConfig(path?: string): Promise<Config> {
     }
     todoTxt = { file: expandHome(todoTxtRaw.file) };
   }
+  const ollamaRaw = parsed.ollama as Record<string, unknown> | undefined;
+  let ollama: Config["ollama"];
+  if (ollamaRaw !== undefined) {
+    const modelsRaw = ollamaRaw.models;
+    if (
+      !Array.isArray(modelsRaw) ||
+      (modelsRaw as unknown[]).length === 0 ||
+      !(modelsRaw as unknown[]).every((m) => typeof m === "string")
+    ) {
+      throw new Error(
+        "config.toml: [ollama].models must be a non-empty array of strings",
+      );
+    }
+    const urlRaw = ollamaRaw.url;
+    if (urlRaw !== undefined && typeof urlRaw !== "string") {
+      throw new Error("config.toml: [ollama].url must be a string");
+    }
+    ollama = {
+      models: modelsRaw as string[],
+      url: urlRaw as string | undefined,
+    };
+  }
   const piRaw = parsed.pi as Record<string, unknown> | undefined;
   if (piRaw?.provider !== undefined && typeof piRaw.provider !== "string") {
     throw new Error("config.toml: [pi].provider must be a string");
@@ -194,6 +216,7 @@ export async function loadConfig(path?: string): Promise<Config> {
     agent: { type: agentType },
     jira,
     todoTxt,
+    ollama,
     phases: phasesDefaults !== undefined
       ? { defaults: phasesDefaults }
       : undefined,
