@@ -21,6 +21,7 @@ import {
   formatTimestamp,
   renderDiff,
   renderTabBar,
+  renderTicketTab,
   review,
   wrapDiffLines,
 } from "./review.ts";
@@ -28,6 +29,7 @@ import type { OverlayHandle, TUI } from "@earendil-works/pi-tui";
 import { join } from "@std/path";
 import { readTicket, writeTicket } from "./state/store.ts";
 import { makeTicket } from "./test-support.ts";
+import type { TicketState } from "./state/types.ts";
 
 const BASE = { id: "gh-1" };
 
@@ -1824,6 +1826,120 @@ Deno.test(
     }
   },
 );
+
+// ── renderTicketTab ───────────────────────────────────────────────────────────
+
+function makeBaseTicket(): TicketState {
+  return {
+    id: "github/test/repo/1",
+    provider: "github",
+    title: "Test Ticket",
+    url: "https://github.com/test/repo/issues/1",
+    phase: "spec",
+    status: "waiting",
+    approvals: [],
+    scope: ["test/repo"],
+    worktrees: {},
+    body: "Body text.",
+    created: "2026-01-01T00:00:00Z",
+    updated: "2026-01-01T00:00:00Z",
+    artifacts: ["code"],
+  };
+}
+
+Deno.test("renderTicketTab: includes title as H1 heading", () => {
+  const ticket = { ...makeBaseTicket(), title: "My Feature" };
+  assertStringIncludes(renderTicketTab(ticket), "# My Feature");
+});
+
+Deno.test("renderTicketTab: includes URL line", () => {
+  const ticket = makeBaseTicket();
+  assertStringIncludes(
+    renderTicketTab(ticket),
+    "**URL:** https://github.com/test/repo/issues/1",
+  );
+});
+
+Deno.test("renderTicketTab: includes phase and status on same line", () => {
+  const ticket = {
+    ...makeBaseTicket(),
+    phase: "spec" as const,
+    status: "waiting" as const,
+  };
+  const result = renderTicketTab(ticket);
+  assertStringIncludes(result, "**Phase:** spec");
+  assertStringIncludes(result, "**Status:** waiting");
+});
+
+Deno.test("renderTicketTab: includes scope entries as bullets", () => {
+  const ticket = {
+    ...makeBaseTicket(),
+    scope: ["test/repo", "another/repo"],
+  };
+  const result = renderTicketTab(ticket);
+  assertStringIncludes(result, "- test/repo");
+  assertStringIncludes(result, "- another/repo");
+});
+
+Deno.test("renderTicketTab: includes approvals formatted as compactTimestamp — actor (phase)", () => {
+  const ticket: TicketState = {
+    ...makeBaseTicket(),
+    approvals: [{
+      timestamp: "2026-08-25T00:38:44Z",
+      actor: "human",
+      phase: "spec",
+    }],
+  };
+  assertStringIncludes(
+    renderTicketTab(ticket),
+    "20260825T003844 — human (spec)",
+  );
+});
+
+Deno.test("renderTicketTab: includes worktree entry as key: path (branch)", () => {
+  const ticket: TicketState = {
+    ...makeBaseTicket(),
+    worktrees: {
+      "test/repo": { path: "/home/user/worktrees/1", branch: "feature/1" },
+    },
+  };
+  assertStringIncludes(
+    renderTicketTab(ticket),
+    "test/repo: /home/user/worktrees/1 (feature/1)",
+  );
+});
+
+Deno.test("renderTicketTab: includes body text after horizontal rule", () => {
+  const ticket = { ...makeBaseTicket(), body: "The problem description." };
+  const result = renderTicketTab(ticket);
+  assertStringIncludes(result, "The problem description.");
+  assertStringIncludes(result, "---");
+});
+
+Deno.test("renderTicketTab: includes PRs section with URL when prs is non-empty", () => {
+  const ticket: TicketState = {
+    ...makeBaseTicket(),
+    prs: [{
+      url: "https://github.com/test/repo/pull/42",
+      title: "Fix something",
+      dependsOn: [],
+      merged: false,
+    }],
+  };
+  const result = renderTicketTab(ticket);
+  assertStringIncludes(result, "**PRs:**");
+  assertStringIncludes(result, "https://github.com/test/repo/pull/42");
+});
+
+Deno.test("renderTicketTab: omits PRs section when prs is empty array", () => {
+  const ticket: TicketState = { ...makeBaseTicket(), prs: [] };
+  assertFalse(renderTicketTab(ticket).includes("**PRs:**"));
+});
+
+Deno.test("renderTicketTab: omits PRs section when prs is absent", () => {
+  const ticket = makeBaseTicket();
+  assertFalse(renderTicketTab(ticket).includes("**PRs:**"));
+});
 
 Deno.test(
   "review: exits with code 1 and prints error when ticket is done",
