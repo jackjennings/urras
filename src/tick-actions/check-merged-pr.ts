@@ -14,7 +14,7 @@ export function checkMergedPRAction(deps: CheckMergedPRDeps): TickAction {
     label: "Checking merged PRs",
     applies(ticket: TicketState): boolean {
       return (
-        ticket.phase === "merge" &&
+        (ticket.phase === "merge" || ticket.phase === "implementation") &&
         ticket.status === "waiting" &&
         ticket.prs !== undefined &&
         ticket.prs.length > 0
