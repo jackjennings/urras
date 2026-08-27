@@ -17,6 +17,7 @@
     "@earendil-works/pi-tui": "npm:@earendil-works/pi-tui@^0.80.2",
     "diff": "npm:diff@^5.2.0",
     "@notionhq/client": "npm:@notionhq/client@^2",
-    "tokenx": "npm:tokenx@2.0.0"
+    "tokenx": "npm:tokenx@2.0.0",
+    "p-limit": "npm:p-limit@6"
   }
 }

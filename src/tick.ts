@@ -1,3 +1,4 @@
+import pLimit from "p-limit";
 import { estimateTokenCount } from "tokenx";
 import { adjudicatePhaseModel } from "./pre-phase-adjudication.ts";
 import { advancePhase, type TickDeps } from "./phases/advance.ts";
@@ -13,6 +14,7 @@ import { CorruptRepoIdentitiesError } from "./providers/github/repo-identity.ts"
 import { StaleTicketWriteError } from "./state/store.ts";
 
 const TICK_DEADLINE_MS = 4 * 60 * 60 * 1000;
+const TICK_ACTION_CONCURRENCY = 10;
 
 export interface TickServiceDeps {
   stateDir: string;
@@ -197,49 +199,56 @@ export class TickService {
     const totalNonWontDo = processedTickets.filter(
       (t) => t.phase !== "wont-do",
     ).length;
-    let ticketIndex = 0;
-    for (let i = 0; i < processedTickets.length; i++) {
-      if (processedTickets[i].phase === "wont-do") continue;
-      ticketIndex++;
-      for (const action of deps.tickActions) {
-        try {
-          if (action.applies(processedTickets[i])) {
-            if (action.label) {
-              await deps.writeTickProgress(
-                `${action.label} [${ticketIndex}/${totalNonWontDo}]`,
-              );
+
+    await deps.writeTickProgress(`Checking [${totalNonWontDo} tickets]`);
+
+    const limit = pLimit(TICK_ACTION_CONCURRENCY);
+    const tasks = processedTickets.map((ticket) =>
+      limit(async () => {
+        if (ticket.phase === "wont-do") return ticket;
+        let current = ticket;
+        for (const action of deps.tickActions) {
+          try {
+            if (action.applies(current)) {
+              const updated = await action.run(current, deps.stateDir);
+              if (updated !== null) current = updated;
             }
-            const updated = await action.run(
-              processedTickets[i],
-              deps.stateDir,
-            );
-            if (updated !== null) processedTickets[i] = updated;
-          }
-        } catch (e) {
-          if (e instanceof StaleTicketWriteError) {
+          } catch (e) {
+            if (e instanceof StaleTicketWriteError) {
+              await deps.tickDeps.appendLog(
+                deps.stateDir,
+                current.id,
+                { event: "stale-write", context: "tickAction" },
+              );
+              droppedTicketIds.add(current.id);
+              break;
+            }
             await deps.tickDeps.appendLog(
               deps.stateDir,
-              processedTickets[i].id,
-              { event: "stale-write", context: "tickAction" },
+              current.id,
+              {
+                event: "error",
+                context: "tickAction",
+                action:
+                  (action as { constructor?: { name?: string } }).constructor
+                    ?.name ?? "unknown",
+                message: String(e),
+              },
             );
-            droppedTicketIds.add(processedTickets[i].id);
-            break;
           }
-          await deps.tickDeps.appendLog(
-            deps.stateDir,
-            processedTickets[i].id,
-            {
-              event: "error",
-              context: "tickAction",
-              action:
-                (action as { constructor?: { name?: string } }).constructor
-                  ?.name ?? "unknown",
-              message: String(e),
-            },
-          );
         }
+        return current;
+      })
+    );
+
+    const results = await Promise.allSettled(tasks);
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
+      if (result.status === "fulfilled") {
+        processedTickets[i] = result.value;
       }
     }
+
     await deps.writeTickProgress(null);
 
     for (let i = 0; i < processedTickets.length; i++) {
