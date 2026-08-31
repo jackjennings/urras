@@ -58,6 +58,17 @@ Deno.test("checkMergedPRAction: does not apply when not merge/waiting", () => {
   );
 });
 
+Deno.test(
+  "checkMergedPRAction: applies when implementation/waiting with prs array",
+  () => {
+    assert(
+      makeAction().applies(
+        makeTicket({ ...BASE, phase: "implementation", status: "waiting" }),
+      ),
+    );
+  },
+);
+
 // ── single PR — no merge ──────────────────────────────────────────────────────
 
 Deno.test("checkMergedPRAction: PR not merged → null, no cleanup", async () => {
