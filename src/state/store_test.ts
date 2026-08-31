@@ -1694,3 +1694,74 @@ Deno.test("readTicketWithPatch: patchTicket reads fresh state before writing", a
     await Deno.remove(dir, { recursive: true });
   }
 });
+
+Deno.test(
+  "writeTicket/readTicket: all fields round-trip (exhaustive)",
+  async () => {
+    const dir = await Deno.makeTempDir();
+    try {
+      const fixture: Required<TicketState> = {
+        id: "gh-round-trip",
+        provider: "github",
+        title: "Round-trip test",
+        shortTitle: "Round-trip",
+        url: "https://github.com/x/y/issues/99",
+        phase: "implementation",
+        status: "waiting",
+        approvals: [{
+          timestamp: "2026-01-01T00:00:00Z",
+          actor: "human",
+          phase: "spec",
+        }],
+        scope: ["x/y"],
+        worktrees: {
+          "x/y": { path: "/tmp/worktree", branch: "gh-round-trip" },
+        },
+        prs: [{
+          url: "https://github.com/x/y/pull/10",
+          title: "PR title",
+          dependsOn: [],
+          merged: false,
+          worktreeKey: "x/y",
+        }],
+        newRepos: ["x/z"],
+        ciHandledRunIds: ["run-1"],
+        lastSeenCommentTimestamp: "2026-08-01T00:00:00.000Z",
+        lastSeenPrCommentTimestamp: "2026-08-02T00:00:00.000Z",
+        providerDone: true,
+        providerPickedUp: true,
+        outputRetries: 1,
+        resumeRetries: 2,
+        phaseSessionIds: { spec: "abc-123", implementation: undefined },
+        notifiedNeedsAttention: true,
+        created: "2026-01-01T00:00:00Z",
+        updated: "2026-08-01T00:00:00Z",
+        body: "## Problem\n\nTest body.",
+        phases: {
+          implementation: { model: "claude-sonnet-4-6", thinking: "high" },
+        },
+        artifacts: ["code"],
+        documents: [{ url: "https://notion.so/doc", title: "Design Doc" }],
+        workItems: [{
+          url: "https://github.com/x/y/issues/2",
+          title: "Work item",
+        }],
+        revision: "placeholder",
+      };
+
+      await writeTicket(dir, fixture);
+      const read = await readTicket(dir, fixture.id);
+
+      assertFalse("implementation" in (read.phaseSessionIds ?? {}));
+
+      const expected: TicketState = {
+        ...fixture,
+        phaseSessionIds: { spec: "abc-123" },
+        revision: read.revision,
+      };
+      assertEquals(read, expected);
+    } finally {
+      await Deno.remove(dir, { recursive: true });
+    }
+  },
+);
