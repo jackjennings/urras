@@ -38,7 +38,7 @@ export async function applyLearningToRepo(
   }
 
   const wt = await deps
-    .createWorktree(localRepoPath, learning.id, learning.repo)
+    .createWorktree(localRepoPath, `learnings-${learning.id}`, learning.repo)
     .catch(() => {
       throw new Error("worktree-creation-failed");
     });
@@ -93,6 +93,6 @@ export async function applyLearningToRepo(
 
     return { url, title };
   } finally {
-    await deps.removeWorktree(wt);
+    await deps.removeWorktree(wt).catch(() => {});
   }
 }
