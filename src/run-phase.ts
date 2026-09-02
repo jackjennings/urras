@@ -539,6 +539,7 @@ export async function executePhase(
     sessionId: opts.sessionId,
     resume: opts.resume,
   });
+  const durationMs = Temporal.Now.instant().epochMilliseconds - startMs;
   let rerunResult: { stdout: string; stderr: string; code: number } | null =
     null;
 
@@ -601,25 +602,32 @@ export async function executePhase(
       } catch { /* critique agent crash — pass through */ }
 
       if (critiqueResult !== null) {
-        const lastNonEmpty = critiqueResult.stdout
-          .split("\n")
-          .filter((l) => l.trim().length > 0)
-          .at(-1)
-          ?.trim() ?? "";
-        const verdictMatch = /^VERDICT:\s*(APPROVED|ISSUES_FOUND)$/i.exec(
-          lastNonEmpty,
+        let critiqueText = "";
+        try {
+          const extracted = opts.agentType === "claude-code"
+            ? extractClaudeCodeUsageAndText(
+              critiqueResult.stdout,
+              0,
+              critiqueModelToUse,
+            )
+            : extractUsageAndText(critiqueResult.stdout, 0);
+          critiqueText = extracted.text;
+        } catch { /* garbled output — treat as APPROVED */ }
+
+        const verdictMatch = /VERDICT:\s*(APPROVED|ISSUES_FOUND)/im.exec(
+          critiqueText,
         );
         if (verdictMatch?.[1]?.toUpperCase() === "ISSUES_FOUND") {
           const ts = compactTimestamp(Temporal.Now.zonedDateTimeISO("UTC"));
           await writeTextFile(
             join(opts.ticketDir, `${ts}-${opts.phase}-critique.md`),
-            critiqueResult.stdout,
+            critiqueText,
           );
           rerunResult = await agent.runPhase({
             prompt: opts.prompt +
               pathContext +
               "\n\n---\n\nCritique findings requiring revision:\n\n" +
-              critiqueResult.stdout,
+              critiqueText,
             contextFiles,
             cwd,
             env,
@@ -632,34 +640,22 @@ export async function executePhase(
     }
   }
 
-  const durationMs = Temporal.Now.instant().epochMilliseconds - startMs;
   const finalResult = rerunResult ?? mainResult;
 
   const { usage: mainUsage } = opts.agentType === "claude-code"
     ? extractClaudeCodeUsageAndText(mainResult.stdout, durationMs, opts.model)
     : extractUsageAndText(mainResult.stdout, durationMs);
 
-  let usage:
-    | (PhaseUsage & {
-      input?: number;
-      output?: number;
-      cacheRead?: number;
-      cacheWrite?: number;
-    })
-    | null = mainUsage;
+  let usage: PhaseUsage | null = mainUsage;
 
   if (rerunResult !== null && mainUsage !== null) {
     const { usage: rerunUsage } = opts.agentType === "claude-code"
       ? extractClaudeCodeUsageAndText(rerunResult.stdout, 0, opts.model)
       : extractUsageAndText(rerunResult.stdout, 0);
     if (rerunUsage !== null) {
-      const allModels = [...mainUsage.models, ...rerunUsage.models];
       usage = {
         ...mainUsage,
-        input: allModels.reduce((s, m) => s + m.input, 0),
-        output: allModels.reduce((s, m) => s + m.output, 0),
-        cacheRead: allModels.reduce((s, m) => s + m.cacheRead, 0),
-        cacheWrite: allModels.reduce((s, m) => s + m.cacheWrite, 0),
+        models: [...mainUsage.models, ...rerunUsage.models],
       };
     }
   }

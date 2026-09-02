@@ -3065,7 +3065,19 @@ Deno.test(
             await Deno.writeTextFile(outputPath, "## Plan\n\ncontent");
             return { stdout: "", stderr: "", code: 0 };
           }
-          return { stdout: "VERDICT: APPROVED", stderr: "", code: 0 };
+          return {
+            stdout: JSON.stringify({
+              type: "agent_end",
+              messages: [{
+                role: "assistant",
+                model: "claude-sonnet-4-6",
+                content: [{ type: "text", text: "VERDICT: APPROVED" }],
+                usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+              }],
+            }),
+            stderr: "",
+            code: 0,
+          };
         },
       };
       await executePhase(
@@ -3219,7 +3231,19 @@ Deno.test(
           }
           if (callCount === 2) {
             return {
-              stdout: "- component X does not exist\n\nVERDICT: ISSUES_FOUND",
+              stdout: JSON.stringify({
+                type: "agent_end",
+                messages: [{
+                  role: "assistant",
+                  model: "claude-sonnet-4-6",
+                  content: [{
+                    type: "text",
+                    text:
+                      "- component X does not exist\n\nVERDICT: ISSUES_FOUND",
+                  }],
+                  usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+                }],
+              }),
               stderr: "",
               code: 0,
             };
@@ -3324,7 +3348,18 @@ Deno.test(
             return { stdout: "", stderr: "", code: 0 };
           }
           return {
-            stdout: "I cannot determine a verdict",
+            stdout: JSON.stringify({
+              type: "agent_end",
+              messages: [{
+                role: "assistant",
+                model: "claude-sonnet-4-6",
+                content: [{
+                  type: "text",
+                  text: "I cannot determine a verdict",
+                }],
+                usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+              }],
+            }),
             stderr: "",
             code: 0,
           };
@@ -3375,6 +3410,15 @@ Deno.test(
             },
           ],
         });
+      const critiqueNdjson = JSON.stringify({
+        type: "agent_end",
+        messages: [{
+          role: "assistant",
+          model: "claude-sonnet-4-6",
+          content: [{ type: "text", text: "VERDICT: ISSUES_FOUND" }],
+          usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+        }],
+      });
       let callCount = 0;
       const agent: CodeAgent = {
         async runPhase() {
@@ -3384,11 +3428,7 @@ Deno.test(
             return { stdout: makeUsageNdjson(10, 5), stderr: "", code: 0 };
           }
           if (callCount === 2) {
-            return {
-              stdout: "VERDICT: ISSUES_FOUND",
-              stderr: "",
-              code: 0,
-            };
+            return { stdout: critiqueNdjson, stderr: "", code: 0 };
           }
           await Deno.writeTextFile(outputPath, "## Plan\n\nrevised");
           return { stdout: makeUsageNdjson(8, 4), stderr: "", code: 0 };
@@ -3414,8 +3454,16 @@ Deno.test(
       const usage = JSON.parse(
         await Deno.readTextFile(join(ticketDir, "result.usage.json")),
       );
-      assertEquals(usage.input, 18);
-      assertEquals(usage.output, 9);
+      const totalInput = usage.models.reduce(
+        (s: number, m: { input: number }) => s + m.input,
+        0,
+      );
+      const totalOutput = usage.models.reduce(
+        (s: number, m: { output: number }) => s + m.output,
+        0,
+      );
+      assertEquals(totalInput, 18);
+      assertEquals(totalOutput, 9);
     } finally {
       await Deno.remove(ticketDir, { recursive: true });
       await Deno.remove(homeDir, { recursive: true });
