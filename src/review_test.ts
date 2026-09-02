@@ -30,6 +30,7 @@ import { join } from "@std/path";
 import { readTicket, writeTicket } from "./state/store.ts";
 import { makeTicket } from "./test-support.ts";
 import type { TicketState } from "./state/types.ts";
+import type { LanguageModel } from "./models/types.ts";
 
 const BASE = { id: "gh-1" };
 
@@ -45,52 +46,45 @@ async function initGitRepo(dir: string): Promise<void> {
 // ── classifyApproval ──────────────────────────────────────────────────────────
 
 Deno.test("classifyApproval: returns true when model returns APPROVE", async () => {
-  const run = spy(
-    (_args: string[]) =>
-      Promise.resolve({
-        code: 0,
-        stdout: JSON.stringify({ verdict: "APPROVE" }),
-        stderr: "",
-      }),
-  );
-  assert(await classifyApproval("Looks good!", run));
+  const model = {
+    name: "stub",
+    generateText: () => Promise.resolve(null),
+    generateObject: () => Promise.resolve({ verdict: "APPROVE" }),
+  } as unknown as LanguageModel;
+  assert(await classifyApproval("Looks good!", model));
 });
 
 Deno.test("classifyApproval: returns false when model returns FEEDBACK", async () => {
-  const run = spy(
-    (_args: string[]) =>
-      Promise.resolve({
-        code: 0,
-        stdout: JSON.stringify({ verdict: "FEEDBACK" }),
-        stderr: "",
-      }),
-  );
-  assertFalse(await classifyApproval("fix the tests", run));
+  const model = {
+    name: "stub",
+    generateText: () => Promise.resolve(null),
+    generateObject: () => Promise.resolve({ verdict: "FEEDBACK" }),
+  } as unknown as LanguageModel;
+  assertFalse(await classifyApproval("fix the tests", model));
 });
 
 Deno.test(
-  "classifyApproval: returns false without calling runner when text exceeds 50 characters",
+  "classifyApproval: returns false without calling model when text exceeds 50 characters",
   async () => {
-    const run = spy(
-      (_args: string[]) =>
-        Promise.resolve({
-          code: 0,
-          stdout: JSON.stringify({ verdict: "APPROVE" }),
-          stderr: "",
-        }),
-    );
-    assertFalse(await classifyApproval("a".repeat(51), run));
-    assertSpyCalls(run, 0);
+    const generateObject = spy(() => Promise.resolve({ verdict: "APPROVE" }));
+    const model = {
+      name: "stub",
+      generateText: () => Promise.resolve(null),
+      generateObject,
+    } as unknown as LanguageModel;
+    assertFalse(await classifyApproval("a".repeat(51), model));
+    assertSpyCalls(generateObject, 0);
   },
 );
 
-Deno.test("classifyApproval: throws when all models fail", async () => {
-  const run = spy(
-    (_args: string[]) =>
-      Promise.resolve({ code: 1, stdout: "", stderr: "error" }),
-  );
+Deno.test("classifyApproval: throws when model returns null", async () => {
+  const model = {
+    name: "stub",
+    generateText: () => Promise.resolve(null),
+    generateObject: () => Promise.resolve(null),
+  } as unknown as LanguageModel;
   await assertRejects(
-    () => classifyApproval("approved", run),
+    () => classifyApproval("approved", model),
     Error,
     "Approval detection failed",
   );

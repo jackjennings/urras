@@ -29,10 +29,11 @@ import {
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import { expandHome, loadConfig } from "./config.ts";
-import { captureCommandRunner, type CommandRunner } from "./apfel.ts";
+import { captureCommandRunner } from "./apfel.ts";
 import { ApfelLanguageModel } from "./models/apfel.ts";
 import { ClaudeLanguageModel } from "./models/claude.ts";
 import { FallbackLanguageModel } from "./models/fallback.ts";
+import type { LanguageModel } from "./models/types.ts";
 import {
   commitTicket,
   readPhaseOutput,
@@ -216,13 +217,14 @@ export function renderTabBar(
 
 export async function classifyApproval(
   text: string,
-  run: CommandRunner = captureCommandRunner(),
+  model: LanguageModel = new FallbackLanguageModel([
+    new ApfelLanguageModel(captureCommandRunner()),
+    new ClaudeLanguageModel(captureCommandRunner(), {
+      model: "claude-haiku-4-5",
+    }),
+  ]),
 ): Promise<boolean> {
   if (text.trim().length > 50) return false;
-  const model = new FallbackLanguageModel([
-    new ApfelLanguageModel(run),
-    new ClaudeLanguageModel(run, { model: "claude-haiku-4-5" }),
-  ]);
   const result = await model.generateObject<
     { verdict: "APPROVE" | "FEEDBACK" }
   >(
