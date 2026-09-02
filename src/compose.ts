@@ -1236,7 +1236,8 @@ export function composeTickDeps(
           config.github.repos,
         )
           .then(formatRepoCorpus),
-      adjudicatePhaseModel,
+      adjudicatePhaseModel: (prompt) =>
+        adjudicatePhaseModel(prompt, captureCommandRunner(), ollamaModels),
       spawnOutlierAnalysis: async (
         ticketId,
         ticketDir,
