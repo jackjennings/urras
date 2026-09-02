@@ -23,8 +23,6 @@ function learning(overrides: Partial<LearningState> = {}): LearningState {
     ticketId: "github/jackjennings/lazyboy/226",
     repo: "jackjennings/lazyboy",
     targetFile: "src/phases/prompts/implementation.md",
-    prTitle: "Improve prompt",
-    prBody: "Body",
     status: "pending",
     prs: [],
     ...overrides,
@@ -76,7 +74,10 @@ function makeDeps(
     },
     prState: () => Promise.resolve("open"),
     applyToRepo: () =>
-      Promise.resolve("https://github.com/jackjennings/lazyboy/pull/9"),
+      Promise.resolve({
+        url: "https://github.com/jackjennings/lazyboy/pull/9",
+        title: "docs: apply learning to src/phases/prompts/implementation.md",
+      }),
     ...overrides,
   };
   return { deps, written };
@@ -84,7 +85,10 @@ function makeDeps(
 
 Deno.test("processLearnings: applies a pending learning and marks it waiting", async () => {
   const applyToRepo = spy((_l: LearningState, _i: string) =>
-    Promise.resolve("https://github.com/jackjennings/lazyboy/pull/9")
+    Promise.resolve({
+      url: "https://github.com/jackjennings/lazyboy/pull/9",
+      title: "docs: apply learning to src/phases/prompts/implementation.md",
+    })
   );
   const { deps, written } = makeDeps(
     [{ learning: learning(), intent: "Enumerate call sites." }],
@@ -103,7 +107,10 @@ Deno.test("processLearnings: applies a pending learning and marks it waiting", a
 
 Deno.test("processLearnings: defers a second pending learning targeting the same file", async () => {
   const applyToRepo = spy((_l: LearningState, _i: string) =>
-    Promise.resolve("https://github.com/jackjennings/lazyboy/pull/9")
+    Promise.resolve({
+      url: "https://github.com/jackjennings/lazyboy/pull/9",
+      title: "docs: apply learning to src/phases/prompts/implementation.md",
+    })
   );
   const { deps, written } = makeDeps([
     { learning: learning({ id: "a" }), intent: "one" },
@@ -147,9 +154,45 @@ Deno.test("processLearnings: marks a learning needs-attention when apply throws"
   assertEquals(written[0].learning.status, "needs-attention");
 });
 
+Deno.test("processLearnings: logs a typed reason when applyToRepo throws", async () => {
+  const log = spy((_entry: object) => Promise.resolve());
+  const { deps } = makeDeps(
+    [{ learning: learning(), intent: "x" }],
+    {
+      applyToRepo: () => Promise.reject(new Error("local-repo-not-found")),
+      log,
+    },
+  );
+  await processLearnings(deps);
+  assertSpyCalls(log, 1);
+  assertEquals(log.calls[0].args[0], {
+    event: "learning-processing-failed",
+    id: "20260729T050000",
+    reason: "local-repo-not-found",
+  });
+});
+
+Deno.test("processLearnings: logs pr-state-check-failed when prState throws", async () => {
+  const log = spy((_entry: object) => Promise.resolve());
+  const { deps } = makeDeps(
+    [{ learning: learning({ status: "waiting", prs: [pr()] }), intent: "x" }],
+    { prState: () => Promise.reject(new Error("network error")), log },
+  );
+  await processLearnings(deps);
+  assertSpyCalls(log, 1);
+  assertEquals(log.calls[0].args[0], {
+    event: "learning-processing-failed",
+    id: "20260729T050000",
+    reason: "pr-state-check-failed",
+  });
+});
+
 Deno.test("processLearnings: applies a pending learning once the same-file PR has merged this run", async () => {
   const applyToRepo = spy((_l: LearningState, _i: string) =>
-    Promise.resolve("https://github.com/jackjennings/lazyboy/pull/9")
+    Promise.resolve({
+      url: "https://github.com/jackjennings/lazyboy/pull/9",
+      title: "docs: apply learning to src/phases/prompts/implementation.md",
+    })
   );
   const { deps } = makeDeps([
     {
