@@ -12,6 +12,7 @@ import { isApproved, type TicketState } from "./state/types.ts";
 import { readTextFile } from "./filesystem.ts";
 import { CorruptRepoIdentitiesError } from "./providers/github/repo-identity.ts";
 import { StaleTicketWriteError } from "./state/store.ts";
+import { shouldHideTicket } from "./commands/status.ts";
 
 const TICK_DEADLINE_MS = 4 * 60 * 60 * 1000;
 const TICK_ACTION_CONCURRENCY = 10;
@@ -196,11 +197,11 @@ export class TickService {
 
     const processedTickets = [...migratedTickets];
     const droppedTicketIds = new Set<string>();
-    const totalNonWontDo = processedTickets.filter(
-      (t) => t.phase !== "wont-do",
+    const activeTicketCount = processedTickets.filter(
+      (t) => !shouldHideTicket(t.phase, t.status),
     ).length;
 
-    await deps.writeTickProgress(`Checking [${totalNonWontDo} tickets]`);
+    await deps.writeTickProgress(`Checking [${activeTicketCount} tickets]`);
 
     const limit = pLimit(TICK_ACTION_CONCURRENCY);
     const tasks = processedTickets.map((ticket) =>
