@@ -1136,9 +1136,6 @@ function makeLearning(overrides: Partial<LearningState> = {}): LearningState {
     ticketId: "github/jackjennings/lazyboy/226",
     repo: "jackjennings/lazyboy",
     targetFile: "src/phases/prompts/implementation.md",
-    prTitle:
-      "Improve prompt to prevent edit fragmentation observed in github/jackjennings/lazyboy/226",
-    prBody: "Body text",
     status: "pending",
     prs: [],
     ...overrides,
@@ -1161,7 +1158,6 @@ Deno.test("writeLearning: writes gray-matter .md with intent as body", async () 
     assertEquals(data.targetFile, "src/phases/prompts/implementation.md");
     assertEquals(data.status, "pending");
     assertEquals(data.prs, []);
-    assertEquals(data.prBody, "Body text");
     assertEquals(content.trim(), INTENT);
   } finally {
     await Deno.remove(dir, { recursive: true });
@@ -1223,8 +1219,6 @@ id: "20260729T050000"
 ticketId: github/jackjennings/lazyboy/226
 repo: jackjennings/lazyboy
 targetFile: src/phases/prompts/implementation.md
-prTitle: Improve prompt
-prBody: Body text
 ---
 
 Enumerate all call sites.
@@ -1521,8 +1515,6 @@ id: "20260729T050000"
 ticketId: github/jackjennings/lazyboy/226
 repo: jackjennings/lazyboy
 targetFile: src/foo.md
-prTitle: Improve prompt
-prBody: Body text
 status: pending
 prs:
   - url: https://github.com/x/y/pull/1
@@ -1553,8 +1545,6 @@ id: "20260729T050000"
 ticketId: github/jackjennings/lazyboy/226
 repo: jackjennings/lazyboy
 targetFile: src/foo.md
-prTitle: Improve prompt
-prBody: Body text
 status: pending
 prs:
   - title: no url here

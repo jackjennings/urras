@@ -262,14 +262,6 @@ const LEARNING_FIELDS: {
     write: (l) => l.targetFile,
     read: (d) => d.targetFile as string,
   },
-  prTitle: {
-    write: (l) => l.prTitle,
-    read: (d) => d.prTitle as string,
-  },
-  prBody: {
-    write: (l) => l.prBody,
-    read: (d) => d.prBody as string,
-  },
   status: {
     write: (l) => l.status,
     read: (d) => (d.status as LearningStatus) ?? "pending",
