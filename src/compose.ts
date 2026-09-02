@@ -114,7 +114,9 @@ import {
 } from "./filesystem.ts";
 import { PHASE_SEQUENCE } from "./phases/types.ts";
 import { HttpClient } from "./http-client.ts";
+import { ApfelLanguageModel } from "./models/apfel.ts";
 import { ClaudeLanguageModel } from "./models/claude.ts";
+import { FallbackLanguageModel } from "./models/fallback.ts";
 import { OllamaLanguageModel } from "./models/ollama.ts";
 import { unappliedMigrationsCheck } from "./doctor/checks/unapplied-migrations.ts";
 import { launchagentHealthCheck } from "./doctor/checks/launchagent-health.ts";
@@ -1237,7 +1239,16 @@ export function composeTickDeps(
         )
           .then(formatRepoCorpus),
       adjudicatePhaseModel: (prompt) =>
-        adjudicatePhaseModel(prompt, captureCommandRunner(), ollamaModels),
+        adjudicatePhaseModel(
+          prompt,
+          new FallbackLanguageModel([
+            new ApfelLanguageModel(captureCommandRunner()),
+            ...ollamaModels,
+            new ClaudeLanguageModel(captureCommandRunner(), {
+              model: "claude-haiku-4-5",
+            }),
+          ]),
+        ),
       spawnOutlierAnalysis: async (
         ticketId,
         ticketDir,

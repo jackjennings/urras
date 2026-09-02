@@ -11,7 +11,7 @@ import { join } from "@std/path";
 import { assertSpyCall, assertSpyCalls, spy } from "@std/testing/mock";
 import { TickService } from "./tick.ts";
 import { adjudicatePhaseModel } from "./pre-phase-adjudication.ts";
-import type { CommandRunner } from "./apfel.ts";
+import type { LanguageModel } from "./models/types.ts";
 import type { TickDeps } from "./phases/advance.ts";
 import type { Lock } from "./lock.ts";
 import type { TicketState } from "./state/types.ts";
@@ -1364,18 +1364,13 @@ Deno.test(
 Deno.test(
   "adjudicatePhaseModel: valid response returns parsed model and thinking",
   async () => {
-    const run: CommandRunner = spy((args: string[]) =>
-      Promise.resolve(
-        args[0] === "apfel" ? { code: 1, stdout: "" } : {
-          code: 0,
-          stdout: JSON.stringify({
-            model: "claude-opus-4-6",
-            thinking: "high",
-          }),
-        },
-      )
-    );
-    const result = await adjudicatePhaseModel("implement something", run);
+    const model = {
+      name: "mock",
+      generateObject: () =>
+        Promise.resolve({ model: "claude-opus-4-6", thinking: "high" }),
+      generateText: () => Promise.resolve(null),
+    } as unknown as LanguageModel;
+    const result = await adjudicatePhaseModel("implement something", model);
     assertEquals(result, { model: "claude-opus-4-6", thinking: "high" });
   },
 );
@@ -1383,15 +1378,13 @@ Deno.test(
 Deno.test(
   "adjudicatePhaseModel: invalid model id returns null",
   async () => {
-    const run: CommandRunner = spy((args: string[]) =>
-      Promise.resolve(
-        args[0] === "apfel" ? { code: 1, stdout: "" } : {
-          code: 0,
-          stdout: JSON.stringify({ model: "gpt-4", thinking: "high" }),
-        },
-      )
-    );
-    const result = await adjudicatePhaseModel("p", run);
+    const model = {
+      name: "mock",
+      generateObject: () =>
+        Promise.resolve({ model: "gpt-4", thinking: "high" }),
+      generateText: () => Promise.resolve(null),
+    } as unknown as LanguageModel;
+    const result = await adjudicatePhaseModel("p", model);
     assertEquals(result, null);
   },
 );
@@ -1399,18 +1392,13 @@ Deno.test(
 Deno.test(
   "adjudicatePhaseModel: haiku model id returns null",
   async () => {
-    const run: CommandRunner = spy((args: string[]) =>
-      Promise.resolve(
-        args[0] === "apfel" ? { code: 1, stdout: "" } : {
-          code: 0,
-          stdout: JSON.stringify({
-            model: "claude-haiku-4-5",
-            thinking: "off",
-          }),
-        },
-      )
-    );
-    const result = await adjudicatePhaseModel("p", run);
+    const model = {
+      name: "mock",
+      generateObject: () =>
+        Promise.resolve({ model: "claude-haiku-4-5", thinking: "off" }),
+      generateText: () => Promise.resolve(null),
+    } as unknown as LanguageModel;
+    const result = await adjudicatePhaseModel("p", model);
     assertEquals(result, null);
   },
 );
@@ -1418,55 +1406,39 @@ Deno.test(
 Deno.test(
   "adjudicatePhaseModel: invalid thinking level returns null",
   async () => {
-    const run: CommandRunner = spy((args: string[]) =>
-      Promise.resolve(
-        args[0] === "apfel" ? { code: 1, stdout: "" } : {
-          code: 0,
-          stdout: JSON.stringify({
-            model: "claude-sonnet-4-6",
-            thinking: "turbo",
-          }),
-        },
-      )
-    );
-    const result = await adjudicatePhaseModel("p", run);
+    const model = {
+      name: "mock",
+      generateObject: () =>
+        Promise.resolve({ model: "claude-sonnet-4-6", thinking: "turbo" }),
+      generateText: () => Promise.resolve(null),
+    } as unknown as LanguageModel;
+    const result = await adjudicatePhaseModel("p", model);
     assertEquals(result, null);
   },
 );
 
 Deno.test(
-  "adjudicatePhaseModel: non-zero exit code returns null",
+  "adjudicatePhaseModel: model returns null returns null",
   async () => {
-    const run: CommandRunner = spy((_args: string[]) =>
-      Promise.resolve({ code: 1, stdout: "" })
-    );
-    const result = await adjudicatePhaseModel("p", run);
+    const model = {
+      name: "mock",
+      generateObject: () => Promise.resolve(null),
+      generateText: () => Promise.resolve(null),
+    } as unknown as LanguageModel;
+    const result = await adjudicatePhaseModel("p", model);
     assertEquals(result, null);
   },
 );
 
 Deno.test(
-  "adjudicatePhaseModel: malformed JSON in stdout returns null",
+  "adjudicatePhaseModel: model throws returns null",
   async () => {
-    const run: CommandRunner = spy((args: string[]) =>
-      Promise.resolve(
-        args[0] === "apfel"
-          ? { code: 1, stdout: "" }
-          : { code: 0, stdout: "not json" },
-      )
-    );
-    const result = await adjudicatePhaseModel("p", run);
-    assertEquals(result, null);
-  },
-);
-
-Deno.test(
-  "adjudicatePhaseModel: command throws returns null",
-  async () => {
-    const run: CommandRunner = spy((_args: string[]) =>
-      Promise.reject(new Error("command failed"))
-    );
-    const result = await adjudicatePhaseModel("p", run);
+    const model = {
+      name: "mock",
+      generateObject: () => Promise.reject(new Error("model failed")),
+      generateText: () => Promise.resolve(null),
+    } as unknown as LanguageModel;
+    const result = await adjudicatePhaseModel("p", model);
     assertEquals(result, null);
   },
 );
