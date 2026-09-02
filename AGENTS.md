@@ -329,18 +329,19 @@ defeat that per-test `HOME` isolation.
 and `event`. Events: `tick-start`, `tick-end`, `tick-already-running`,
 `stale-lock`, `lock-failed`, `tick-failed`, `update-skipped`, `update-failed`,
 `repo-renamed`, `repo-identity-collision`, `repo-identity-reconcile-failed`,
-`repo-identity-unavailable`, `repo-org-unmapped`, `pricing-fetch-failed`.
-`appendTickLog` (`src/tick.ts`) writes it directly; it is not `appendTicketLog`
-(`src/state/store.ts`).
+`repo-identity-unavailable`, `repo-org-unmapped`, `pricing-fetch-failed`,
+`learning-processing-failed`. `appendTickLog` (`src/tick.ts`) writes it
+directly; it is not `appendTicketLog` (`src/state/store.ts`).
 
-| Event                            | Trigger                                                                                                                                                        |
-| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `repo-renamed`                   | `currentSlug` changed for a confirmed repo identity entry                                                                                                      |
-| `repo-identity-collision`        | A canonical slug's freed name was re-registered by another repo                                                                                                |
-| `repo-identity-reconcile-failed` | Network error, 5xx, or timeout on a reconciler API call                                                                                                        |
-| `repo-identity-unavailable`      | `repos.json` could not be parsed; capture skipped for this tick                                                                                                |
-| `repo-org-unmapped`              | Org after a transfer is absent from `[github.orgs]`                                                                                                            |
-| `pricing-fetch-failed`           | `refreshAnthropicPricingIfStale` failed to refresh the pricing cache; `reason` is `network-error`, `http-error`, `response-read-error`, or `cache-write-error` |
+| Event                            | Trigger                                                                                                                                                                                                                                               |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `repo-renamed`                   | `currentSlug` changed for a confirmed repo identity entry                                                                                                                                                                                             |
+| `repo-identity-collision`        | A canonical slug's freed name was re-registered by another repo                                                                                                                                                                                       |
+| `repo-identity-reconcile-failed` | Network error, 5xx, or timeout on a reconciler API call                                                                                                                                                                                               |
+| `repo-identity-unavailable`      | `repos.json` could not be parsed; capture skipped for this tick                                                                                                                                                                                       |
+| `repo-org-unmapped`              | Org after a transfer is absent from `[github.orgs]`                                                                                                                                                                                                   |
+| `pricing-fetch-failed`           | `refreshAnthropicPricingIfStale` failed to refresh the pricing cache; `reason` is `network-error`, `http-error`, `response-read-error`, or `cache-write-error`                                                                                        |
+| `learning-processing-failed`     | `processLearnings` failed to apply a pending learning or check a waiting one's PR state; `reason` is `local-repo-not-found`, `worktree-creation-failed`, `apply-learning-failed`, `git-commit-failed`, `pr-create-failed`, or `pr-state-check-failed` |
 
 The plist from `plistContent()` must **not** include `StandardOutPath` or
 `StandardErrorPath` pointing to `tick.ndjson` — the tick process owns its own
@@ -414,6 +415,43 @@ label when it fits; add a new one only for a genuinely new cause, and never put
 free prose in `reason` (that belongs in a separate field or the `error`
 message). Work-item identity is the ticket directory itself — do not add an `id`
 or `ticketId` field to per-ticket entries.
+
+## Learnings pipeline
+
+`TicketState.prs`-style provenance for cross-repo prompt/documentation fixes.
+`TickServiceDeps.processLearnings` (wired in `composeTickDeps`) runs
+unconditionally every tick — there is no config flag for it. A `LearningState`
+(`src/state/types.ts`) is `{ id, ticketId, repo, targetFile, status, prs }`,
+stored as gray-matter Markdown at `{stateDir}/learnings/{id}.md` via
+`writeLearning`/`listLearnings` (`src/state/store.ts`); the Markdown body is the
+`intent` — a natural-language description of the change, not file content.
+
+Two producers write `pending` learnings: `resolveCIFixAction`
+(`src/tick-actions/resolve-ci-fix.ts`, on a `FIXED` verdict with a `LEARNING:`
+line) and the outlier-analysis agents (`src/phases/prompts/outlier-analysis.md`,
+`plan-outlier-analysis.md`, which write the gray-matter file directly via the
+agent's Write tool). Neither authors PR title/body — `applyLearningToRepo`
+(`src/learning-pr.ts`) generates both when it applies the learning: title (and
+commit message) `` `docs: apply learning to ${targetFile}` ``, body the intent
+text plus an `Originated from ${ticketId}.` trailer. The `docs:` prefix is
+required, not cosmetic — one target repo is urras's own source repo, which
+rejects non-Conventional-Commits messages via `commit-lint.sh`.
+
+`processLearnings` (`src/learnings.ts`) drives the lifecycle: one `pending`
+learning per distinct `targetFile` is applied per tick (same-file learnings
+serialize via an in-flight set), and every `waiting` learning's `prs` are polled
+for merge/close state, resolving to `done`/`wont-do`/`waiting` via
+`resolveLearningStatus`. `needs-attention` is a dead end — `processLearnings`
+only reprocesses `pending`/`waiting` entries, so a learning that lands there
+stays there permanently.
+
+`applyLearningToRepo` resolves the local checkout via `findLocalRepo` with alias
+resolution (`aliasesFor(persistedTable, s)`, matching `createWorktreeAction`) so
+a renamed repo still resolves, and resolves per-org GitHub credentials via
+`resolveAccount` before shelling to `git`/`gh` — both fixes for real,
+previously-silent failure modes. Failures are logged as
+`learning-processing-failed` on `tick.ndjson` (see above) rather than
+`console.error`, which is never persisted under the LaunchAgent.
 
 ## Failure handling
 
