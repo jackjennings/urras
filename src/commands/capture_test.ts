@@ -103,6 +103,8 @@ Deno.test("performCapture: uses matching jira project entry by scope", async () 
     { title: "test issue", scope: "NW", body: "", artifact: "code" },
     {
       loadConfig: () => Promise.resolve(config),
+      jiraEmail: "test@example.com",
+      jiraApiToken: "test-token",
       fetch: (url) => {
         fetchCalls.push(url as string);
         if ((url as string).includes("/myself")) {

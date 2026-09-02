@@ -45,6 +45,8 @@ export async function performCapture(
     loadConfig?: () => Promise<Config>;
     runGh?: GhRunner;
     fetch?: typeof globalThis.fetch;
+    jiraEmail?: string;
+    jiraApiToken?: string;
   },
 ): Promise<number> {
   const config = await (deps?.loadConfig ?? defaultLoadConfig)();
@@ -110,8 +112,8 @@ export async function performCapture(
   if (!jiraEntry) {
     throw new Error("capture: unknown Jira project");
   }
-  const email = Deno.env.get("JIRA_EMAIL");
-  const apiToken = Deno.env.get("JIRA_API_TOKEN");
+  const email = deps?.jiraEmail ?? Deno.env.get("JIRA_EMAIL");
+  const apiToken = deps?.jiraApiToken ?? Deno.env.get("JIRA_API_TOKEN");
   if (!email || !apiToken) {
     throw new Error("capture: JIRA_EMAIL and JIRA_API_TOKEN must be set");
   }
