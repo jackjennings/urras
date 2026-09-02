@@ -36,6 +36,7 @@ export function sanitizeBranchForFilename(branch: string): string {
 }
 
 export function checkConflictsAction(deps: CheckConflictsDeps): TickAction {
+  const fetchQueue = new Map<string, Promise<unknown>>();
   return {
     label: "Checking conflicts",
     applies(ticket: TicketState): boolean {
@@ -72,13 +73,17 @@ export function checkConflictsAction(deps: CheckConflictsDeps): TickAction {
         };
 
       const conflictResults = await Promise.all(
-        Object.values(ticket.worktrees)
-          .filter((wt) => deps.worktreeExists(wt.path))
-          .map(async (wt): Promise<ConflictResult | null> => {
-            const fetch = await deps.runGit(
-              ["fetch", "origin", "main"],
-              wt.path,
-            );
+        Object.entries(ticket.worktrees)
+          .filter(([, wt]) => deps.worktreeExists(wt.path))
+          .map(async ([slug, wt]): Promise<ConflictResult | null> => {
+            const prev = fetchQueue.get(slug) ?? Promise.resolve();
+            const fetchPromise = prev
+              .catch(() => {})
+              .then(() => deps.runGit(["fetch", "origin", "main"], wt.path));
+            fetchQueue.set(slug, fetchPromise);
+
+            const fetch = await fetchPromise;
+            fetchQueue.set(slug, Promise.resolve());
             if (fetch.code !== 0) {
               await deps.appendLog(stateDir, ticket.id, {
                 event: "error",

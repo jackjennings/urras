@@ -754,6 +754,102 @@ Deno.test(
   },
 );
 
+// ── fetch serialization per slug ─────────────────────────────────────────────
+
+Deno.test(
+  "checkConflictsAction: same-slug fetches are serialized — second does not start until first completes",
+  async () => {
+    let resolveFirstFetch!: (v: {
+      code: number;
+      stdout: string;
+      stderr: string;
+    }) => void;
+    const firstFetchDeferred = new Promise<{
+      code: number;
+      stdout: string;
+      stderr: string;
+    }>((res) => {
+      resolveFirstFetch = res;
+    });
+
+    let fetchCallCount = 0;
+    const action = makeAction({
+      runGit: (args) => {
+        if (args[0] === "fetch") {
+          fetchCallCount++;
+          if (fetchCallCount === 1) return firstFetchDeferred;
+          return Promise.resolve({ code: 0, stdout: "", stderr: "" });
+        }
+        return Promise.resolve({ code: 0, stdout: "", stderr: "" });
+      },
+    });
+
+    const ticket = makeTicket(BASE);
+    const runA = action.run(ticket, "/state");
+    const runB = action.run(ticket, "/state");
+
+    await new Promise<void>((res) => setTimeout(res, 0));
+    assertEquals(
+      fetchCallCount,
+      1,
+      "second fetch must not start while first is pending",
+    );
+
+    resolveFirstFetch({ code: 0, stdout: "", stderr: "" });
+    await Promise.all([runA, runB]);
+
+    assertEquals(fetchCallCount, 2, "both fetches must have run");
+  },
+);
+
+Deno.test(
+  "checkConflictsAction: different-slug fetches do not block each other — both start concurrently",
+  async () => {
+    const started: string[] = [];
+    const resolvers: Record<string, () => void> = {};
+
+    const action = makeAction({
+      runGit: (args, cwd) => {
+        if (args[0] === "fetch") {
+          started.push(cwd);
+          return new Promise<{ code: number; stdout: string; stderr: string }>(
+            (res) => {
+              resolvers[cwd] = () => res({ code: 0, stdout: "", stderr: "" });
+            },
+          );
+        }
+        return Promise.resolve({ code: 0, stdout: "", stderr: "" });
+      },
+    });
+
+    const ticketA = makeTicket({
+      ...BASE,
+      worktrees: { "a/repo": { path: "/wt/a/repo", branch: "gh-7" } },
+    });
+    const ticketB = makeTicket({
+      ...BASE,
+      worktrees: { "b/repo": { path: "/wt/b/repo", branch: "gh-7" } },
+    });
+
+    const runA = action.run(ticketA, "/state");
+    const runB = action.run(ticketB, "/state");
+
+    await new Promise<void>((res) => setTimeout(res, 0));
+
+    assert(
+      started.includes("/wt/a/repo"),
+      "fetch for a/repo should have started",
+    );
+    assert(
+      started.includes("/wt/b/repo"),
+      "fetch for b/repo should have started without waiting for a/repo",
+    );
+
+    Object.values(resolvers).forEach((r) => r());
+    await Promise.all([runA, runB]);
+  },
+);
+
 Deno.test(
   "checkConflictsAction: mixed worktrees — blocked takes priority over real conflict, no spawn",
   async () => {
