@@ -29,12 +29,10 @@ import {
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import { expandHome, loadConfig } from "./config.ts";
-import {
-  checkApfelAvailable,
-  defaultCommandRunner,
-  defaultProcessSpawner,
-  startApfelServer,
-} from "./apfel.ts";
+import { captureCommandRunner, type CommandRunner } from "./apfel.ts";
+import { ApfelLanguageModel } from "./models/apfel.ts";
+import { ClaudeLanguageModel } from "./models/claude.ts";
+import { FallbackLanguageModel } from "./models/fallback.ts";
 import {
   commitTicket,
   readPhaseOutput,
@@ -218,73 +216,34 @@ export function renderTabBar(
 
 export async function classifyApproval(
   text: string,
-  fetcher: typeof fetch,
-  apfelUrl: string | null = null,
+  run: CommandRunner = captureCommandRunner(),
 ): Promise<boolean> {
   if (text.trim().length > 50) return false;
-  if (apfelUrl !== null) {
-    try {
-      const response = await fetcher(`${apfelUrl}/v1/chat/completions`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          model: "apple-foundationmodel",
-          max_tokens: 5,
-          messages: [
-            {
-              role: "system",
-              content:
-                "The user is reviewing an AI-generated work product. Reply with exactly the word APPROVE if the user's message clearly expresses approval or acceptance (e.g. 'approved', 'looks good', 'good to go', 'lgtm', 'ship it'). Reply with exactly the word FEEDBACK for anything else, including questions, suggestions, corrections, ambiguous text, or anything unclear.",
-            },
-            { role: "user", content: text },
-          ],
-        }),
-      });
-      if (!response.ok) {
-        throw new Error(
-          `Approval detection failed: ${response.status} ${response.statusText}`,
-        );
-      }
-      const data = await response.json();
-      const result = (data?.choices?.[0]?.message?.content ?? "")
-        .trim()
-        .toUpperCase()
-        .replace(/[^A-Z]/g, "");
-      return result === "APPROVE";
-    } catch (e) {
-      throw e;
-    }
-  }
-  try {
-    const response = await fetcher("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": Deno.env.get("ANTHROPIC_API_KEY") ?? "",
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
+  const model = new FallbackLanguageModel([
+    new ApfelLanguageModel(run),
+    new ClaudeLanguageModel(run, { model: "claude-haiku-4-5" }),
+  ]);
+  const result = await model.generateObject<
+    { verdict: "APPROVE" | "FEEDBACK" }
+  >(
+    {
+      systemPrompt:
+        "The user is reviewing an AI-generated work product. Reply with exactly the word APPROVE if the user's message clearly expresses approval or acceptance (e.g. 'approved', 'looks good', 'good to go', 'lgtm', 'ship it'). Reply with exactly the word FEEDBACK for anything else, including questions, suggestions, corrections, ambiguous text, or anything unclear.",
+      prompt: text,
+      maxTokens: 5,
+      schema: {
+        type: "object",
+        properties: {
+          verdict: { type: "string", enum: ["APPROVE", "FEEDBACK"] },
+        },
+        required: ["verdict"],
       },
-      body: JSON.stringify({
-        model: "claude-haiku-4-5",
-        max_tokens: 5,
-        system:
-          "The user is reviewing an AI-generated work product. Reply with exactly the word APPROVE if the user's message clearly expresses approval or acceptance (e.g. 'approved', 'looks good', 'good to go', 'lgtm', 'ship it'). Reply with exactly the word FEEDBACK for anything else, including questions, suggestions, corrections, ambiguous text, or anything unclear.",
-        messages: [{ role: "user", content: text }],
-      }),
-    });
-    if (!response.ok) {
-      throw new Error(
-        `Approval detection failed: ${response.status} ${response.statusText}`,
-      );
-    }
-    const data = await response.json();
-    const result = (data?.content?.[0]?.text ?? "")
-      .trim()
-      .toUpperCase()
-      .replace(/[^A-Z]/g, "");
-    return result === "APPROVE";
-  } catch (e) {
-    throw e;
+    },
+  );
+  if (result === null) {
+    throw new Error("Approval detection failed: all models returned null");
   }
+  return result.verdict === "APPROVE";
 }
 
 export async function applyApproval(
@@ -700,12 +659,6 @@ export async function review(
   let totalSourceLines = allTabContents[activeTabIndex].totalSourceLines;
   let currentOnInvalidate = allTabContents[activeTabIndex].onInvalidate;
 
-  const available = await checkApfelAvailable(defaultCommandRunner());
-  const server = available
-    ? await startApfelServer(defaultProcessSpawner(), fetch)
-    : null;
-  const killServer = () => server?.kill();
-
   const kb = new KeybindingsManager({
     ...TUI_KEYBINDINGS,
     "tui.input.submit": {
@@ -807,7 +760,6 @@ export async function review(
   });
 
   const sigtermHandler = () => {
-    killServer();
     tui.stop();
     Deno.exit(0);
   };
@@ -818,7 +770,7 @@ export async function review(
     const now = Temporal.Now.zonedDateTimeISO("UTC");
     let isApproval: boolean;
     try {
-      isApproval = await classifyApproval(text, fetch, server?.url ?? null);
+      isApproval = await classifyApproval(text);
     } catch (e) {
       errorOverlay.setMessage(e instanceof Error ? e.message : String(e));
       errorOverlayHandle.setHidden(false);
@@ -827,7 +779,6 @@ export async function review(
     }
     if (isApproval) {
       await applyApproval(stateDir, id, now, { readTicketFn, commitFn });
-      killServer();
       Deno.removeSignalListener("SIGTERM", sigtermHandler);
       tui.stop();
       Deno.exit(0);
@@ -840,7 +791,6 @@ export async function review(
       updated: now.toInstant().toString(),
     });
     await commitFn(stateDir, id, `review: ${id}`);
-    killServer();
     Deno.removeSignalListener("SIGTERM", sigtermHandler);
     tui.stop();
     Deno.exit(0);
@@ -853,7 +803,6 @@ export async function review(
       return { consume: true };
     }
     if (matchesKey(data, "ctrl+c")) {
-      killServer();
       Deno.removeSignalListener("SIGTERM", sigtermHandler);
       tui.stop();
       Deno.exit(0);
