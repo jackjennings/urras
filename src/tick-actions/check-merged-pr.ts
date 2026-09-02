@@ -2,7 +2,7 @@ import type { TickAction } from "./types.ts";
 import type { TicketState, WorktreeInfo } from "../state/types.ts";
 
 export interface CheckMergedPRDeps {
-  isPRMerged: (prUrl: string) => Promise<boolean>;
+  getPRState: (prUrl: string) => Promise<"merged" | "closed" | "open">;
   cleanupWorktree: (wt: WorktreeInfo) => Promise<void>;
   writeTicket: (stateDir: string, t: TicketState) => Promise<void>;
   appendLog: (stateDir: string, id: string, entry: object) => Promise<void>;
@@ -35,9 +35,9 @@ export function checkMergedPRAction(deps: CheckMergedPRDeps): TickAction {
         if (pr.merged) continue;
         if (pr.dependsOn.some((dep) => !mergedUrls.has(dep))) continue;
 
-        let merged: boolean;
+        let state: "merged" | "closed" | "open";
         try {
-          merged = await deps.isPRMerged(pr.url);
+          state = await deps.getPRState(pr.url);
         } catch (e) {
           await deps.appendLog(stateDir, ticket.id, {
             event: "error",
@@ -47,7 +47,24 @@ export function checkMergedPRAction(deps: CheckMergedPRDeps): TickAction {
           return null;
         }
 
-        if (!merged) continue;
+        if (state === "open") continue;
+
+        if (state === "closed") {
+          const updated: TicketState = {
+            ...ticket,
+            status: "needs-attention",
+            prs,
+            worktrees,
+            updated: Temporal.Now.instant().toString(),
+          };
+          await deps.writeTicket(stateDir, updated);
+          await deps.appendLog(stateDir, ticket.id, {
+            event: "needs-attention",
+            reason: "pr-closed-unmerged",
+            prUrl: pr.url,
+          });
+          return updated;
+        }
 
         pr.merged = true;
         mergedUrls.add(pr.url);

@@ -508,7 +508,7 @@ export function composeTickDeps(
       aliasesForSlug: (slug) => aliasesFor(persistedTable, slug),
     }),
     checkMergedPRAction({
-      isPRMerged: (url) => githubProvider.isPRMerged(url),
+      getPRState: (url) => githubProvider.prState(url),
       cleanupWorktree: removeWorktree,
       closeWorkItem: (url: string) => githubProvider.close(url),
       writeTicket,

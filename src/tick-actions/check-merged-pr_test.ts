@@ -27,7 +27,7 @@ function makeAction(
   overrides: Partial<Parameters<typeof checkMergedPRAction>[0]> = {},
 ) {
   return checkMergedPRAction({
-    isPRMerged: () => Promise.resolve(false),
+    getPRState: () => Promise.resolve("open"),
     cleanupWorktree: () => Promise.resolve(),
     writeTicket: () => Promise.resolve(),
     appendLog: () => Promise.resolve(),
@@ -71,10 +71,10 @@ Deno.test(
 
 // ── single PR — no merge ──────────────────────────────────────────────────────
 
-Deno.test("checkMergedPRAction: PR not merged → null, no cleanup", async () => {
+Deno.test("checkMergedPRAction: PR open → null, no cleanup", async () => {
   const cleanups: string[] = [];
   const result = await makeAction({
-    isPRMerged: () => Promise.resolve(false),
+    getPRState: () => Promise.resolve("open"),
     cleanupWorktree: (wt) => {
       cleanups.push(wt.path);
       return Promise.resolve();
@@ -85,12 +85,12 @@ Deno.test("checkMergedPRAction: PR not merged → null, no cleanup", async () =>
 });
 
 Deno.test(
-  "checkMergedPRAction: isPRMerged throws → null, no cleanup, logs error",
+  "checkMergedPRAction: getPRState throws → null, no cleanup, logs error",
   async () => {
     const cleanups: string[] = [];
     const logged: object[] = [];
     const result = await makeAction({
-      isPRMerged: () => {
+      getPRState: () => {
         throw new Error("network error");
       },
       cleanupWorktree: (wt) => {
@@ -117,6 +117,108 @@ Deno.test(
   },
 );
 
+// ── single PR — closed without merging ───────────────────────────────────────
+
+Deno.test(
+  "checkMergedPRAction: PR closed → needs-attention, writeTicket called, appendLog with pr-closed-unmerged",
+  async () => {
+    const written: TicketState[] = [];
+    const logged: object[] = [];
+    const result = await makeAction({
+      getPRState: () => Promise.resolve("closed"),
+      writeTicket: (_dir, t) => {
+        written.push(t);
+        return Promise.resolve();
+      },
+      appendLog: (_dir, _id, entry) => {
+        logged.push(entry);
+        return Promise.resolve();
+      },
+    }).run(makeTicket(BASE), "/state");
+    assertEquals(result?.status, "needs-attention");
+    assertEquals(written.length, 1);
+    assertEquals(written[0].status, "needs-attention");
+    const attention = (logged as Record<string, string>[]).filter((e) =>
+      e.event === "needs-attention"
+    );
+    assertEquals(attention.length, 1);
+    assertEquals(attention[0].reason, "pr-closed-unmerged");
+    assertEquals(attention[0].prUrl, "https://github.com/myorg/myrepo/pull/99");
+  },
+);
+
+Deno.test(
+  "checkMergedPRAction: first PR closed, second open → parks on first, getPRState called once",
+  async () => {
+    const checked: string[] = [];
+    const result = await makeAction({
+      getPRState: (url) => {
+        checked.push(url);
+        return Promise.resolve(
+          url === "https://github.com/myorg/myrepo/pull/1" ? "closed" : "open",
+        );
+      },
+    }).run(
+      makeTicket({
+        ...BASE,
+        prs: [
+          {
+            url: "https://github.com/myorg/myrepo/pull/1",
+            title: "A",
+            dependsOn: [],
+            merged: false,
+            worktreeKey: "myorg/myrepo",
+          },
+          {
+            url: "https://github.com/myorg/myrepo/pull/2",
+            title: "B",
+            dependsOn: [],
+            merged: false,
+          },
+        ],
+      }),
+      "/state",
+    );
+    assertEquals(result?.status, "needs-attention");
+    assertEquals(checked, ["https://github.com/myorg/myrepo/pull/1"]);
+  },
+);
+
+Deno.test(
+  "checkMergedPRAction: second PR is closed but its dep is unsatisfied — closed PR not checked",
+  async () => {
+    const checked: string[] = [];
+    const result = await makeAction({
+      getPRState: (url) => {
+        checked.push(url);
+        return Promise.resolve("closed");
+      },
+    }).run(
+      makeTicket({
+        ...BASE,
+        prs: [
+          {
+            url: "https://github.com/myorg/myrepo/pull/1",
+            title: "A",
+            dependsOn: [],
+            merged: false,
+            worktreeKey: "myorg/myrepo",
+          },
+          {
+            url: "https://github.com/myorg/myrepo/pull/2",
+            title: "B",
+            dependsOn: ["https://github.com/myorg/myrepo/pull/1"],
+            merged: false,
+          },
+        ],
+      }),
+      "/state",
+    );
+    assertEquals(result?.status, "needs-attention");
+    assertEquals(checked, ["https://github.com/myorg/myrepo/pull/1"]);
+  },
+);
+
 // ── single PR — merged ────────────────────────────────────────────────────────
 
 Deno.test(
@@ -125,7 +227,7 @@ Deno.test(
     const cleanups: string[] = [];
     const written: TicketState[] = [];
     const result = await makeAction({
-      isPRMerged: () => Promise.resolve(true),
+      getPRState: () => Promise.resolve("merged"),
       cleanupWorktree: (wt) => {
         cleanups.push(wt.path);
         return Promise.resolve();
@@ -147,7 +249,7 @@ Deno.test(
   async () => {
     const logged: object[] = [];
     const result = await makeAction({
-      isPRMerged: () => Promise.resolve(true),
+      getPRState: () => Promise.resolve("merged"),
       cleanupWorktree: () => {
         throw new Error("git failed");
       },
@@ -171,7 +273,7 @@ Deno.test(
   async () => {
     const logged: object[] = [];
     await makeAction({
-      isPRMerged: () => Promise.resolve(true),
+      getPRState: () => Promise.resolve("merged"),
       appendLog: (_dir, _id, entry) => {
         logged.push(entry);
         return Promise.resolve();
@@ -191,7 +293,7 @@ Deno.test(
   async () => {
     const closedUrls: string[] = [];
     const result = await makeAction({
-      isPRMerged: () => Promise.resolve(true),
+      getPRState: () => Promise.resolve("merged"),
       closeWorkItem: (url) => {
         closedUrls.push(url);
         return Promise.resolve();
@@ -207,7 +309,7 @@ Deno.test(
   async () => {
     const logged: object[] = [];
     const result = await makeAction({
-      isPRMerged: () => Promise.resolve(true),
+      getPRState: () => Promise.resolve("merged"),
       closeWorkItem: () => {
         throw new Error("close failed");
       },
@@ -232,7 +334,7 @@ Deno.test(
   async () => {
     const cleanups: string[] = [];
     const result = await makeAction({
-      isPRMerged: () => Promise.resolve(true),
+      getPRState: () => Promise.resolve("merged"),
       cleanupWorktree: (wt) => {
         cleanups.push(wt.path);
         return Promise.resolve();
@@ -261,9 +363,9 @@ Deno.test(
   async () => {
     const checked: string[] = [];
     const result = await makeAction({
-      isPRMerged: (url) => {
+      getPRState: (url) => {
         checked.push(url);
-        return Promise.resolve(false);
+        return Promise.resolve("open");
       },
     }).run(
       makeTicket({
@@ -297,8 +399,10 @@ Deno.test(
     const cleanups: string[] = [];
     const written: TicketState[] = [];
     const result = await makeAction({
-      isPRMerged: (url) =>
-        Promise.resolve(url === "https://github.com/myorg/myrepo/pull/1"),
+      getPRState: (url) =>
+        Promise.resolve(
+          url === "https://github.com/myorg/myrepo/pull/1" ? "merged" : "open",
+        ),
       cleanupWorktree: (wt) => {
         cleanups.push(wt.path);
         return Promise.resolve();
@@ -351,8 +455,10 @@ Deno.test(
   async () => {
     const cleanups: string[] = [];
     const result = await makeAction({
-      isPRMerged: (url) =>
-        Promise.resolve(url === "https://github.com/myorg/myrepo/pull/2"),
+      getPRState: (url) =>
+        Promise.resolve(
+          url === "https://github.com/myorg/myrepo/pull/2" ? "merged" : "open",
+        ),
       cleanupWorktree: (wt) => {
         cleanups.push(wt.path);
         return Promise.resolve();
@@ -394,7 +500,7 @@ Deno.test(
   async () => {
     const cleanups: string[] = [];
     const result = await makeAction({
-      isPRMerged: () => Promise.resolve(true),
+      getPRState: () => Promise.resolve("merged"),
       cleanupWorktree: (wt) => {
         cleanups.push(wt.path);
         return Promise.resolve();
@@ -434,13 +540,13 @@ Deno.test(
 );
 
 Deno.test(
-  "checkMergedPRAction: isPRMerged throws mid-stack — returns null without writing",
+  "checkMergedPRAction: getPRState throws mid-stack — returns null without writing",
   async () => {
     const written: TicketState[] = [];
     const result = await makeAction({
-      isPRMerged: (url) => {
+      getPRState: (url) => {
         if (url === "https://github.com/myorg/myrepo/pull/1") {
-          return Promise.resolve(true);
+          return Promise.resolve("merged");
         }
         throw new Error("network error");
       },
@@ -480,7 +586,7 @@ Deno.test(
   async () => {
     const writeTicketSpy = spy(() => Promise.resolve());
     await makeAction({
-      isPRMerged: () => Promise.resolve(true),
+      getPRState: () => Promise.resolve("merged"),
       writeTicket: writeTicketSpy,
     }).run(makeTicket(BASE), "/state");
     assertSpyCalls(writeTicketSpy, 1);
