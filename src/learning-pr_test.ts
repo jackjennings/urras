@@ -71,6 +71,10 @@ Deno.test("applyLearningToRepo: creates the worktree with the full org/repo slug
   );
   assertSpyCalls(createWorktree, 1);
   assertEquals(createWorktree.calls[0].args[2], "jackjennings/lazyboy");
+  assertEquals(
+    createWorktree.calls[0].args[1],
+    `learnings-${learning().id}`,
+  );
 });
 
 Deno.test("applyLearningToRepo: throws local-repo-not-found when findLocalRepo returns null", async () => {
@@ -118,6 +122,20 @@ Deno.test("applyLearningToRepo: throws apply-learning-failed when applyLearning 
     "apply-learning-failed",
   );
   assertSpyCalls(removeWorktree, 1);
+});
+
+Deno.test("applyLearningToRepo: resolves successfully even when removeWorktree cleanup fails", async () => {
+  const result = await applyLearningToRepo(
+    learning({ targetFile: "AGENTS.md" }),
+    "intent text",
+    makeDeps({
+      removeWorktree: () => Promise.reject(new Error("cleanup failed")),
+    }),
+  );
+  assertEquals(result, {
+    url: "https://github.com/jackjennings/urras/pull/42",
+    title: "docs: apply learning to AGENTS.md",
+  });
 });
 
 Deno.test("applyLearningToRepo: throws git-commit-failed when git commit exits non-zero", async () => {
