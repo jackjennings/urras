@@ -9,8 +9,6 @@ function learning(overrides: Partial<LearningState> = {}): LearningState {
     ticketId: "github/jackjennings/lazyboy/226",
     repo: "jackjennings/lazyboy",
     targetFile: "AGENTS.md",
-    prTitle: "docs: apply learning to AGENTS.md",
-    prBody: "intent text\n\nOriginated from github/jackjennings/lazyboy/226.",
     status: "pending",
     prs: [],
     ...overrides,
@@ -31,7 +29,7 @@ function makeDeps(overrides: Partial<LearningPrDeps> = {}): LearningPrDeps {
     captureCommandRunner:
       () => (() => Promise.resolve({ code: 0, stdout: "" })),
     resolveAccount: () => ({ token: "tok123", login: "jackjennings" }),
-    run: (cmd: string[]) => {
+    run: (cmd) => {
       if (cmd[0] === "gh") {
         return Promise.resolve({
           code: 0,
