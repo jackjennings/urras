@@ -172,8 +172,6 @@ export interface LearningState {
   ticketId: string;
   repo: string;
   targetFile: string;
-  prTitle: string;
-  prBody: string;
   status: LearningStatus;
   prs: PrEntry[];
 }
