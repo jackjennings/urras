@@ -1093,6 +1093,12 @@ export function composeTickDeps(
           resume: opts.resume,
           includePrinciples: config.tick.principles,
           maxTurns: config.tick.maxTurns,
+          ollamaModels: config.ollama
+            ? config.ollama.models.map((model) => ({
+              model,
+              url: config.ollama!.url,
+            }))
+            : undefined,
         });
       },
       isProcessAlive: (ticketId: string) =>

@@ -21,7 +21,7 @@ import { deriveProjectPath } from "./phases/project-path.ts";
 import matter from "gray-matter";
 import { captureCommandRunner, type CommandRunner } from "./apfel.ts";
 import { filterPrinciples } from "./judge-principles.ts";
-import type { OllamaLanguageModel } from "./models/ollama.ts";
+import { OllamaLanguageModel } from "./models/ollama.ts";
 import { compactTimestamp } from "./timestamp.ts";
 import { PHASE_MODEL_DEFAULTS } from "./phases/model.ts";
 import { selfApprove } from "./self-approve.ts";
@@ -475,6 +475,7 @@ export async function executePhase(
     run?: CommandRunner;
     critiqueModel?: string;
     critiqueThinking?: string;
+    ollamaModels?: OllamaLanguageModel[];
   },
   agent: CodeAgent,
 ): Promise<number> {
@@ -718,6 +719,7 @@ export async function executePhase(
       ticketDir: opts.ticketDir,
       run: captureCommandRunner(),
       worktreePath: opts.worktrees["jackjennings/lazyboy"]?.path,
+      ollamaModels: opts.ollamaModels,
     });
     await writeTextFile(
       join(opts.ticketDir, opts.outputFile + ".selfapprove"),
@@ -799,6 +801,7 @@ if (import.meta.main) {
       "state-dir",
       "critique-model",
       "critique-thinking",
+      "ollama-models",
     ],
     boolean: ["skip-principles", "resume"],
   });
@@ -831,6 +834,12 @@ if (import.meta.main) {
 
   const stateDir = args["state-dir"] ?? "";
 
+  const ollamaModels: OllamaLanguageModel[] = args["ollama-models"]
+    ? (JSON.parse(args["ollama-models"]) as Array<
+      { model: string; url?: string }
+    >).map((m) => new OllamaLanguageModel(fetch, m))
+    : [];
+
   const code = await executePhase(
     {
       ticketDir,
@@ -851,6 +860,7 @@ if (import.meta.main) {
       includePrinciples: !args["skip-principles"],
       critiqueModel: args["critique-model"] ?? undefined,
       critiqueThinking: args["critique-thinking"] ?? undefined,
+      ollamaModels: ollamaModels.length > 0 ? ollamaModels : undefined,
     },
     agentType === "claude-code"
       ? new ClaudeCodeAgent(
