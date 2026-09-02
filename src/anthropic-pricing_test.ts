@@ -4,7 +4,7 @@ import {
   assertFalse,
   assertNotEquals,
 } from "@std/assert";
-import { assertSpyCalls, spy, stub } from "@std/testing/mock";
+import { assertSpyCalls, spy } from "@std/testing/mock";
 import { join } from "@std/path";
 import {
   calculateAnthropicCost,
@@ -277,6 +277,8 @@ Deno.test(
 
 // ── refreshAnthropicPricingIfStale ───────────────────────────────────────────
 
+const noopLogFn = (_entry: object) => Promise.resolve();
+
 const MINIMAL_PRICING_MARKDOWN = `## Model pricing
 
 | Model | Base Input Tokens | 5m Cache Writes | 1h Cache Writes | Cache Hits & Refreshes | Output Tokens |
@@ -301,10 +303,11 @@ Deno.test(
       const fetcherSpy = spy((_url: string) =>
         Promise.resolve(new Response(MINIMAL_PRICING_MARKDOWN, { status: 200 }))
       );
-      await refreshAnthropicPricingIfStale(
-        tempHome,
-        fetcherSpy as typeof fetch,
-      );
+      await refreshAnthropicPricingIfStale({
+        homeDir: tempHome,
+        fetcher: fetcherSpy as typeof fetch,
+        logFn: noopLogFn,
+      });
       assertSpyCalls(fetcherSpy, 0);
     } finally {
       await Deno.remove(tempHome, { recursive: true });
@@ -321,10 +324,11 @@ Deno.test(
       const fetcherSpy = spy((_url: string) =>
         Promise.resolve(new Response(MINIMAL_PRICING_MARKDOWN, { status: 200 }))
       );
-      await refreshAnthropicPricingIfStale(
-        tempHome,
-        fetcherSpy as typeof fetch,
-      );
+      await refreshAnthropicPricingIfStale({
+        homeDir: tempHome,
+        fetcher: fetcherSpy as typeof fetch,
+        logFn: noopLogFn,
+      });
       assertSpyCalls(fetcherSpy, 1);
       const raw = await Deno.readTextFile(
         join(tempHome, ".urras", "anthropic-pricing.json"),
@@ -357,10 +361,11 @@ Deno.test(
       const fetcherSpy = spy((_url: string) =>
         Promise.resolve(new Response(MINIMAL_PRICING_MARKDOWN, { status: 200 }))
       );
-      await refreshAnthropicPricingIfStale(
-        tempHome,
-        fetcherSpy as typeof fetch,
-      );
+      await refreshAnthropicPricingIfStale({
+        homeDir: tempHome,
+        fetcher: fetcherSpy as typeof fetch,
+        logFn: noopLogFn,
+      });
       assertSpyCalls(fetcherSpy, 1);
       const raw = await Deno.readTextFile(cachePath);
       const cache = JSON.parse(raw);
@@ -377,15 +382,20 @@ Deno.test(
     const tempHome = await Deno.makeTempDir();
     try {
       await Deno.mkdir(join(tempHome, ".urras"));
-      const errorStub = stub(console, "error", () => {});
-      try {
-        const fetcher = (_url: string) =>
-          Promise.resolve(new Response("", { status: 500 }));
-        await refreshAnthropicPricingIfStale(tempHome, fetcher as typeof fetch);
-        assertSpyCalls(errorStub, 1);
-      } finally {
-        errorStub.restore();
-      }
+      const logFnSpy = spy((_entry: object) => Promise.resolve());
+      const fetcher = (_url: string) =>
+        Promise.resolve(new Response("", { status: 500 }));
+      await refreshAnthropicPricingIfStale({
+        homeDir: tempHome,
+        fetcher: fetcher as typeof fetch,
+        logFn: logFnSpy,
+      });
+      assertSpyCalls(logFnSpy, 1);
+      assertEquals(logFnSpy.calls[0].args[0], {
+        event: "pricing-fetch-failed",
+        reason: "http-error",
+        status: 500,
+      });
       let exists = false;
       try {
         await Deno.stat(join(tempHome, ".urras", "anthropic-pricing.json"));
@@ -404,15 +414,20 @@ Deno.test(
     const tempHome = await Deno.makeTempDir();
     try {
       await Deno.mkdir(join(tempHome, ".urras"));
-      const errorStub = stub(console, "error", () => {});
-      try {
-        const fetcher = (_url: string) =>
-          Promise.reject(new Error("network failure"));
-        await refreshAnthropicPricingIfStale(tempHome, fetcher as typeof fetch);
-        assertSpyCalls(errorStub, 1);
-      } finally {
-        errorStub.restore();
-      }
+      const logFnSpy = spy((_entry: object) => Promise.resolve());
+      const fetcher = (_url: string) =>
+        Promise.reject(new Error("network failure"));
+      await refreshAnthropicPricingIfStale({
+        homeDir: tempHome,
+        fetcher: fetcher as typeof fetch,
+        logFn: logFnSpy,
+      });
+      assertSpyCalls(logFnSpy, 1);
+      assertEquals(logFnSpy.calls[0].args[0], {
+        event: "pricing-fetch-failed",
+        reason: "network-error",
+        error: "network failure",
+      });
     } finally {
       await Deno.remove(tempHome, { recursive: true });
     }
@@ -436,14 +451,13 @@ Deno.test(
         (Date.now() - 25 * 60 * 60 * 1000) / 1000,
       );
       await Deno.utime(cachePath, staleTimeSec, staleTimeSec);
-      const errorStub = stub(console, "error", () => {});
-      try {
-        const fetcher = (_url: string) =>
-          Promise.resolve(new Response("", { status: 503 }));
-        await refreshAnthropicPricingIfStale(tempHome, fetcher as typeof fetch);
-      } finally {
-        errorStub.restore();
-      }
+      const fetcher = (_url: string) =>
+        Promise.resolve(new Response("", { status: 503 }));
+      await refreshAnthropicPricingIfStale({
+        homeDir: tempHome,
+        fetcher: fetcher as typeof fetch,
+        logFn: noopLogFn,
+      });
       const raw = await Deno.readTextFile(cachePath);
       assertEquals(raw, staleContent);
     } finally {
@@ -465,7 +479,11 @@ Deno.test(
           new Response(MINIMAL_PRICING_MARKDOWN, { status: 200 }),
         );
       };
-      await refreshAnthropicPricingIfStale(tempHome, fetcher as typeof fetch);
+      await refreshAnthropicPricingIfStale({
+        homeDir: tempHome,
+        fetcher: fetcher as typeof fetch,
+        logFn: noopLogFn,
+      });
       assertEquals(
         capturedUrl,
         "https://platform.claude.com/docs/en/about-claude/pricing.md",

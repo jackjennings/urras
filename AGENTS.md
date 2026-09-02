@@ -329,17 +329,18 @@ defeat that per-test `HOME` isolation.
 and `event`. Events: `tick-start`, `tick-end`, `tick-already-running`,
 `stale-lock`, `lock-failed`, `tick-failed`, `update-skipped`, `update-failed`,
 `repo-renamed`, `repo-identity-collision`, `repo-identity-reconcile-failed`,
-`repo-identity-unavailable`, `repo-org-unmapped`. `appendTickLog`
-(`src/tick.ts`) writes it directly; it is not `appendTicketLog`
+`repo-identity-unavailable`, `repo-org-unmapped`, `pricing-fetch-failed`.
+`appendTickLog` (`src/tick.ts`) writes it directly; it is not `appendTicketLog`
 (`src/state/store.ts`).
 
-| Event                            | Trigger                                                         |
-| -------------------------------- | --------------------------------------------------------------- |
-| `repo-renamed`                   | `currentSlug` changed for a confirmed repo identity entry       |
-| `repo-identity-collision`        | A canonical slug's freed name was re-registered by another repo |
-| `repo-identity-reconcile-failed` | Network error, 5xx, or timeout on a reconciler API call         |
-| `repo-identity-unavailable`      | `repos.json` could not be parsed; capture skipped for this tick |
-| `repo-org-unmapped`              | Org after a transfer is absent from `[github.orgs]`             |
+| Event                            | Trigger                                                                                                                                                        |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `repo-renamed`                   | `currentSlug` changed for a confirmed repo identity entry                                                                                                      |
+| `repo-identity-collision`        | A canonical slug's freed name was re-registered by another repo                                                                                                |
+| `repo-identity-reconcile-failed` | Network error, 5xx, or timeout on a reconciler API call                                                                                                        |
+| `repo-identity-unavailable`      | `repos.json` could not be parsed; capture skipped for this tick                                                                                                |
+| `repo-org-unmapped`              | Org after a transfer is absent from `[github.orgs]`                                                                                                            |
+| `pricing-fetch-failed`           | `refreshAnthropicPricingIfStale` failed to refresh the pricing cache; `reason` is `network-error`, `http-error`, `response-read-error`, or `cache-write-error` |
 
 The plist from `plistContent()` must **not** include `StandardOutPath` or
 `StandardErrorPath` pointing to `tick.ndjson` — the tick process owns its own

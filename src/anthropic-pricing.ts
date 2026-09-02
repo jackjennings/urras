@@ -1,6 +1,7 @@
 import { join } from "@std/path";
 import type { PhaseModelUsage } from "./state/types.ts";
 import { stat, writeTextFile } from "./filesystem.ts";
+import type { appendTickLog } from "./logger.ts";
 
 export interface AnthropicModelPricing {
   inputPerMTok: number;
@@ -197,9 +198,14 @@ export function calculateAnthropicCost(
   );
 }
 
+export interface RefreshAnthropicPricingDeps {
+  homeDir: string;
+  fetcher: typeof fetch;
+  logFn: typeof appendTickLog;
+}
+
 export async function refreshAnthropicPricingIfStale(
-  homeDir: string,
-  fetcher: typeof fetch,
+  { homeDir, fetcher, logFn }: RefreshAnthropicPricingDeps,
 ): Promise<void> {
   const cachePath = join(homeDir, ".urras", "anthropic-pricing.json");
 
@@ -220,18 +226,20 @@ export async function refreshAnthropicPricingIfStale(
       "https://platform.claude.com/docs/en/about-claude/pricing.md",
     );
   } catch (e) {
-    console.error(
-      `Warning: Failed to fetch Anthropic pricing: ${
-        e instanceof Error ? e.message : String(e)
-      }`,
-    );
+    await logFn({
+      event: "pricing-fetch-failed",
+      reason: "network-error",
+      error: e instanceof Error ? e.message : String(e),
+    });
     return;
   }
 
   if (!response.ok) {
-    console.error(
-      `Warning: Failed to fetch Anthropic pricing: HTTP ${response.status}`,
-    );
+    await logFn({
+      event: "pricing-fetch-failed",
+      reason: "http-error",
+      status: response.status,
+    });
     return;
   }
 
@@ -239,11 +247,11 @@ export async function refreshAnthropicPricingIfStale(
   try {
     text = await response.text();
   } catch (e) {
-    console.error(
-      `Warning: Failed to read Anthropic pricing response: ${
-        e instanceof Error ? e.message : String(e)
-      }`,
-    );
+    await logFn({
+      event: "pricing-fetch-failed",
+      reason: "response-read-error",
+      error: e instanceof Error ? e.message : String(e),
+    });
     return;
   }
 
@@ -257,10 +265,10 @@ export async function refreshAnthropicPricingIfStale(
   try {
     await writeTextFile(cachePath, JSON.stringify(cache));
   } catch (e) {
-    console.error(
-      `Warning: Failed to write Anthropic pricing cache: ${
-        e instanceof Error ? e.message : String(e)
-      }`,
-    );
+    await logFn({
+      event: "pricing-fetch-failed",
+      reason: "cache-write-error",
+      error: e instanceof Error ? e.message : String(e),
+    });
   }
 }

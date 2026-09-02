@@ -1344,7 +1344,12 @@ export function composeTickDeps(
     lock: new PidFileLock(join(home, ".urras", "tick.pid"), {
       log: appendTickLog,
     }),
-    refreshAnthropicPricing: () => refreshAnthropicPricingIfStale(home, fetch),
+    refreshAnthropicPricing: () =>
+      refreshAnthropicPricingIfStale({
+        homeDir: home,
+        fetcher: fetch,
+        logFn: appendTickLog,
+      }),
     processLearnings: () =>
       runLearnings({
         listLearnings: () => listLearnings(stateDir),
