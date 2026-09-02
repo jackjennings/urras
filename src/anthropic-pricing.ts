@@ -85,9 +85,9 @@ export function parseAnthropicPricingPage(
     if (/^[-: ]+$/.test(cells[0])) continue;
 
     if (
-      cells[0].includes("Model") &&
-      cells[1].includes("Base Input") &&
-      cells[5].includes("Output")
+      cells[0].toLowerCase().includes("model") &&
+      cells[1].toLowerCase().includes("base input") &&
+      cells[5].toLowerCase().includes("output")
     ) {
       inModelTable = true;
       continue;

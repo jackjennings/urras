@@ -39,6 +39,21 @@ Deno.test("parseAnthropicPricingPage: parses a standard model row", () => {
 });
 
 Deno.test(
+  "parseAnthropicPricingPage: matches header regardless of cell capitalization",
+  () => {
+    const md =
+      `## Model pricing\n\n| Model | Base input tokens | 5m cache writes | 1h cache writes | Cache hits and refreshes | Output tokens |\n| --- | --- | --- | --- | --- | --- |\n| Claude Haiku 4.5 | $1 / MTok | $1.25 / MTok | $2 / MTok | $0.10 / MTok | $5 / MTok |\n`;
+    const models = parseAnthropicPricingPage(md, TODAY);
+    assertEquals(models["claude-haiku-4-5"], {
+      inputPerMTok: 1,
+      outputPerMTok: 5,
+      cacheWritePerMTok: 1.25,
+      cacheReadPerMTok: 0.10,
+    });
+  },
+);
+
+Deno.test(
   "parseAnthropicPricingPage: strips markdown links from model cell",
   () => {
     const md = wrapTable(
