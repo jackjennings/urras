@@ -267,6 +267,14 @@ Deno.test("resolveCIFixAction: FIXED writes the learning when a LEARNING line is
     writeLearning: learningSpy,
   }).run(makeTicket(BASE), "/state");
   assertSpyCalls(learningSpy, 1);
+  // deno-lint-ignore no-explicit-any
+  const passed = (learningSpy as any).calls[0].args[0] as Record<
+    string,
+    unknown
+  >;
+  assertEquals("prTitle" in passed, false);
+  assertEquals("prBody" in passed, false);
+  assertEquals(passed.targetFile, "AGENTS.md");
 });
 
 Deno.test("resolveCIFixAction: FIXED without a LEARNING line writes no learning", async () => {
