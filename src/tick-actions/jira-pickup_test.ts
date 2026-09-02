@@ -15,6 +15,7 @@ function makeAction(
     baseUrl: "https://myorg.atlassian.net",
     email: "test@example.com",
     apiToken: "token",
+    project: "PROJ",
     targetStatusName: "In Progress",
     appendLog: () => Promise.resolve(),
     writeTicket: () => Promise.resolve(),
@@ -74,6 +75,16 @@ Deno.test("jiraPickupAction: does not apply when providerPickedUp is true", () =
   assertFalse(
     makeAction().applies(makeTicket({ ...BASE, providerPickedUp: true })),
   );
+});
+
+Deno.test("jiraPickupAction: does not apply when ticket project key does not match configured project", () => {
+  assertFalse(
+    makeAction({ project: "ACME" }).applies(makeTicket(BASE)),
+  );
+});
+
+Deno.test("jiraPickupAction: applies when ticket project key matches configured project", () => {
+  assert(makeAction({ project: "PROJ" }).applies(makeTicket(BASE)));
 });
 
 Deno.test("jiraPickupAction: run calls GET issue endpoint then POST with in-progress id for correct issue key", async () => {

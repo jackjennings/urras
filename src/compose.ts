@@ -134,7 +134,7 @@ import { plistPath } from "./launchd.ts";
 export async function ensureStatePrompts(
   stateDir: string,
   githubRepos: string[] = [],
-  jiraProject?: string,
+  jiraProjects?: string[],
 ): Promise<void> {
   const promptsDir = join(stateDir, "prompts");
   await mkdir(promptsDir, { recursive: true });
@@ -174,8 +174,8 @@ export async function ensureStatePrompts(
     await scaffoldPhaseFiles(join(promptsDir, "github", org, name));
   }
 
-  if (jiraProject) {
-    await scaffoldPhaseFiles(join(promptsDir, "jira", jiraProject));
+  for (const project of jiraProjects ?? []) {
+    await scaffoldPhaseFiles(join(promptsDir, "jira", project));
   }
 }
 
@@ -393,14 +393,14 @@ export function composeTickDeps(
 
   const providers: Provider[] = [githubProvider];
 
-  if (config.jira) {
+  for (const entry of Object.values(config.jira ?? {})) {
     providers.push(
       new JiraProvider({
-        baseUrl: config.jira.baseUrl,
+        baseUrl: entry.baseUrl,
         email: Deno.env.get("JIRA_EMAIL") ?? "",
         apiToken: Deno.env.get("JIRA_API_TOKEN") ?? "",
-        project: config.jira.project,
-        doneStatusName: config.jira.statuses?.done ?? "Done",
+        project: entry.project,
+        doneStatusName: entry.statuses?.done ?? "Done",
         http,
         run: captureCommandRunner(),
       }),
@@ -792,28 +792,28 @@ export function composeTickDeps(
         }),
       ]
       : []),
-    ...(config.jira
-      ? [
-        jiraPickupAction({
-          baseUrl: config.jira.baseUrl,
-          email: Deno.env.get("JIRA_EMAIL") ?? "",
-          apiToken: Deno.env.get("JIRA_API_TOKEN") ?? "",
-          targetStatusName: config.jira.statuses?.pickup ?? "In Progress",
-          appendLog: appendTicketLog,
-          writeTicket,
-          http,
-        }),
-        jiraDoneAction({
-          baseUrl: config.jira.baseUrl,
-          email: Deno.env.get("JIRA_EMAIL") ?? "",
-          apiToken: Deno.env.get("JIRA_API_TOKEN") ?? "",
-          targetStatusName: config.jira.statuses?.done ?? "Done",
-          writeTicket,
-          appendLog: appendTicketLog,
-          http,
-        }),
-      ]
-      : []),
+    ...Object.values(config.jira ?? {}).flatMap((entry) => [
+      jiraPickupAction({
+        baseUrl: entry.baseUrl,
+        email: Deno.env.get("JIRA_EMAIL") ?? "",
+        apiToken: Deno.env.get("JIRA_API_TOKEN") ?? "",
+        project: entry.project,
+        targetStatusName: entry.statuses?.pickup ?? "In Progress",
+        appendLog: appendTicketLog,
+        writeTicket,
+        http,
+      }),
+      jiraDoneAction({
+        baseUrl: entry.baseUrl,
+        email: Deno.env.get("JIRA_EMAIL") ?? "",
+        apiToken: Deno.env.get("JIRA_API_TOKEN") ?? "",
+        project: entry.project,
+        targetStatusName: entry.statuses?.done ?? "Done",
+        writeTicket,
+        appendLog: appendTicketLog,
+        http,
+      }),
+    ]),
     checkNewCommentsAction({
       isProcessAlive: (ticketId) => isPhaseAlive(join(stateDir, ticketId)),
       writeTicket,
@@ -1468,7 +1468,9 @@ export function composeTickDeps(
       ensureStatePrompts(
         stateDir,
         config.github.repos,
-        config.jira?.project,
+        config.jira
+          ? Object.values(config.jira).map((e) => e.project)
+          : undefined,
       ),
     runCeremonies: () => ceremonies.run(),
     generateShortTitle: async (title, context) => {

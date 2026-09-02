@@ -198,11 +198,14 @@ export interface Config {
   codebase: { roots: string[] };
   pi: { provider: string; packages: string[] };
   agent: { type: "pi" | "claude-code" };
-  jira?: {
-    baseUrl: string;
-    project: string;
-    statuses?: { pickup: string; done: string };
-  };
+  jira?: Record<
+    string,
+    {
+      baseUrl: string;
+      project: string;
+      statuses?: { pickup: string; done: string };
+    }
+  >;
   todoTxt?: { file: string };
   phases?: {
     defaults?: PhaseModelConfig;

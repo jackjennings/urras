@@ -10,31 +10,43 @@ export async function loadConfig(path?: string): Promise<Config> {
   const raw = await readTextFile(configPath);
   const parsed = parse(raw) as Record<string, unknown>;
   const codebaseRaw = parsed.codebase as Record<string, unknown> | undefined;
-  const jiraRaw = parsed.jira as Record<string, unknown> | undefined;
+  const jiraProjectsRaw = (parsed.jira as Record<string, unknown> | undefined)
+    ?.projects as Record<string, Record<string, unknown>> | undefined;
   let jira: Config["jira"];
-  if (jiraRaw !== undefined) {
-    if (typeof jiraRaw.base_url !== "string") {
-      throw new Error("config.toml: [jira].base_url is required");
-    }
-    if (typeof jiraRaw.project !== "string") {
-      throw new Error("config.toml: [jira].project is required");
-    }
-    let jiraStatuses: { pickup: string; done: string } | undefined;
-    const statusesRaw = jiraRaw.statuses as Record<string, unknown> | undefined;
-    if (statusesRaw !== undefined) {
-      if (typeof statusesRaw.pickup !== "string") {
-        throw new Error("config.toml: [jira.statuses].pickup must be a string");
+  if (jiraProjectsRaw !== undefined) {
+    jira = {};
+    for (const [name, entry] of Object.entries(jiraProjectsRaw)) {
+      if (typeof entry.base_url !== "string") {
+        throw new Error(
+          `config.toml: [jira.projects.${name}].base_url is required`,
+        );
       }
-      if (typeof statusesRaw.done !== "string") {
-        throw new Error("config.toml: [jira.statuses].done must be a string");
+      if (typeof entry.project !== "string") {
+        throw new Error(
+          `config.toml: [jira.projects.${name}].project is required`,
+        );
       }
-      jiraStatuses = { pickup: statusesRaw.pickup, done: statusesRaw.done };
+      let jiraStatuses: { pickup: string; done: string } | undefined;
+      const statusesRaw = entry.statuses as Record<string, unknown> | undefined;
+      if (statusesRaw !== undefined) {
+        if (typeof statusesRaw.pickup !== "string") {
+          throw new Error(
+            `config.toml: [jira.projects.${name}.statuses].pickup must be a string`,
+          );
+        }
+        if (typeof statusesRaw.done !== "string") {
+          throw new Error(
+            `config.toml: [jira.projects.${name}.statuses].done must be a string`,
+          );
+        }
+        jiraStatuses = { pickup: statusesRaw.pickup, done: statusesRaw.done };
+      }
+      jira[name] = {
+        baseUrl: entry.base_url,
+        project: entry.project,
+        statuses: jiraStatuses,
+      };
     }
-    jira = {
-      baseUrl: jiraRaw.base_url,
-      project: jiraRaw.project,
-      statuses: jiraStatuses,
-    };
   }
   const todoTxtRaw = parsed.todo_txt as Record<string, unknown> | undefined;
   let todoTxt: Config["todoTxt"];
