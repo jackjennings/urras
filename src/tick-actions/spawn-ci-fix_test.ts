@@ -303,6 +303,45 @@ Deno.test("spawnCIFixAction: spawn receives model, thinking, run ID and attempt"
   assertEquals(spawnOpts[0].worktreePath, "/wt/lazyboy");
 });
 
+Deno.test(
+  "spawnCIFixAction: mismatched worktreeKey and repo parks without spawning",
+  async () => {
+    const spawnSpy = spy(() => Promise.resolve());
+    const logged: Record<string, unknown>[] = [];
+    const result = await spawnCIFixAction(
+      makeDeps({
+        getPRChecks: () => Promise.resolve(FAILURE_RESULT),
+        spawn: spawnSpy,
+        appendLog: (_sd, _id, entry) => {
+          logged.push(entry as Record<string, unknown>);
+          return Promise.resolve();
+        },
+      }),
+    ).run(
+      makeTicket({
+        ...BASE,
+        worktrees: {
+          "org/wrong-repo": { path: "/wt/wrong", branch: "ticket-1" },
+        },
+        prs: [{
+          url: "https://github.com/org/correct-repo/pull/1",
+          title: "feat",
+          dependsOn: [],
+          merged: false,
+          worktreeKey: "org/wrong-repo",
+        }],
+      }),
+      "/state",
+    );
+    assertSpyCalls(spawnSpy, 0);
+    assertEquals(result?.status, "needs-attention");
+    assertEquals(logged[0].event, "needs-attention");
+    assertEquals(logged[0].reason, "worktree-pr-repo-mismatch");
+    assertEquals(logged[0].worktreeKey, "org/wrong-repo");
+    assertEquals(logged[0].repo, "org/correct-repo");
+  },
+);
+
 Deno.test("spawnCIFixAction: existing run keys are preserved", async () => {
   const written: TicketState[] = [];
   await spawnCIFixAction(

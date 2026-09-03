@@ -117,6 +117,23 @@ export function spawnCIFixAction(deps: SpawnCIFixDeps): TickAction {
           return parked;
         }
 
+        if (pr.worktreeKey && pr.worktreeKey !== repo) {
+          await deps.appendLog(stateDir, ticket.id, {
+            event: "needs-attention",
+            reason: "worktree-pr-repo-mismatch",
+            prUrl: pr.url,
+            worktreeKey: pr.worktreeKey,
+            repo,
+          });
+          const parked: TicketState = {
+            ...ticket,
+            status: "needs-attention",
+            updated: now,
+          };
+          await deps.writeTicket(stateDir, parked);
+          return parked;
+        }
+
         handledKeys.add(runKey);
 
         const jobsSection = ciResult.failingJobs.map((name) => `- ${name}`)
