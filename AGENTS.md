@@ -418,40 +418,27 @@ or `ticketId` field to per-ticket entries.
 
 ## Learnings pipeline
 
-`TicketState.prs`-style provenance for cross-repo prompt/documentation fixes.
-`TickServiceDeps.processLearnings` (wired in `composeTickDeps`) runs
-unconditionally every tick — there is no config flag for it. A `LearningState`
-(`src/state/types.ts`) is `{ id, ticketId, repo, targetFile, status, prs }`,
-stored as gray-matter Markdown at `{stateDir}/learnings/{id}.md` via
-`writeLearning`/`listLearnings` (`src/state/store.ts`); the Markdown body is the
-`intent` — a natural-language description of the change, not file content.
+Every tick, the system looks at whatever lessons are still outstanding and tries
+to move one forward. A lesson gets queued whenever an agent notices something
+worth changing beyond the ticket immediately in front of it — most often a
+pattern behind a CI failure that would keep recurring elsewhere, or a wasteful
+habit spotted while looking at an unusually costly ticket. Rather than fix it
+inline, the agent writes down what should change and why, in plain language, so
+the fix can happen on its own schedule without blocking the ticket that surfaced
+it.
 
-Two producers write `pending` learnings: `resolveCIFixAction`
-(`src/tick-actions/resolve-ci-fix.ts`, on a `FIXED` verdict with a `LEARNING:`
-line) and the outlier-analysis agents (`src/phases/prompts/outlier-analysis.md`,
-`plan-outlier-analysis.md`, which write the gray-matter file directly via the
-agent's Write tool). Neither authors PR title/body — `applyLearningToRepo`
-(`src/learning-pr.ts`) generates both when it applies the learning: title (and
-commit message) `` `docs: apply learning to ${targetFile}` ``, body the intent
-text plus an `Originated from ${ticketId}.` trailer. The `docs:` prefix is
-required, not cosmetic — one target repo is urras's own source repo, which
-rejects non-Conventional-Commits messages via `commit-lint.sh`.
+Later, that description gets turned into an actual edit against the file it
+targets — in whatever repository that file lives in — and proposed as a draft
+pull request. It is never applied directly: a human reviews and merges it like
+any other change, and the pull request's title and description are generated
+from the lesson's own description, so nobody has to write PR copy by hand.
 
-`processLearnings` (`src/learnings.ts`) drives the lifecycle: one `pending`
-learning per distinct `targetFile` is applied per tick (same-file learnings
-serialize via an in-flight set), and every `waiting` learning's `prs` are polled
-for merge/close state, resolving to `done`/`wont-do`/`waiting` via
-`resolveLearningStatus`. `needs-attention` is a dead end — `processLearnings`
-only reprocesses `pending`/`waiting` entries, so a learning that lands there
-stays there permanently.
-
-`applyLearningToRepo` resolves the local checkout via `findLocalRepo` with alias
-resolution (`aliasesFor(persistedTable, s)`, matching `createWorktreeAction`) so
-a renamed repo still resolves, and resolves per-org GitHub credentials via
-`resolveAccount` before shelling to `git`/`gh` — both fixes for real,
-previously-silent failure modes. Failures are logged as
-`learning-processing-failed` on `tick.ndjson` (see above) rather than
-`console.error`, which is never persisted under the LaunchAgent.
+Only one proposal per target file is ever in flight at once, so two lessons
+about the same file don't race each other with conflicting edits — a later one
+simply waits its turn. Each proposal is tracked until its pull request merges or
+is closed unmerged. If a proposal can't even be opened, that failure is surfaced
+rather than hidden, and it is not retried automatically — it's left for a person
+to look at.
 
 ## Failure handling
 
