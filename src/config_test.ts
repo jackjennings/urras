@@ -269,7 +269,7 @@ packages = "not-an-array"
   await Deno.remove(dir, { recursive: true });
 });
 
-Deno.test("loadConfig parses [jira] section", async () => {
+Deno.test("loadConfig parses [jira.projects.*] section", async () => {
   const dir = await Deno.makeTempDir();
   await Deno.writeTextFile(
     join(dir, "config.toml"),
@@ -283,14 +283,14 @@ dir = "~/code"
 [tick]
 concurrency = 1
 
-[jira]
+[jira.projects.nw]
 base_url = "https://myorg.atlassian.net"
-project = "PROJ"
+project = "NW"
 `,
   );
   const cfg = await loadConfig(join(dir, "config.toml"));
-  assertEquals(cfg.jira?.baseUrl, "https://myorg.atlassian.net");
-  assertEquals(cfg.jira?.project, "PROJ");
+  assertEquals(cfg.jira?.nw?.baseUrl, "https://myorg.atlassian.net");
+  assertEquals(cfg.jira?.nw?.project, "NW");
   await Deno.remove(dir, { recursive: true });
 });
 
@@ -314,7 +314,7 @@ concurrency = 1
   await Deno.remove(dir, { recursive: true });
 });
 
-Deno.test("loadConfig throws when [jira] present but base_url missing", async () => {
+Deno.test("loadConfig throws when [jira.projects.*] present but base_url missing", async () => {
   const dir = await Deno.makeTempDir();
   await Deno.writeTextFile(
     join(dir, "config.toml"),
@@ -328,19 +328,19 @@ dir = "~/code"
 [tick]
 concurrency = 1
 
-[jira]
-project = "PROJ"
+[jira.projects.nw]
+project = "NW"
 `,
   );
   await assertRejects(
     () => loadConfig(join(dir, "config.toml")),
     Error,
-    "config.toml: [jira].base_url is required",
+    "config.toml: [jira.projects.nw].base_url is required",
   );
   await Deno.remove(dir, { recursive: true });
 });
 
-Deno.test("loadConfig throws when [jira] present but project missing", async () => {
+Deno.test("loadConfig throws when [jira.projects.*] present but project missing", async () => {
   const dir = await Deno.makeTempDir();
   await Deno.writeTextFile(
     join(dir, "config.toml"),
@@ -354,15 +354,46 @@ dir = "~/code"
 [tick]
 concurrency = 1
 
-[jira]
+[jira.projects.nw]
 base_url = "https://myorg.atlassian.net"
 `,
   );
   await assertRejects(
     () => loadConfig(join(dir, "config.toml")),
     Error,
-    "config.toml: [jira].project is required",
+    "config.toml: [jira.projects.nw].project is required",
   );
+  await Deno.remove(dir, { recursive: true });
+});
+
+Deno.test("loadConfig parses two [jira.projects.*] entries", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `
+[github]
+repos = []
+
+[state]
+dir = "~/code"
+
+[tick]
+concurrency = 1
+
+[jira.projects.nw]
+base_url = "https://nw.atlassian.net"
+project = "NW"
+
+[jira.projects.acme]
+base_url = "https://acme.atlassian.net"
+project = "ACME"
+`,
+  );
+  const cfg = await loadConfig(join(dir, "config.toml"));
+  assertEquals(cfg.jira?.nw?.baseUrl, "https://nw.atlassian.net");
+  assertEquals(cfg.jira?.nw?.project, "NW");
+  assertEquals(cfg.jira?.acme?.baseUrl, "https://acme.atlassian.net");
+  assertEquals(cfg.jira?.acme?.project, "ACME");
   await Deno.remove(dir, { recursive: true });
 });
 
@@ -1131,7 +1162,7 @@ dir = "~/my-extensions"
   }
 });
 
-Deno.test("loadConfig parses [jira.statuses] fields", async () => {
+Deno.test("loadConfig parses [jira.projects.*.statuses] fields", async () => {
   const dir = await Deno.makeTempDir();
   await Deno.writeTextFile(
     join(dir, "config.toml"),
@@ -1145,22 +1176,22 @@ dir = "~/code"
 [tick]
 concurrency = 1
 
-[jira]
+[jira.projects.nw]
 base_url = "https://myorg.atlassian.net"
-project = "PROJ"
+project = "NW"
 
-[jira.statuses]
+[jira.projects.nw.statuses]
 pickup = "In Review"
 done = "Closed"
 `,
   );
   const cfg = await loadConfig(join(dir, "config.toml"));
-  assertEquals(cfg.jira?.statuses?.pickup, "In Review");
-  assertEquals(cfg.jira?.statuses?.done, "Closed");
+  assertEquals(cfg.jira?.nw?.statuses?.pickup, "In Review");
+  assertEquals(cfg.jira?.nw?.statuses?.done, "Closed");
   await Deno.remove(dir, { recursive: true });
 });
 
-Deno.test("loadConfig leaves jira.statuses undefined when [jira.statuses] absent", async () => {
+Deno.test("loadConfig leaves statuses undefined when [jira.projects.*.statuses] absent", async () => {
   const dir = await Deno.makeTempDir();
   await Deno.writeTextFile(
     join(dir, "config.toml"),
@@ -1174,17 +1205,17 @@ dir = "~/code"
 [tick]
 concurrency = 1
 
-[jira]
+[jira.projects.nw]
 base_url = "https://myorg.atlassian.net"
-project = "PROJ"
+project = "NW"
 `,
   );
   const cfg = await loadConfig(join(dir, "config.toml"));
-  assertEquals(cfg.jira?.statuses, undefined);
+  assertEquals(cfg.jira?.nw?.statuses, undefined);
   await Deno.remove(dir, { recursive: true });
 });
 
-Deno.test("loadConfig throws when [jira.statuses].pickup is not a string", async () => {
+Deno.test("loadConfig throws when [jira.projects.*.statuses].pickup is not a string", async () => {
   const dir = await Deno.makeTempDir();
   await Deno.writeTextFile(
     join(dir, "config.toml"),
@@ -1198,11 +1229,11 @@ dir = "~/code"
 [tick]
 concurrency = 1
 
-[jira]
+[jira.projects.nw]
 base_url = "https://myorg.atlassian.net"
-project = "PROJ"
+project = "NW"
 
-[jira.statuses]
+[jira.projects.nw.statuses]
 pickup = 42
 done = "Done"
 `,
@@ -1210,12 +1241,12 @@ done = "Done"
   await assertRejects(
     () => loadConfig(join(dir, "config.toml")),
     Error,
-    "config.toml: [jira.statuses].pickup must be a string",
+    "config.toml: [jira.projects.nw.statuses].pickup must be a string",
   );
   await Deno.remove(dir, { recursive: true });
 });
 
-Deno.test("loadConfig throws when [jira.statuses].done is not a string", async () => {
+Deno.test("loadConfig throws when [jira.projects.*.statuses].done is not a string", async () => {
   const dir = await Deno.makeTempDir();
   await Deno.writeTextFile(
     join(dir, "config.toml"),
@@ -1229,11 +1260,11 @@ dir = "~/code"
 [tick]
 concurrency = 1
 
-[jira]
+[jira.projects.nw]
 base_url = "https://myorg.atlassian.net"
-project = "PROJ"
+project = "NW"
 
-[jira.statuses]
+[jira.projects.nw.statuses]
 pickup = "In Progress"
 done = 99
 `,
@@ -1241,7 +1272,7 @@ done = 99
   await assertRejects(
     () => loadConfig(join(dir, "config.toml")),
     Error,
-    "config.toml: [jira.statuses].done must be a string",
+    "config.toml: [jira.projects.nw.statuses].done must be a string",
   );
   await Deno.remove(dir, { recursive: true });
 });

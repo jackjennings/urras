@@ -8,7 +8,9 @@ export function inferProvider(scope: string): "github" | "jira" {
 
 export function collectScopes(config: Config): string[] {
   const scopes = [...config.github.repos];
-  if (config.jira) scopes.push(config.jira.project);
+  if (config.jira) {
+    scopes.push(...Object.values(config.jira).map((e) => e.project));
+  }
   return scopes;
 }
 
@@ -43,6 +45,8 @@ export async function performCapture(
     loadConfig?: () => Promise<Config>;
     runGh?: GhRunner;
     fetch?: typeof globalThis.fetch;
+    jiraEmail?: string;
+    jiraApiToken?: string;
   },
 ): Promise<number> {
   const config = await (deps?.loadConfig ?? defaultLoadConfig)();
@@ -102,8 +106,14 @@ export async function performCapture(
   if (!config.jira) {
     throw new Error("capture: Jira is not configured");
   }
-  const email = Deno.env.get("JIRA_EMAIL");
-  const apiToken = Deno.env.get("JIRA_API_TOKEN");
+  const jiraEntry = Object.values(config.jira).find(
+    (e) => e.project === opts.scope,
+  );
+  if (!jiraEntry) {
+    throw new Error("capture: unknown Jira project");
+  }
+  const email = deps?.jiraEmail ?? Deno.env.get("JIRA_EMAIL");
+  const apiToken = deps?.jiraApiToken ?? Deno.env.get("JIRA_API_TOKEN");
   if (!email || !apiToken) {
     throw new Error("capture: JIRA_EMAIL and JIRA_API_TOKEN must be set");
   }
@@ -113,7 +123,7 @@ export async function performCapture(
   let accountId: string | undefined;
   try {
     const myselfRes = await fetchFn(
-      `${config.jira.baseUrl}/rest/api/3/myself`,
+      `${jiraEntry.baseUrl}/rest/api/3/myself`,
       {
         headers: {
           Authorization: `Basic ${auth}`,
@@ -135,9 +145,9 @@ export async function performCapture(
     );
   }
 
-  const url = `${config.jira.baseUrl}/rest/api/3/issue`;
+  const url = `${jiraEntry.baseUrl}/rest/api/3/issue`;
   const fields: Record<string, unknown> = {
-    project: { key: config.jira.project },
+    project: { key: jiraEntry.project },
     summary: opts.title,
     description: {
       type: "doc",
@@ -168,7 +178,7 @@ export async function performCapture(
     throw new Error(`capture: Jira API error ${res.status}: ${text}`);
   }
   const data = (await res.json()) as { key: string };
-  console.log(`${config.jira.baseUrl}/browse/${data.key}`);
+  console.log(`${jiraEntry.baseUrl}/browse/${data.key}`);
   return 0;
 }
 

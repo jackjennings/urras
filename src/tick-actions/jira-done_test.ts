@@ -16,6 +16,7 @@ function makeAction(
     baseUrl: "https://myorg.atlassian.net",
     email: "test@example.com",
     apiToken: "token",
+    project: "PROJ",
     targetStatusName: "Done",
     writeTicket: () => Promise.resolve(),
     appendLog: () => Promise.resolve(),
@@ -89,6 +90,16 @@ Deno.test("jiraDoneAction: does not apply when status is not done", () => {
   assertFalse(
     makeAction().applies(makeTicket({ ...BASE, status: "waiting" })),
   );
+});
+
+Deno.test("jiraDoneAction: does not apply when ticket project key does not match configured project", () => {
+  assertFalse(
+    makeAction({ project: "ACME" }).applies(makeTicket(BASE)),
+  );
+});
+
+Deno.test("jiraDoneAction: applies when ticket project key matches configured project", () => {
+  assert(makeAction({ project: "PROJ" }).applies(makeTicket(BASE)));
 });
 
 Deno.test("jiraDoneAction: run returns ticket with providerDone: true on success", async () => {

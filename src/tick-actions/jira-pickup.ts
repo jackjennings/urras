@@ -7,6 +7,7 @@ export interface JiraPickupDeps {
   baseUrl: string;
   email: string;
   apiToken: string;
+  project: string;
   targetStatusName: string;
   appendLog: (stateDir: string, id: string, entry: object) => Promise<void>;
   writeTicket: (stateDir: string, t: TicketState) => Promise<void>;
@@ -17,10 +18,14 @@ export function jiraPickupAction(opts: JiraPickupDeps): TickAction {
   return {
     label: "Picking up Jira",
     applies(ticket: TicketState): boolean {
+      const projectKey = ticket.id.match(
+        /^jira\/([A-Za-z][A-Za-z0-9]*)-\d+/,
+      )?.[1];
       return (
         ticket.provider === "jira" &&
         ticket.status === "new" &&
-        !ticket.providerPickedUp
+        !ticket.providerPickedUp &&
+        projectKey === opts.project
       );
     },
     async run(

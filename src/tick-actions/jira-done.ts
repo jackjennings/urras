@@ -7,6 +7,7 @@ export interface JiraDoneDeps {
   baseUrl: string;
   email: string;
   apiToken: string;
+  project: string;
   targetStatusName: string;
   writeTicket: (stateDir: string, t: TicketState) => Promise<void>;
   appendLog: (stateDir: string, id: string, entry: object) => Promise<void>;
@@ -17,11 +18,15 @@ export function jiraDoneAction(opts: JiraDoneDeps): TickAction {
   return {
     label: "Updating Jira",
     applies(ticket: TicketState): boolean {
+      const projectKey = ticket.id.match(
+        /^jira\/([A-Za-z][A-Za-z0-9]*)-\d+/,
+      )?.[1];
       return (
         ticket.provider === "jira" &&
         ticket.phase === "merge" &&
         ticket.status === "done" &&
-        !ticket.providerDone
+        !ticket.providerDone &&
+        projectKey === opts.project
       );
     },
     async run(

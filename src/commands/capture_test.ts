@@ -40,12 +40,16 @@ Deno.test("collectScopes: github repos only", () => {
   assertEquals(collectScopes(baseConfig), ["org/alpha", "org/beta"]);
 });
 
-Deno.test("collectScopes: github + jira appends project key", () => {
+Deno.test("collectScopes: github + jira appends project keys", () => {
   const config: Config = {
     ...baseConfig,
-    jira: { baseUrl: "https://example.atlassian.net", project: "MYPROJ" },
+    jira: {
+      nw: { baseUrl: "https://nw.atlassian.net", project: "NW" },
+      acme: { baseUrl: "https://acme.atlassian.net", project: "ACME" },
+    },
   };
-  assertEquals(collectScopes(config), ["org/alpha", "org/beta", "MYPROJ"]);
+  const scopes = collectScopes(config);
+  assertArrayIncludes(scopes, ["org/alpha", "org/beta", "NW", "ACME"]);
 });
 
 Deno.test("validateScope: known scope returns null", () => {
@@ -84,6 +88,39 @@ Deno.test("performCapture: calls gh with --assignee @me", async () => {
     },
   );
   assertArrayIncludes(calls[0], ["--assignee", "@me"]);
+});
+
+Deno.test("performCapture: uses matching jira project entry by scope", async () => {
+  const fetchCalls: string[] = [];
+  const config: Config = {
+    ...baseConfig,
+    jira: {
+      nw: { baseUrl: "https://nw.atlassian.net", project: "NW" },
+      acme: { baseUrl: "https://acme.atlassian.net", project: "ACME" },
+    },
+  };
+  await performCapture(
+    { title: "test issue", scope: "NW", body: "", artifact: "code" },
+    {
+      loadConfig: () => Promise.resolve(config),
+      jiraEmail: "test@example.com",
+      jiraApiToken: "test-token",
+      fetch: (url) => {
+        fetchCalls.push(url as string);
+        if ((url as string).includes("/myself")) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ accountId: "user1" }), {
+              status: 200,
+            }),
+          );
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify({ key: "NW-1" }), { status: 200 }),
+        );
+      },
+    },
+  );
+  assertStringIncludes(fetchCalls[0], "nw.atlassian.net");
 });
 
 Deno.test("performCapture: throws on unknown scope", async () => {

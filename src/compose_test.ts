@@ -217,10 +217,28 @@ Deno.test(
   async () => {
     const stateDir = await Deno.makeTempDir();
     try {
-      await ensureStatePrompts(stateDir, [], "FOO");
+      await ensureStatePrompts(stateDir, [], ["FOO"]);
       for (const phase of PHASE_SEQUENCE) {
         const content = await Deno.readTextFile(
           join(stateDir, "prompts", "jira", "FOO", `${phase}.md`),
+        );
+        assertEquals(content, "");
+      }
+    } finally {
+      await Deno.remove(stateDir, { recursive: true });
+    }
+  },
+);
+
+Deno.test(
+  "ensureStatePrompts: scaffolds multiple jira projects independently",
+  async () => {
+    const stateDir = await Deno.makeTempDir();
+    try {
+      await ensureStatePrompts(stateDir, [], ["NW", "ACME"]);
+      for (const project of ["NW", "ACME"]) {
+        const content = await Deno.readTextFile(
+          join(stateDir, "prompts", "jira", project, "intake.md"),
         );
         assertEquals(content, "");
       }
@@ -363,7 +381,7 @@ Deno.test(
   async () => {
     const stateDir = await Deno.makeTempDir();
     try {
-      await ensureStatePrompts(stateDir, [], "FOO");
+      await ensureStatePrompts(stateDir, [], ["FOO"]);
       for (const phase of ["spec", "plan", "implementation"]) {
         const content = await Deno.readTextFile(
           join(stateDir, "prompts", "jira", "FOO", `${phase}-revision.md`),
