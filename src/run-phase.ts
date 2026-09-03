@@ -25,6 +25,7 @@ import { OllamaLanguageModel } from "./models/ollama.ts";
 import { compactTimestamp } from "./timestamp.ts";
 import { PHASE_MODEL_DEFAULTS } from "./phases/model.ts";
 import { selfApprove } from "./self-approve.ts";
+import { Effect } from "effect";
 
 export function getPiEnvironmentVariables(
   home: string,
@@ -714,13 +715,13 @@ export async function executePhase(
   }
 
   try {
-    const selfApproveResult = await selfApprove({
+    const selfApproveResult = await Effect.runPromise(selfApprove({
       phase: opts.phase,
       ticketDir: opts.ticketDir,
       run: captureCommandRunner(),
       worktreePath: opts.worktrees["jackjennings/lazyboy"]?.path,
       ollamaModels: opts.ollamaModels,
-    });
+    }));
     await writeTextFile(
       join(opts.ticketDir, opts.outputFile + ".selfapprove"),
       JSON.stringify(selfApproveResult),
