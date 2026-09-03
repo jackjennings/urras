@@ -1,3 +1,5 @@
+import type { LanguageModel } from "./models/types.ts";
+
 const VALID_MODEL_IDS = new Set([
   "claude-sonnet-4-6",
   "claude-opus-4-5",
@@ -36,39 +38,26 @@ const JSON_SCHEMA = {
 
 export async function adjudicatePhaseModel(
   prompt: string,
+  model: LanguageModel,
 ): Promise<{ model: string; thinking: string } | null> {
   try {
-    const command = new Deno.Command("claude", {
-      args: [
-        "--print",
-        "--bare",
-        "--output-format",
-        "json",
-        "--model",
-        "claude-haiku-4-5",
-        "--system-prompt",
-        SYSTEM_PROMPT,
-        "--json-schema",
-        JSON.stringify(JSON_SCHEMA),
-        prompt,
-      ],
-      stdout: "piped",
-      stderr: "piped",
+    const result = await model.generateObject<
+      { model: string; thinking: string }
+    >({
+      systemPrompt: SYSTEM_PROMPT,
+      prompt,
+      schema: JSON_SCHEMA,
+      maxTokens: 64,
     });
-    const { code, stdout } = await command.output();
-    if (code !== 0) return null;
-    const text = new TextDecoder().decode(stdout);
-    const parsed = JSON.parse(text);
-    const output = parsed?.structured_output;
     if (
-      typeof output?.model !== "string" ||
-      typeof output?.thinking !== "string" ||
-      !VALID_MODEL_IDS.has(output.model) ||
-      !VALID_THINKING_LEVELS.has(output.thinking)
+      typeof result?.model !== "string" ||
+      typeof result?.thinking !== "string" ||
+      !VALID_MODEL_IDS.has(result.model) ||
+      !VALID_THINKING_LEVELS.has(result.thinking)
     ) {
       return null;
     }
-    return { model: output.model, thinking: output.thinking };
+    return { model: result.model, thinking: result.thinking };
   } catch {
     return null;
   }
