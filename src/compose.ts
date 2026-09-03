@@ -1067,6 +1067,37 @@ export function composeTickDeps(
         new ClaudeLanguageModel(captureCommandRunner(), {
           model: "claude-sonnet-4-6",
         }).generateText(request),
+      generateObject: (request) =>
+        new ClaudeLanguageModel(captureCommandRunner(), {
+          model: "claude-sonnet-4-6",
+        }).generateObject(request),
+      runGit: async (args) => {
+        const cmd = new Deno.Command("git", {
+          args,
+          stdout: "piped",
+          stderr: "piped",
+        });
+        const result = await cmd.output();
+        return {
+          success: result.success,
+          stdout: new TextDecoder().decode(result.stdout),
+          stderr: new TextDecoder().decode(result.stderr),
+        };
+      },
+      runGh: async (args, token) => {
+        const cmd = new Deno.Command("gh", {
+          args,
+          stdout: "piped",
+          stderr: "piped",
+          env: { ...Deno.env.toObject(), GH_TOKEN: token },
+        });
+        const result = await cmd.output();
+        return {
+          success: result.success,
+          stdout: new TextDecoder().decode(result.stdout),
+          stderr: new TextDecoder().decode(result.stderr),
+        };
+      },
       commitState: async () => {
         await ensureRunPidGitignored(stateDir);
         await commitState(stateDir, "ceremony: state-dir");

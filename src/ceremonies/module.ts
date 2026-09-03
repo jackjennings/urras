@@ -14,6 +14,16 @@ export interface ModuleCeremonyDeps {
   listTickets(): Promise<string[]>;
   readTicket(id: string): Promise<TicketState>;
   generateText(request: LanguageModelRequest): Promise<string | null>;
+  generateObject<T>(
+    request: LanguageModelRequest & { schema: object },
+  ): Promise<T | null>;
+  runGit(
+    args: string[],
+  ): Promise<{ success: boolean; stdout: string; stderr: string }>;
+  runGh(
+    args: string[],
+    token: string,
+  ): Promise<{ success: boolean; stdout: string; stderr: string }>;
   commitState(): Promise<void>;
   notify?(title: string, message: string): Promise<void>;
 }
@@ -72,6 +82,9 @@ export class ModuleCeremony implements Ceremony {
       listTickets: () => this.#deps.listTickets(),
       readTicket: (id) => this.#deps.readTicket(id),
       generateText: (request) => this.#deps.generateText(request),
+      generateObject: (request) => this.#deps.generateObject(request),
+      runGit: (args) => this.#deps.runGit(args),
+      runGh: (args, token) => this.#deps.runGh(args, token),
       writeOutput: async (content) => {
         await mkdir(outputDir, { recursive: true });
         await writeTextFile(

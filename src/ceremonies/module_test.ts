@@ -27,6 +27,9 @@ function makeCeremony(
     listTickets: () => Promise.resolve(["github/org/repo/1"]),
     readTicket: () => Promise.resolve(makeTicket()),
     generateText: () => Promise.resolve("text"),
+    generateObject: () => Promise.resolve(null),
+    runGit: () => Promise.resolve({ success: true, stdout: "", stderr: "" }),
+    runGh: () => Promise.resolve({ success: true, stdout: "", stderr: "" }),
     commitState: () => Promise.resolve(),
     ...overrides,
   });
