@@ -747,7 +747,7 @@ export function composeTickDeps(
               `download failures, and transient flakiness with no code correlation. Default to a ` +
               `PR-side cause — a red run on a PR branch is overwhelmingly the PR's fault.\n\n` +
               `Fix it in the worktree. Reproduce the failure locally with the job's own command, ` +
-              `fix it, re-run that command, and confirm it passes before claiming FIXED. Two common ` +
+              `fix it, re-run that command, and confirm it passes before claiming FIXED. Common ` +
               `cases:\n` +
               `- Lint or format violations, often left behind by conflict resolution: run the ` +
               `repository's own check command (for example \`deno fmt\` and \`deno lint\`) and ` +
@@ -757,7 +757,14 @@ export function composeTickDeps(
               `For older commits use a non-interactive rebase driven by GIT_SEQUENCE_EDITOR and ` +
               `GIT_EDITOR. As a last resort, ` +
               `\`git reset --soft $(git merge-base origin/<base-branch> HEAD)\` and re-commit with ` +
-              `a conforming message.\n\n` +
+              `a conforming message.\n` +
+              `- Commits rejected for missing a signature: never fix this by running ` +
+              `\`git config commit.gpgsign false\` or any other command that disables or weakens ` +
+              `signing, in this worktree or the shared repository config. That silently unsigns ` +
+              `every future commit across every worktree of this repository, not just this one. If ` +
+              `signing itself is broken in this environment (no key available, no passphrase, no ` +
+              `agent forwarding), that is not a fixable code problem — end with \`VERDICT: ` +
+              `UNFIXABLE\` and describe the signing failure instead.\n\n` +
               `Commit your work, but do not push — the tick loop force-pushes the branch for you. ` +
               `Do not create pull requests and do not create issues.\n\n` +
               `urras reads only the output file below — nothing you say in your final reply is ` +

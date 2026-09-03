@@ -934,9 +934,26 @@ users must override this phase the same way as `"conflict-resolution"`.
 `conflict-resolution`. It tells the agent to fetch the log with
 `gh run view --log-failed`, reproduce the failure with the job's own command,
 fix and verify locally, commit but never push, and end with the verdict line. It
-names the two common cases explicitly: lint/format violations left by conflict
-resolution, and commit messages rejected by commitlint (reword via
-`git commit --amend` or a non-interactive rebase, never a new commit).
+names three common cases explicitly: lint/format violations left by conflict
+resolution; commit messages rejected by commitlint (reword via
+`git commit --amend` or a non-interactive rebase, never a new commit); and
+commits rejected by the "Check commits are signed" CI step (see below), where
+the prompt explicitly forbids running `git config commit.gpgsign false` or
+otherwise weakening signing — CI's job is to catch exactly that shortcut, so the
+agent is told to verdict `UNFIXABLE` instead when signing itself is broken in
+its environment.
+
+**Commit signature enforcement:** `.github/workflows/ci.yml`'s "Check commits
+are signed" step runs `scripts/commit-signed.sh <%G?> <sha>` over every commit
+in the push/PR range and fails on `N` (no signature at all). It deliberately
+does not require a valid/verifiable signature (`G`) — CI has no contributor
+public keys imported, so a genuinely signed commit normally reports `E` ("good
+signature, can't check, no public key"), which the script treats as passing.
+This exists because a repo-local `commit.gpgsign = false` in `.git/config`
+silently disables signing for every worktree of the repository (linked worktrees
+share the common `.git/config` unless a setting is written with `--worktree`),
+and an agent that hits a signing failure has previously "fixed" it that way
+instead of surfacing the real problem.
 
 `resolveCIFixAction` must be registered **before** `spawnCIFixAction` in the
 `tickActions` array so a completed fix run is resolved before the spawn action
