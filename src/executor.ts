@@ -23,6 +23,7 @@ export interface ExecutorOptions {
   resume?: boolean;
   includePrinciples?: boolean;
   maxTurns?: number;
+  ollamaModels?: Array<{ model: string; url?: string }>;
 }
 
 export function isProcessAlive(pid: number): boolean {
@@ -82,6 +83,9 @@ export function buildPhaseArgs(opts: ExecutorOptions): string[] {
   }
   if (opts.includePrinciples === false) {
     args.push("--skip-principles");
+  }
+  if (opts.ollamaModels && opts.ollamaModels.length > 0) {
+    args.push("--ollama-models", JSON.stringify(opts.ollamaModels));
   }
   return args;
 }

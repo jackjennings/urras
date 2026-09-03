@@ -195,6 +195,34 @@ Deno.test("buildPhaseArgs: includes --state-dir", () => {
   assertEquals(args[idx + 1], "/my/state");
 });
 
+Deno.test("buildPhaseArgs: includes --ollama-models when ollamaModels is non-empty", () => {
+  const args = buildPhaseArgs(
+    makeOpts({
+      ollamaModels: [
+        { model: "llama3", url: "http://localhost:11434" },
+        { model: "mistral" },
+      ],
+    }),
+  );
+  const idx = args.indexOf("--ollama-models");
+  assertNotEquals(idx, -1);
+  const parsed = JSON.parse(args[idx + 1]);
+  assertEquals(parsed, [
+    { model: "llama3", url: "http://localhost:11434" },
+    { model: "mistral" },
+  ]);
+});
+
+Deno.test("buildPhaseArgs: omits --ollama-models when ollamaModels is absent", () => {
+  const args = buildPhaseArgs(makeOpts());
+  assertFalse(args.includes("--ollama-models"));
+});
+
+Deno.test("buildPhaseArgs: omits --ollama-models when ollamaModels is empty", () => {
+  const args = buildPhaseArgs(makeOpts({ ollamaModels: [] }));
+  assertFalse(args.includes("--ollama-models"));
+});
+
 Deno.test("buildPhaseEnvOverrides: sets GITHUB_TOKEN and GH_TOKEN to githubToken", () => {
   const overrides = buildPhaseEnvOverrides(
     makeOpts({ githubToken: "tok_abc" }),

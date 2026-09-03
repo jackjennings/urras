@@ -1592,18 +1592,16 @@ Deno.test(
         join(ticketDir, "20260101T100001-spec.md"),
         "content",
       );
-      const selfApproveSpy = spy(() =>
-        Promise.resolve({ approved: false, reason: null })
-      );
+      const readSelfApproveSpy = spy(() => Promise.resolve(null));
       await advancePhase(
         ticket,
         stateDir,
         makeTickDeps({
           ...makeTickDeps(),
-          selfApprove: selfApproveSpy,
+          readSelfApprove: readSelfApproveSpy,
         }),
       );
-      assertSpyCalls(selfApproveSpy, 0);
+      assertSpyCalls(readSelfApproveSpy, 0);
     } finally {
       await Deno.remove(stateDir, { recursive: true });
     }
@@ -1622,18 +1620,16 @@ Deno.test(
         join(ticketDir, "20260101T100001-spec.md"),
         "content",
       );
-      const selfApproveSpy = spy(() =>
-        Promise.resolve({ approved: false, reason: null })
-      );
+      const readSelfApproveSpy = spy(() => Promise.resolve(null));
       await advancePhase(
         ticket,
         stateDir,
         makeTickDeps({
           ...makeTickDeps(),
-          selfApprove: selfApproveSpy,
+          readSelfApprove: readSelfApproveSpy,
         }),
       );
-      assertSpyCalls(selfApproveSpy, 1);
+      assertSpyCalls(readSelfApproveSpy, 1);
     } finally {
       await Deno.remove(stateDir, { recursive: true });
     }
@@ -1660,19 +1656,17 @@ Deno.test(
         join(ticketDir, "20260101T100002-spec.md"),
         "second output",
       );
-      const selfApproveSpy = spy(() =>
-        Promise.resolve({ approved: false, reason: null })
-      );
+      const readSelfApproveSpy = spy(() => Promise.resolve(null));
       await advancePhase(
         ticket,
         stateDir,
         makeTickDeps({
           ...makeTickDeps(),
-          selfApprove: selfApproveSpy,
+          readSelfApprove: readSelfApproveSpy,
           readPhaseOutput: () => Promise.resolve("second output"),
         }),
       );
-      assertSpyCalls(selfApproveSpy, 1);
+      assertSpyCalls(readSelfApproveSpy, 1);
     } finally {
       await Deno.remove(stateDir, { recursive: true });
     }
@@ -1695,18 +1689,16 @@ Deno.test(
         join(ticketDir, "20260101T100001-plan.md"),
         "content",
       );
-      const selfApproveSpy = spy(() =>
-        Promise.resolve({ approved: false, reason: null })
-      );
+      const readSelfApproveSpy = spy(() => Promise.resolve(null));
       await advancePhase(
         ticket,
         stateDir,
         makeTickDeps({
           ...makeTickDeps(),
-          selfApprove: selfApproveSpy,
+          readSelfApprove: readSelfApproveSpy,
         }),
       );
-      assertSpyCalls(selfApproveSpy, 0);
+      assertSpyCalls(readSelfApproveSpy, 0);
     } finally {
       await Deno.remove(stateDir, { recursive: true });
     }
@@ -1725,18 +1717,16 @@ Deno.test(
         join(ticketDir, "20260101T100001-plan.md"),
         "content",
       );
-      const selfApproveSpy = spy(() =>
-        Promise.resolve({ approved: false, reason: null })
-      );
+      const readSelfApproveSpy = spy(() => Promise.resolve(null));
       await advancePhase(
         ticket,
         stateDir,
         makeTickDeps({
           ...makeTickDeps(),
-          selfApprove: selfApproveSpy,
+          readSelfApprove: readSelfApproveSpy,
         }),
       );
-      assertSpyCalls(selfApproveSpy, 1);
+      assertSpyCalls(readSelfApproveSpy, 1);
     } finally {
       await Deno.remove(stateDir, { recursive: true });
     }
@@ -1866,7 +1856,8 @@ Deno.test(
         writeTicket: writeTicketSpy,
         appendLog: appendLogSpy,
         resolveModelConfig: () => ({ model: "m", thinking: "off" }),
-        selfApprove: () => Promise.resolve({ approved: true, reason: null }),
+        readSelfApprove: () =>
+          Promise.resolve({ approved: true, reason: null }),
       }),
     );
     assertSpyCalls(writeTicketSpy, 2);
@@ -1925,7 +1916,7 @@ Deno.test(
 );
 
 Deno.test(
-  "advancePhase: selfApprove throwing is treated as false",
+  "advancePhase: readSelfApprove returning null is treated as false",
   async () => {
     const ticket = makeTicket({ phase: "intake", status: "running" });
     const writeTicketSpy = spy((_dir: string, _t: TicketState) =>
@@ -1941,7 +1932,7 @@ Deno.test(
         writeTicket: writeTicketSpy,
         appendLog: appendLogSpy,
         resolveModelConfig: () => ({ model: "m", thinking: "off" }),
-        selfApprove: () => Promise.reject(new Error("review exploded")),
+        readSelfApprove: () => Promise.resolve(null),
       }),
     );
     assertSpyCalls(writeTicketSpy, 1);
@@ -1992,7 +1983,7 @@ Deno.test(
       makeTickDeps({
         writePhaseOutput: writePhaseOutputSpy,
         resolveModelConfig: () => ({ model: "m", thinking: "off" }),
-        selfApprove: () =>
+        readSelfApprove: () =>
           Promise.resolve({
             approved: false,
             reason: "REJECT\nCriterion 1 violated.",
@@ -2029,33 +2020,33 @@ Deno.test(
 );
 
 Deno.test(
-  "advancePhase: selfApprove is called with the ticket phase and ticketDir",
+  "advancePhase: readSelfApprove is called with ticketDir and phase",
   async () => {
     const ticket = makeTicket({
       id: "github/jackjennings/lazyboy/104",
       phase: "intake",
       status: "running",
     });
-    let capturedPhase = "";
     let capturedTicketDir = "";
-    const selfApproveSpy = spy((phase: string, ticketDir: string) => {
-      capturedPhase = phase;
+    let capturedPhase = "";
+    const readSelfApproveSpy = spy((ticketDir: string, phase: string) => {
       capturedTicketDir = ticketDir;
-      return Promise.resolve({ approved: false, reason: null });
+      capturedPhase = phase;
+      return Promise.resolve(null);
     });
     await advancePhase(
       ticket,
       "/state",
       makeTickDeps({
         resolveModelConfig: () => ({ model: "m", thinking: "off" }),
-        selfApprove: selfApproveSpy,
+        readSelfApprove: readSelfApproveSpy,
       }),
     );
-    assertEquals(capturedPhase, "intake");
     assertEquals(
       capturedTicketDir,
       "/state/github/jackjennings/lazyboy/104",
     );
+    assertEquals(capturedPhase, "intake");
   },
 );
 
@@ -2612,8 +2603,7 @@ Deno.test(
           stateDir,
           makeTickDeps({
             resolveModelConfig: () => ({ model: "m", thinking: "off" }),
-            selfApprove: () =>
-              Promise.resolve({ approved: false, reason: null }),
+            readSelfApprove: () => Promise.resolve(null),
           }),
         )
       );

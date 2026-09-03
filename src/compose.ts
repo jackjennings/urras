@@ -25,6 +25,7 @@ import {
   dedupePrinciples,
   extractPrinciples,
   readPhaseSessionId,
+  readSelfApprove,
 } from "./run-phase.ts";
 import { judgePrinciples } from "./judge-principles.ts";
 import { expandHome } from "./config.ts";
@@ -95,7 +96,6 @@ import {
 import { generateShortTitle as apfelGenerateShortTitle } from "./short-title.ts";
 import { makeDesktopNotifier, makeNotify } from "./notify.ts";
 import { PidFileLock } from "./lock.ts";
-import { selfApprove } from "./self-approve.ts";
 import { applyLearning } from "./apply-learning.ts";
 import { processLearnings as runLearnings } from "./learnings.ts";
 import { refreshAnthropicPricingIfStale } from "./anthropic-pricing.ts";
@@ -1093,6 +1093,12 @@ export function composeTickDeps(
           resume: opts.resume,
           includePrinciples: config.tick.principles,
           maxTurns: config.tick.maxTurns,
+          ollamaModels: config.ollama
+            ? config.ollama.models.map((model) => ({
+              model,
+              url: config.ollama!.url,
+            }))
+            : undefined,
         });
       },
       isProcessAlive: (ticketId: string) =>
@@ -1102,14 +1108,7 @@ export function composeTickDeps(
       appendLog: appendTicketLog,
       resolveModelConfig: (phase, ticket) =>
         resolvePhaseModel(config, phase, ticket),
-      selfApprove: (phase, ticketDir, worktreePath) =>
-        selfApprove({
-          phase,
-          ticketDir,
-          run: captureCommandRunner(),
-          worktreePath,
-          ollamaModels,
-        }),
+      readSelfApprove: (ticketDir, phase) => readSelfApprove(ticketDir, phase),
       readPhaseOutput,
       appendPrinciples: async (sd, ticketId, phase, outputContent) => {
         if (!config.tick.principles) return;
