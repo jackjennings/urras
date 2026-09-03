@@ -62,6 +62,7 @@ import {
   runGit,
 } from "./worktree.ts";
 import { createWorktreeAction } from "./tick-actions/create-worktree.ts";
+import { reviseScopeAction } from "./tick-actions/revise-scope.ts";
 import { createRemoteRepoAction } from "./tick-actions/create-remote-repo.ts";
 import { checkMergedPRAction } from "./tick-actions/check-merged-pr.ts";
 import { cleanOrphanedWorktreesAction } from "./tick-actions/clean-orphaned-worktrees.ts";
@@ -477,6 +478,45 @@ export function composeTickDeps(
           );
         }
       },
+    }),
+    reviseScopeAction({
+      roots: config.codebase.roots.map(expandHome),
+      canonicalSlugFor: (slug) => canonicalSlugFor(persistedTable, slug),
+      findLocalRepo: (roots, slug) =>
+        findLocalRepo(
+          roots,
+          slug,
+          (s) => aliasesFor(persistedTable, s),
+        ),
+      createWorktree,
+      removeWorktree,
+      cloneRemoteRepo: (slug: string) =>
+        cloneRemoteRepo(
+          slug,
+          (s, d, cwd) =>
+            githubProvider.clone(currentSlugFor(persistedTable, s), d, cwd),
+          (s) => aliasesFor(persistedTable, s),
+        ),
+      applyWorktreeInclude: async (
+        worktreePath: string,
+        sourcePath: string,
+      ) => {
+        const result = await new Deno.Command("git-worktreeinclude", {
+          args: ["apply", "--from", sourcePath],
+          cwd: worktreePath,
+        }).output();
+        if (!result.success) {
+          throw new Error(
+            `git-worktreeinclude apply exited ${result.code}: ${
+              new TextDecoder().decode(result.stderr)
+            }`,
+          );
+        }
+      },
+      writeTicket,
+      appendLog: appendTicketLog,
+      readEnrichmentOutput: (ticketDir) =>
+        readPhaseOutput(ticketDir, "enrichment"),
     }),
     createRemoteRepoAction({
       createRepo: (slug) => githubProvider.createRepo(slug),

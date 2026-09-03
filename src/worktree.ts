@@ -145,10 +145,11 @@ export function formatRepoCorpus(candidates: RepoCandidate[]): string {
   return ["## Available Repositories", "", ...lines].join("\n") + "\n";
 }
 
-export function parseIntakeScope(
+function parseScopeSection(
   content: string,
+  headingPattern: RegExp,
 ): Array<{ entry: string; isNew: boolean }> {
-  const sectionStart = content.search(/^## Proposed Scope$/m);
+  const sectionStart = content.search(headingPattern);
   if (sectionStart === -1) return [];
   const afterSection = content.slice(sectionStart);
   const codeBlockMatch = afterSection.match(/```yaml\n([\s\S]*?)```/);
@@ -175,6 +176,18 @@ export function parseIntakeScope(
     }
   }
   return results;
+}
+
+export function parseIntakeScope(
+  content: string,
+): Array<{ entry: string; isNew: boolean }> {
+  return parseScopeSection(content, /^## Proposed Scope$/m);
+}
+
+export function parseEnrichmentScope(
+  content: string,
+): Array<{ entry: string; isNew: boolean }> {
+  return parseScopeSection(content, /^## Revised Scope$/m);
 }
 
 export async function cloneRemoteRepo(
