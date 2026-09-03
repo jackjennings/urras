@@ -347,18 +347,19 @@ defeat that per-test `HOME` isolation.
 and `event`. Events: `tick-start`, `tick-end`, `tick-already-running`,
 `stale-lock`, `lock-failed`, `tick-failed`, `update-skipped`, `update-failed`,
 `repo-renamed`, `repo-identity-collision`, `repo-identity-reconcile-failed`,
-`repo-identity-unavailable`, `repo-org-unmapped`, `pricing-fetch-failed`.
-`appendTickLog` (`src/tick.ts`) writes it directly; it is not `appendTicketLog`
-(`src/state/store.ts`).
+`repo-identity-unavailable`, `repo-org-unmapped`, `pricing-fetch-failed`,
+`learning-processing-failed`. `appendTickLog` (`src/tick.ts`) writes it
+directly; it is not `appendTicketLog` (`src/state/store.ts`).
 
-| Event                            | Trigger                                                                                                                                                        |
-| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `repo-renamed`                   | `currentSlug` changed for a confirmed repo identity entry                                                                                                      |
-| `repo-identity-collision`        | A canonical slug's freed name was re-registered by another repo                                                                                                |
-| `repo-identity-reconcile-failed` | Network error, 5xx, or timeout on a reconciler API call                                                                                                        |
-| `repo-identity-unavailable`      | `repos.json` could not be parsed; capture skipped for this tick                                                                                                |
-| `repo-org-unmapped`              | Org after a transfer is absent from `[github.orgs]`                                                                                                            |
-| `pricing-fetch-failed`           | `refreshAnthropicPricingIfStale` failed to refresh the pricing cache; `reason` is `network-error`, `http-error`, `response-read-error`, or `cache-write-error` |
+| Event                            | Trigger                                                                                                                                                                                                                                               |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `repo-renamed`                   | `currentSlug` changed for a confirmed repo identity entry                                                                                                                                                                                             |
+| `repo-identity-collision`        | A canonical slug's freed name was re-registered by another repo                                                                                                                                                                                       |
+| `repo-identity-reconcile-failed` | Network error, 5xx, or timeout on a reconciler API call                                                                                                                                                                                               |
+| `repo-identity-unavailable`      | `repos.json` could not be parsed; capture skipped for this tick                                                                                                                                                                                       |
+| `repo-org-unmapped`              | Org after a transfer is absent from `[github.orgs]`                                                                                                                                                                                                   |
+| `pricing-fetch-failed`           | `refreshAnthropicPricingIfStale` failed to refresh the pricing cache; `reason` is `network-error`, `http-error`, `response-read-error`, or `cache-write-error`                                                                                        |
+| `learning-processing-failed`     | `processLearnings` failed to apply a pending learning or check a waiting one's PR state; `reason` is `local-repo-not-found`, `worktree-creation-failed`, `apply-learning-failed`, `git-commit-failed`, `pr-create-failed`, or `pr-state-check-failed` |
 
 The plist from `plistContent()` must **not** include `StandardOutPath` or
 `StandardErrorPath` pointing to `tick.ndjson` — the tick process owns its own
@@ -432,6 +433,30 @@ label when it fits; add a new one only for a genuinely new cause, and never put
 free prose in `reason` (that belongs in a separate field or the `error`
 message). Work-item identity is the ticket directory itself — do not add an `id`
 or `ticketId` field to per-ticket entries.
+
+## Learnings pipeline
+
+Every tick, the system looks at whatever lessons are still outstanding and tries
+to move one forward. A lesson gets queued whenever an agent notices something
+worth changing beyond the ticket immediately in front of it — most often a
+pattern behind a CI failure that would keep recurring elsewhere, or a wasteful
+habit spotted while looking at an unusually costly ticket. Rather than fix it
+inline, the agent writes down what should change and why, in plain language, so
+the fix can happen on its own schedule without blocking the ticket that surfaced
+it.
+
+Later, that description gets turned into an actual edit against the file it
+targets — in whatever repository that file lives in — and proposed as a draft
+pull request. It is never applied directly: a human reviews and merges it like
+any other change, and the pull request's title and description are generated
+from the lesson's own description, so nobody has to write PR copy by hand.
+
+Only one proposal per target file is ever in flight at once, so two lessons
+about the same file don't race each other with conflicting edits — a later one
+simply waits its turn. Each proposal is tracked until its pull request merges or
+is closed unmerged. If a proposal can't even be opened, that failure is surfaced
+rather than hidden, and it is not retried automatically — it's left for a person
+to look at.
 
 ## Failure handling
 

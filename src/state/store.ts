@@ -488,8 +488,6 @@ export async function writeLearning(
     ticketId: learning.ticketId,
     repo: learning.repo,
     targetFile: learning.targetFile,
-    prTitle: learning.prTitle,
-    prBody: learning.prBody,
     status: learning.status,
     prs: learning.prs,
   });
@@ -517,8 +515,6 @@ export async function listLearnings(
             ticketId: data.ticketId as string,
             repo: data.repo as string,
             targetFile: data.targetFile as string,
-            prTitle: data.prTitle as string,
-            prBody: data.prBody as string,
             status: (data.status as LearningStatus) ?? "pending",
             prs: Array.isArray(data.prs)
               ? (data.prs as unknown[]).flatMap((entry) => {

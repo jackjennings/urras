@@ -178,9 +178,6 @@ export function resolveCIFixAction(deps: ResolveCIFixDeps): TickAction {
                   ticketId: ticket.id,
                   repo,
                   targetFile: "AGENTS.md",
-                  prTitle: "ci: update AGENTS.md with implementation check",
-                  prBody:
-                    `CI failure on branch ${branch}, PR ${prUrl}, run ${runId}`,
                   status: "pending",
                   prs: [],
                 },

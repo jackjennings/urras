@@ -97,6 +97,7 @@ import { makeDesktopNotifier, makeNotify } from "./notify.ts";
 import { PidFileLock } from "./lock.ts";
 import { selfApprove } from "./self-approve.ts";
 import { applyLearning } from "./apply-learning.ts";
+import { applyLearningToRepo } from "./learning-pr.ts";
 import { processLearnings as runLearnings } from "./learnings.ts";
 import { refreshAnthropicPricingIfStale } from "./anthropic-pricing.ts";
 import type { Config } from "./state/types.ts";
@@ -1377,72 +1378,30 @@ export function composeTickDeps(
         writeLearning: (learning, intent) =>
           writeLearning(stateDir, learning, intent),
         prState: (url) => githubProvider.prState(url),
-        log: (entry) => {
-          console.error("processLearnings:", entry);
-          return Promise.resolve();
-        },
-        applyToRepo: async (learning, intent) => {
-          const localRepoPath = await findLocalRepo(
-            config.codebase.roots.map(expandHome),
-            learning.repo,
-          );
-          if (localRepoPath === null) {
-            throw new Error(`local repo not found for ${learning.repo}`);
-          }
-          const wt = await createWorktree(
-            localRepoPath,
-            `learnings-${learning.id}`,
-            learning.repo.split("/")[1],
-          );
-          try {
-            const targetPath = join(wt.path, learning.targetFile);
-            const currentContent = await readTextFile(targetPath).catch(
-              () => "",
-            );
-            const applied = await applyLearning(
-              currentContent,
-              intent,
-              captureCommandRunner(),
-            );
-            if (applied === null) {
-              throw new Error("applyLearning returned no content");
-            }
-            await mkdir(
-              join(wt.path, ...learning.targetFile.split("/").slice(0, -1)),
-              { recursive: true },
-            );
-            await writeTextFile(targetPath, applied);
-            const run = (cmd: string[]) =>
+        log: appendTickLog,
+        applyToRepo: (learning, intent) =>
+          applyLearningToRepo(learning, intent, {
+            roots: config.codebase.roots.map(expandHome),
+            findLocalRepo: (roots, slug) =>
+              findLocalRepo(roots, slug, (s) => aliasesFor(persistedTable, s)),
+            createWorktree,
+            removeWorktree,
+            readTextFile,
+            writeTextFile,
+            mkdir,
+            applyLearning,
+            captureCommandRunner,
+            resolveAccount,
+            run: (cmd, opts) =>
               new Deno.Command(cmd[0], {
                 args: cmd.slice(1),
-                cwd: wt.path,
-              }).output();
-            await run(["git", "add", learning.targetFile]);
-            await run(["git", "commit", "-m", learning.prTitle]);
-            const created = await run([
-              "gh",
-              "pr",
-              "create",
-              "--draft",
-              "--title",
-              learning.prTitle,
-              "--body",
-              learning.prBody,
-            ]);
-            const url = new TextDecoder()
-              .decode(created.stdout)
-              .trim()
-              .split("\n")
-              .filter((line) => line.startsWith("http"))
-              .pop();
-            if (url === undefined) {
-              throw new Error("could not parse PR URL from gh output");
-            }
-            return url;
-          } finally {
-            await removeWorktree(wt);
-          }
-        },
+                cwd: opts.cwd,
+                env: opts.env,
+              }).output().then((out) => ({
+                code: out.code,
+                stdout: new TextDecoder().decode(out.stdout),
+              })),
+          }),
       }),
     notify: makeNotify({
       runCommand: defaultCommandRunner(),
