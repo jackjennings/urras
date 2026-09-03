@@ -1,4 +1,5 @@
 import { join } from "@std/path";
+import { Effect, Exit } from "effect";
 import { estimateTokenCount } from "tokenx";
 import { deleteRunPid } from "../executor.ts";
 import { extractPrinciples } from "../run-phase.ts";
@@ -20,6 +21,10 @@ import {
 import { type ActivePhase, PHASE_SEQUENCE } from "./types.ts";
 import type { ModelablePhase } from "./model.ts";
 import { readDir, readTextFile } from "../filesystem.ts";
+import type {
+  SelfReviewModelError,
+  SelfReviewOutcome,
+} from "../self-approve.ts";
 
 const DEFAULT_MAX_PROMPT_TOKENS = 5_000;
 
@@ -54,7 +59,8 @@ export interface TickDeps {
   readSelfApprove: (
     ticketDir: string,
     phase: string,
-  ) => Promise<{ approved: boolean; reason: string | null } | null>;
+    worktreePath?: string,
+  ) => Effect.Effect<SelfReviewOutcome, SelfReviewModelError>;
   markPRsReady: (prUrls: string[]) => Promise<void>;
   readPhaseOutput: (
     ticketDir: string,
@@ -556,35 +562,45 @@ export async function advancePhase(
       const skipSelfApprove = ticket.phase === "plan" &&
         (ticket.newRepos?.length ?? 0) > 0;
       if (!feedbackPrecedesOutput && !skipSelfApprove) {
-        const sidecar = await deps.readSelfApprove(
-          join(stateDir, ticket.id),
-          ticket.phase,
+        const selfApproveExit = await Effect.runPromiseExit(
+          deps.readSelfApprove(
+            join(stateDir, ticket.id),
+            ticket.phase,
+            ticket.worktrees["jackjennings/lazyboy"]?.path,
+          ),
         );
-        const selfApproveResult = sidecar ?? { approved: false, reason: null };
-        if (selfApproveResult.approved) {
-          const agentEntry: ApprovalEntry = {
-            timestamp: Temporal.Now.instant().toString(),
-            actor: "agent",
-            phase: ticket.phase,
-          };
-          await deps.writeTicket(stateDir, {
-            ...waitingTicket,
-            approvals: [...waitingTicket.approvals, agentEntry],
-          });
+        if (Exit.isSuccess(selfApproveExit)) {
+          const outcome = selfApproveExit.value;
+          if (outcome.approved) {
+            const agentEntry: ApprovalEntry = {
+              timestamp: Temporal.Now.instant().toString(),
+              actor: "agent",
+              phase: ticket.phase,
+            };
+            await deps.writeTicket(stateDir, {
+              ...waitingTicket,
+              approvals: [...waitingTicket.approvals, agentEntry],
+            });
+            await deps.appendLog(stateDir, ticket.id, {
+              event: "self-approved",
+              phase: ticket.phase,
+            });
+          } else if (outcome.reason !== null) {
+            const filename = `${
+              compactTimestamp(zonedNow)
+            }-${ticket.phase}-self-approve.md`;
+            await deps.writePhaseOutput(
+              stateDir,
+              ticket.id,
+              filename,
+              outcome.reason,
+            );
+          }
+        } else {
           await deps.appendLog(stateDir, ticket.id, {
-            event: "self-approved",
+            event: "self-review-failed",
             phase: ticket.phase,
           });
-        } else if (selfApproveResult.reason !== null) {
-          const filename = `${
-            compactTimestamp(zonedNow)
-          }-${ticket.phase}-self-approve.md`;
-          await deps.writePhaseOutput(
-            stateDir,
-            ticket.id,
-            filename,
-            selfApproveResult.reason,
-          );
         }
       }
       if (ticket.phase === "implementation") {

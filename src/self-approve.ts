@@ -1,4 +1,5 @@
 import { join } from "@std/path";
+import { Data, Effect } from "effect";
 import { findLatestPhaseOutput } from "./review.ts";
 import type { CommandRunner } from "./apfel.ts";
 import { readTextFile } from "./filesystem.ts";
@@ -9,7 +10,15 @@ import { runGit } from "./worktree.ts";
 
 const PROMPT_DIR = new URL("./phases/prompts/", import.meta.url).pathname;
 
-export async function selfApprove({
+export class SelfReviewModelError
+  extends Data.TaggedError("SelfReviewModelError")<Record<never, never>> {}
+
+export type SelfReviewOutcome = {
+  approved: boolean;
+  reason: string | null;
+};
+
+async function executeReview({
   phase,
   ticketDir,
   run,
@@ -21,7 +30,7 @@ export async function selfApprove({
   run: CommandRunner;
   worktreePath?: string;
   ollamaModels?: OllamaLanguageModel[];
-}): Promise<{ approved: boolean; reason: string | null }> {
+}): Promise<SelfReviewOutcome> {
   let systemPrompt: string;
   try {
     systemPrompt = await readTextFile(
@@ -60,8 +69,21 @@ export async function selfApprove({
     systemPrompt: systemPrompt,
     prompt: outputContent,
   });
-  if (text == null) return { approved: false, reason: null };
+  if (text == null) throw new SelfReviewModelError();
   const firstLine = text.split("\n")[0].trim().toUpperCase();
   if (firstLine === "APPROVE") return { approved: true, reason: null };
   return { approved: false, reason: text.length > 0 ? text : null };
+}
+
+export function selfApprove(opts: {
+  phase: string;
+  ticketDir: string;
+  run: CommandRunner;
+  worktreePath?: string;
+  ollamaModels?: OllamaLanguageModel[];
+}): Effect.Effect<SelfReviewOutcome, SelfReviewModelError> {
+  return Effect.tryPromise({
+    try: () => executeReview(opts),
+    catch: () => new SelfReviewModelError(),
+  });
 }
