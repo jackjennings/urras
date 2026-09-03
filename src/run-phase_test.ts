@@ -3008,6 +3008,108 @@ Deno.test(
   },
 );
 
+// ── executePhase: critique pass ──────────────────────────────────────────────
+
+Deno.test(
+  "executePhase: skips critique when no <phase>-critique.md exists for phase",
+  async () => {
+    const ticketDir = await Deno.makeTempDir();
+    const homeDir = await Deno.makeTempDir();
+    try {
+      await Deno.writeTextFile(join(ticketDir, "meta.md"), "---\n---\n");
+      let callCount = 0;
+      const agent: CodeAgent = {
+        runPhase() {
+          callCount++;
+          return Promise.resolve({ stdout: "", stderr: "", code: 0 });
+        },
+      };
+      await executePhase(
+        {
+          ticketDir,
+          stateDir: dirname(ticketDir),
+          outputFile: "result.md",
+          phase: "intake",
+          scopeDirs: [],
+          prompt: "p",
+          worktrees: {},
+          homeDir,
+          provider: "anthropic",
+          model: "claude-sonnet-4-6",
+          thinking: "off",
+          agentType: "pi",
+        },
+        agent,
+      );
+      assertEquals(callCount, 1);
+    } finally {
+      await Deno.remove(ticketDir, { recursive: true });
+      await Deno.remove(homeDir, { recursive: true });
+    }
+  },
+);
+
+Deno.test(
+  "executePhase: critique APPROVED leaves no critique file and makes no re-run",
+  async () => {
+    const ticketDir = await Deno.makeTempDir();
+    const homeDir = await Deno.makeTempDir();
+    try {
+      await Deno.writeTextFile(join(ticketDir, "meta.md"), "---\n---\n");
+      const outputPath = join(ticketDir, "result.md");
+      let callCount = 0;
+      const agent: CodeAgent = {
+        async runPhase() {
+          callCount++;
+          if (callCount === 1) {
+            await Deno.writeTextFile(outputPath, "## Plan\n\ncontent");
+            return { stdout: "", stderr: "", code: 0 };
+          }
+          return {
+            stdout: JSON.stringify({
+              type: "agent_end",
+              messages: [{
+                role: "assistant",
+                model: "claude-sonnet-4-6",
+                content: [{ type: "text", text: "VERDICT: APPROVED" }],
+                usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+              }],
+            }),
+            stderr: "",
+            code: 0,
+          };
+        },
+      };
+      await executePhase(
+        {
+          ticketDir,
+          stateDir: dirname(ticketDir),
+          outputFile: "result.md",
+          phase: "plan",
+          scopeDirs: [],
+          prompt: "p",
+          worktrees: {},
+          homeDir,
+          provider: "anthropic",
+          model: "claude-sonnet-4-6",
+          thinking: "off",
+          agentType: "pi",
+        },
+        agent,
+      );
+      assertEquals(callCount, 2);
+      const critiqueFiles: string[] = [];
+      for await (const e of Deno.readDir(ticketDir)) {
+        if (e.name.endsWith("-critique.md")) critiqueFiles.push(e.name);
+      }
+      assertEquals(critiqueFiles.length, 0);
+    } finally {
+      await Deno.remove(ticketDir, { recursive: true });
+      await Deno.remove(homeDir, { recursive: true });
+    }
+  },
+);
+
 Deno.test(
   "executePhase: persists filtered principles file in ticket directory even when agent throws",
   async () => {
@@ -3110,3 +3212,300 @@ Deno.test("buildContextFiles: passes ollamaModels to filterPrinciples", async ()
     await Deno.remove(stateDir, { recursive: true });
   }
 });
+
+Deno.test(
+  "executePhase: critique ISSUES_FOUND writes critique file and re-runs phase agent exactly once",
+  async () => {
+    const ticketDir = await Deno.makeTempDir();
+    const homeDir = await Deno.makeTempDir();
+    try {
+      await Deno.writeTextFile(join(ticketDir, "meta.md"), "---\n---\n");
+      const outputPath = join(ticketDir, "result.md");
+      let callCount = 0;
+      const agent: CodeAgent = {
+        async runPhase() {
+          callCount++;
+          if (callCount === 1) {
+            await Deno.writeTextFile(outputPath, "## Plan\n\ndraft");
+            return { stdout: "", stderr: "", code: 0 };
+          }
+          if (callCount === 2) {
+            return {
+              stdout: JSON.stringify({
+                type: "agent_end",
+                messages: [{
+                  role: "assistant",
+                  model: "claude-sonnet-4-6",
+                  content: [{
+                    type: "text",
+                    text:
+                      "- component X does not exist\n\nVERDICT: ISSUES_FOUND",
+                  }],
+                  usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+                }],
+              }),
+              stderr: "",
+              code: 0,
+            };
+          }
+          await Deno.writeTextFile(outputPath, "## Plan\n\nrevised");
+          return { stdout: "", stderr: "", code: 0 };
+        },
+      };
+      await executePhase(
+        {
+          ticketDir,
+          stateDir: dirname(ticketDir),
+          outputFile: "result.md",
+          phase: "plan",
+          scopeDirs: [],
+          prompt: "p",
+          worktrees: {},
+          homeDir,
+          provider: "anthropic",
+          model: "claude-sonnet-4-6",
+          thinking: "off",
+          agentType: "pi",
+        },
+        agent,
+      );
+      assertEquals(callCount, 3);
+      const critiqueFiles: string[] = [];
+      for await (const e of Deno.readDir(ticketDir)) {
+        if (e.name.endsWith("-plan-critique.md")) critiqueFiles.push(e.name);
+      }
+      assertEquals(critiqueFiles.length, 1);
+      assertStringIncludes(
+        await Deno.readTextFile(join(ticketDir, critiqueFiles[0])),
+        "VERDICT: ISSUES_FOUND",
+      );
+    } finally {
+      await Deno.remove(ticketDir, { recursive: true });
+      await Deno.remove(homeDir, { recursive: true });
+    }
+  },
+);
+
+Deno.test(
+  "executePhase: critique agent crash does not block the pipeline",
+  async () => {
+    const ticketDir = await Deno.makeTempDir();
+    const homeDir = await Deno.makeTempDir();
+    try {
+      await Deno.writeTextFile(join(ticketDir, "meta.md"), "---\n---\n");
+      const outputPath = join(ticketDir, "result.md");
+      let callCount = 0;
+      const agent: CodeAgent = {
+        async runPhase() {
+          callCount++;
+          if (callCount === 1) {
+            await Deno.writeTextFile(outputPath, "## Plan\n\ncontent");
+            return { stdout: "", stderr: "", code: 0 };
+          }
+          throw new Error("critique agent crashed");
+        },
+      };
+      const code = await executePhase(
+        {
+          ticketDir,
+          stateDir: dirname(ticketDir),
+          outputFile: "result.md",
+          phase: "plan",
+          scopeDirs: [],
+          prompt: "p",
+          worktrees: {},
+          homeDir,
+          provider: "anthropic",
+          model: "claude-sonnet-4-6",
+          thinking: "off",
+          agentType: "pi",
+        },
+        agent,
+      );
+      assertEquals(code, 0);
+      assertStringIncludes(await Deno.readTextFile(outputPath), "content");
+    } finally {
+      await Deno.remove(ticketDir, { recursive: true });
+      await Deno.remove(homeDir, { recursive: true });
+    }
+  },
+);
+
+Deno.test(
+  "executePhase: critique garbled output (no VERDICT line) is treated as APPROVED",
+  async () => {
+    const ticketDir = await Deno.makeTempDir();
+    const homeDir = await Deno.makeTempDir();
+    try {
+      await Deno.writeTextFile(join(ticketDir, "meta.md"), "---\n---\n");
+      const outputPath = join(ticketDir, "result.md");
+      let callCount = 0;
+      const agent: CodeAgent = {
+        async runPhase() {
+          callCount++;
+          if (callCount === 1) {
+            await Deno.writeTextFile(outputPath, "## Plan\n\ncontent");
+            return { stdout: "", stderr: "", code: 0 };
+          }
+          return {
+            stdout: JSON.stringify({
+              type: "agent_end",
+              messages: [{
+                role: "assistant",
+                model: "claude-sonnet-4-6",
+                content: [{
+                  type: "text",
+                  text: "I cannot determine a verdict",
+                }],
+                usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+              }],
+            }),
+            stderr: "",
+            code: 0,
+          };
+        },
+      };
+      await executePhase(
+        {
+          ticketDir,
+          stateDir: dirname(ticketDir),
+          outputFile: "result.md",
+          phase: "plan",
+          scopeDirs: [],
+          prompt: "p",
+          worktrees: {},
+          homeDir,
+          provider: "anthropic",
+          model: "claude-sonnet-4-6",
+          thinking: "off",
+          agentType: "pi",
+        },
+        agent,
+      );
+      assertEquals(callCount, 2);
+    } finally {
+      await Deno.remove(ticketDir, { recursive: true });
+      await Deno.remove(homeDir, { recursive: true });
+    }
+  },
+);
+
+Deno.test(
+  "executePhase: ISSUES_FOUND re-run usage is accumulated into the usage sidecar",
+  async () => {
+    const ticketDir = await Deno.makeTempDir();
+    const homeDir = await Deno.makeTempDir();
+    try {
+      await Deno.writeTextFile(join(ticketDir, "meta.md"), "---\n---\n");
+      const outputPath = join(ticketDir, "result.md");
+      const makeUsageNdjson = (input: number, output: number) =>
+        JSON.stringify({
+          type: "agent_end",
+          messages: [
+            {
+              role: "assistant",
+              model: "claude-sonnet-4-6",
+              content: [{ type: "text", text: "out" }],
+              usage: { input, output, cacheRead: 0, cacheWrite: 0 },
+            },
+          ],
+        });
+      const critiqueNdjson = JSON.stringify({
+        type: "agent_end",
+        messages: [{
+          role: "assistant",
+          model: "claude-sonnet-4-6",
+          content: [{ type: "text", text: "VERDICT: ISSUES_FOUND" }],
+          usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+        }],
+      });
+      let callCount = 0;
+      const agent: CodeAgent = {
+        async runPhase() {
+          callCount++;
+          if (callCount === 1) {
+            await Deno.writeTextFile(outputPath, "## Plan\n\ndraft");
+            return { stdout: makeUsageNdjson(10, 5), stderr: "", code: 0 };
+          }
+          if (callCount === 2) {
+            return { stdout: critiqueNdjson, stderr: "", code: 0 };
+          }
+          await Deno.writeTextFile(outputPath, "## Plan\n\nrevised");
+          return { stdout: makeUsageNdjson(8, 4), stderr: "", code: 0 };
+        },
+      };
+      await executePhase(
+        {
+          ticketDir,
+          stateDir: dirname(ticketDir),
+          outputFile: "result.md",
+          phase: "plan",
+          scopeDirs: [],
+          prompt: "p",
+          worktrees: {},
+          homeDir,
+          provider: "anthropic",
+          model: "claude-sonnet-4-6",
+          thinking: "off",
+          agentType: "pi",
+        },
+        agent,
+      );
+      const usage = JSON.parse(
+        await Deno.readTextFile(join(ticketDir, "result.usage.json")),
+      );
+      const totalInput = usage.models.reduce(
+        (s: number, m: { input: number }) => s + m.input,
+        0,
+      );
+      const totalOutput = usage.models.reduce(
+        (s: number, m: { output: number }) => s + m.output,
+        0,
+      );
+      assertEquals(totalInput, 18);
+      assertEquals(totalOutput, 9);
+    } finally {
+      await Deno.remove(ticketDir, { recursive: true });
+      await Deno.remove(homeDir, { recursive: true });
+    }
+  },
+);
+
+Deno.test(
+  "executePhase: critique skipped when draft file absent after phase agent exits",
+  async () => {
+    const ticketDir = await Deno.makeTempDir();
+    const homeDir = await Deno.makeTempDir();
+    try {
+      await Deno.writeTextFile(join(ticketDir, "meta.md"), "---\n---\n");
+      let callCount = 0;
+      const agent: CodeAgent = {
+        runPhase() {
+          callCount++;
+          return Promise.resolve({ stdout: "", stderr: "", code: 1 });
+        },
+      };
+      await executePhase(
+        {
+          ticketDir,
+          stateDir: dirname(ticketDir),
+          outputFile: "result.md",
+          phase: "plan",
+          scopeDirs: [],
+          prompt: "p",
+          worktrees: {},
+          homeDir,
+          provider: "anthropic",
+          model: "claude-sonnet-4-6",
+          thinking: "off",
+          agentType: "pi",
+        },
+        agent,
+      );
+      assertEquals(callCount, 1);
+    } finally {
+      await Deno.remove(ticketDir, { recursive: true });
+      await Deno.remove(homeDir, { recursive: true });
+    }
+  },
+);

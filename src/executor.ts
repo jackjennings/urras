@@ -14,6 +14,8 @@ export interface ExecutorOptions {
   provider: string;
   model: string;
   thinking: string;
+  critiqueModel?: string;
+  critiqueThinking?: string;
   agent: "pi" | "claude-code";
   contextFiles?: string[];
   pidFile?: string;
@@ -62,6 +64,12 @@ export function buildPhaseArgs(opts: ExecutorOptions): string[] {
     "--agent",
     opts.agent,
   );
+  if (opts.critiqueModel !== undefined) {
+    args.push("--critique-model", opts.critiqueModel);
+  }
+  if (opts.critiqueThinking !== undefined) {
+    args.push("--critique-thinking", opts.critiqueThinking);
+  }
   args.push("--state-dir", opts.stateDir);
   if (opts.contextFiles) {
     args.push("--context-files", opts.contextFiles.join(","));

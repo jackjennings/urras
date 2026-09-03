@@ -22,6 +22,8 @@ import matter from "gray-matter";
 import { captureCommandRunner, type CommandRunner } from "./apfel.ts";
 import { filterPrinciples } from "./judge-principles.ts";
 import type { OllamaLanguageModel } from "./models/ollama.ts";
+import { compactTimestamp } from "./timestamp.ts";
+import { PHASE_MODEL_DEFAULTS } from "./phases/model.ts";
 
 export function getPiEnvironmentVariables(
   home: string,
@@ -470,6 +472,8 @@ export async function executePhase(
     resume?: boolean;
     includePrinciples?: boolean;
     run?: CommandRunner;
+    critiqueModel?: string;
+    critiqueThinking?: string;
   },
   agent: CodeAgent,
 ): Promise<number> {
@@ -524,7 +528,7 @@ export async function executePhase(
   }
 
   const startMs = Temporal.Now.instant().epochMilliseconds;
-  const result = await agent.runPhase({
+  const mainResult = await agent.runPhase({
     prompt: opts.prompt + pathContext,
     contextFiles,
     cwd,
@@ -536,10 +540,125 @@ export async function executePhase(
     resume: opts.resume,
   });
   const durationMs = Temporal.Now.instant().epochMilliseconds - startMs;
+  let rerunResult: { stdout: string; stderr: string; code: number } | null =
+    null;
 
-  const { usage } = opts.agentType === "claude-code"
-    ? extractClaudeCodeUsageAndText(result.stdout, durationMs, opts.model)
-    : extractUsageAndText(result.stdout, durationMs);
+  const critiquePath = join(
+    new URL("./phases/prompts/", import.meta.url).pathname,
+    `${opts.phase}-critique.md`,
+  );
+  let critiquePrompt: string | null = null;
+  try {
+    critiquePrompt = await readTextFile(critiquePath);
+  } catch { /* no critique prompt for this phase */ }
+
+  if (critiquePrompt !== null) {
+    let draftPresent = false;
+    try {
+      await stat(outputFilePath);
+      draftPresent = true;
+    } catch { /* draft absent — skip critique */ }
+
+    if (draftPresent) {
+      const specFiles: string[] = [];
+      try {
+        for await (const entry of readDir(opts.ticketDir)) {
+          if (
+            entry.isFile &&
+            /^\d{8}T\d{6}-spec\.md$/.test(entry.name)
+          ) {
+            specFiles.push(entry.name);
+          }
+        }
+      } catch { /* unreadable */ }
+      specFiles.sort();
+
+      const critiqueContextFiles: string[] = [`@${outputFilePath}`];
+      const latestSpec = specFiles.at(-1);
+      if (latestSpec) {
+        critiqueContextFiles.push(`@${join(opts.ticketDir, latestSpec)}`);
+      }
+
+      const critiqueModelToUse = opts.critiqueModel ??
+        PHASE_MODEL_DEFAULTS.critique.model;
+      const critiqueThinkingToUse = opts.critiqueThinking ??
+        PHASE_MODEL_DEFAULTS.critique.thinking;
+
+      let critiqueResult: {
+        stdout: string;
+        stderr: string;
+        code: number;
+      } | null = null;
+      try {
+        critiqueResult = await agent.runPhase({
+          prompt: critiquePrompt + pathContext,
+          contextFiles: critiqueContextFiles,
+          cwd,
+          env,
+          provider: opts.provider,
+          model: critiqueModelToUse,
+          thinking: critiqueThinkingToUse,
+        });
+      } catch { /* critique agent crash — pass through */ }
+
+      if (critiqueResult !== null) {
+        let critiqueText = "";
+        try {
+          const extracted = opts.agentType === "claude-code"
+            ? extractClaudeCodeUsageAndText(
+              critiqueResult.stdout,
+              0,
+              critiqueModelToUse,
+            )
+            : extractUsageAndText(critiqueResult.stdout, 0);
+          critiqueText = extracted.text;
+        } catch { /* garbled output — treat as APPROVED */ }
+
+        const verdictMatch = /VERDICT:\s*(APPROVED|ISSUES_FOUND)/im.exec(
+          critiqueText,
+        );
+        if (verdictMatch?.[1]?.toUpperCase() === "ISSUES_FOUND") {
+          const ts = compactTimestamp(Temporal.Now.zonedDateTimeISO("UTC"));
+          await writeTextFile(
+            join(opts.ticketDir, `${ts}-${opts.phase}-critique.md`),
+            critiqueText,
+          );
+          rerunResult = await agent.runPhase({
+            prompt: opts.prompt +
+              pathContext +
+              "\n\n---\n\nCritique findings requiring revision:\n\n" +
+              critiqueText,
+            contextFiles,
+            cwd,
+            env,
+            provider: opts.provider,
+            model: opts.model,
+            thinking: opts.thinking,
+          });
+        }
+      }
+    }
+  }
+
+  const finalResult = rerunResult ?? mainResult;
+
+  const { usage: mainUsage } = opts.agentType === "claude-code"
+    ? extractClaudeCodeUsageAndText(mainResult.stdout, durationMs, opts.model)
+    : extractUsageAndText(mainResult.stdout, durationMs);
+
+  let usage: PhaseUsage | null = mainUsage;
+
+  if (rerunResult !== null && mainUsage !== null) {
+    const { usage: rerunUsage } = opts.agentType === "claude-code"
+      ? extractClaudeCodeUsageAndText(rerunResult.stdout, 0, opts.model)
+      : extractUsageAndText(rerunResult.stdout, 0);
+    if (rerunUsage !== null) {
+      usage = {
+        ...mainUsage,
+        models: [...mainUsage.models, ...rerunUsage.models],
+      };
+    }
+  }
 
   if (usage !== null) {
     try {
@@ -561,21 +680,21 @@ export async function executePhase(
   }
 
   const sessionId = opts.agentType === "claude-code"
-    ? extractClaudeCodeSessionId(result.stdout)
-    : extractSessionId(result.stdout);
+    ? extractClaudeCodeSessionId(finalResult.stdout)
+    : extractSessionId(finalResult.stdout);
 
   await appendPhaseLog(opts.ticketDir, {
     event: "phase-end",
     phase: opts.phase,
-    exitCode: result.code,
-    output: result.stderr,
+    exitCode: finalResult.code,
+    output: finalResult.stderr,
     ...(sessionId !== null ? { sessionId } : {}),
   });
 
   try {
     await writeTextFile(
       join(opts.ticketDir, opts.outputFile + ".exit"),
-      String(result.code),
+      String(finalResult.code),
     );
   } catch {
     // sidecar write failure does not affect the returned exit code
@@ -592,7 +711,7 @@ export async function executePhase(
     }
   }
 
-  return result.code;
+  return finalResult.code;
 }
 
 export async function readPhaseSessionId(
@@ -635,6 +754,8 @@ if (import.meta.main) {
       "agent",
       "session-id",
       "state-dir",
+      "critique-model",
+      "critique-thinking",
     ],
     boolean: ["skip-principles", "resume"],
   });
@@ -685,6 +806,8 @@ if (import.meta.main) {
       sessionId: args["session-id"] ?? undefined,
       resume: args["resume"] ?? false,
       includePrinciples: !args["skip-principles"],
+      critiqueModel: args["critique-model"] ?? undefined,
+      critiqueThinking: args["critique-thinking"] ?? undefined,
     },
     agentType === "claude-code"
       ? new ClaudeCodeAgent(

@@ -1,5 +1,5 @@
 import { assertEquals } from "@std/assert";
-import { resolvePhaseModel } from "./model.ts";
+import { PHASE_MODEL_DEFAULTS, resolvePhaseModel } from "./model.ts";
 import type { Config } from "../state/types.ts";
 import { makeTicket } from "../test-support.ts";
 
@@ -144,4 +144,29 @@ Deno.test("resolvePhaseModel: ticket phases model-only, thinking from hardcoded"
     model: "claude-opus-4-7",
     thinking: "off",
   });
+});
+
+Deno.test("PHASE_MODEL_DEFAULTS: critique entry defaults to claude-sonnet-4-6 with thinking off", () => {
+  assertEquals(PHASE_MODEL_DEFAULTS.critique.model, "claude-sonnet-4-6");
+  assertEquals(PHASE_MODEL_DEFAULTS.critique.thinking, "off");
+});
+
+Deno.test("resolvePhaseModel: critique uses defaults when no overrides are configured", () => {
+  const config = makeConfig();
+  const ticket = makeTicket();
+  const result = resolvePhaseModel(config, "critique", ticket);
+  assertEquals(result.model, "claude-sonnet-4-6");
+  assertEquals(result.thinking, "off");
+});
+
+Deno.test("resolvePhaseModel: critique respects config-level model override", () => {
+  const config = makeConfig({
+    phases: {
+      defaults: { critique: { model: "claude-haiku-4-5", thinking: "low" } },
+    },
+  });
+  const ticket = makeTicket();
+  const result = resolvePhaseModel(config, "critique", ticket);
+  assertEquals(result.model, "claude-haiku-4-5");
+  assertEquals(result.thinking, "low");
 });

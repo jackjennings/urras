@@ -175,13 +175,13 @@ export async function findAllPhaseOutputs(
   return results;
 }
 
-export async function findLatestSelfReview(
+export async function findLatestSelfApprove(
   ticketDir: string,
   phaseName: string,
   afterTimestamp: string,
 ): Promise<{ filename: string; fullText: string } | null> {
   const pattern = new RegExp(
-    `^\\d{8}T\\d{6}-${phaseName}-self-review\\.md$`,
+    `^\\d{8}T\\d{6}-${phaseName}-self-approve\\.md$`,
   );
   const matches: string[] = [];
   try {
@@ -555,7 +555,7 @@ export async function review(
       console.error("review input is empty");
       Deno.exit(1);
     }
-    const selfReviewRejection = await findLatestSelfReview(
+    const selfReviewRejection = await findLatestSelfApprove(
       ticketDir,
       found.phaseName,
       found.filename.slice(0, 15),
@@ -619,7 +619,7 @@ export async function review(
 
   const tabRejections = await Promise.all(
     tabs.map((tab) =>
-      findLatestSelfReview(
+      findLatestSelfApprove(
         ticketDir,
         tab.phaseName,
         tab.filename.slice(0, 15),
@@ -628,11 +628,11 @@ export async function review(
   );
 
   for (let i = 0; i < tabs.length; i++) {
-    const selfReview = tabRejections[i];
-    if (selfReview !== null) {
+    const selfApprove = tabRejections[i];
+    if (selfApprove !== null) {
       const originalGetLines = tabContents[i].getLines;
       const phaseName = tabs[i].phaseName;
-      const fullText = selfReview.fullText;
+      const fullText = selfApprove.fullText;
       tabContents[i] = {
         ...tabContents[i],
         getLines: (width) => [

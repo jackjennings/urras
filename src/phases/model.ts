@@ -1,7 +1,11 @@
 import type { Config, TicketState } from "../state/types.ts";
 import type { ActivePhase } from "./types.ts";
 
-export type ModelablePhase = ActivePhase | "conflict-resolution" | "ci-fix";
+export type ModelablePhase =
+  | ActivePhase
+  | "conflict-resolution"
+  | "ci-fix"
+  | "critique";
 
 export const PHASE_MODEL_DEFAULTS: Record<
   ModelablePhase,
@@ -14,6 +18,7 @@ export const PHASE_MODEL_DEFAULTS: Record<
   implementation: { model: "claude-sonnet-4-6", thinking: "high" },
   "conflict-resolution": { model: "claude-opus-4-7", thinking: "high" },
   "ci-fix": { model: "claude-sonnet-4-6", thinking: "high" },
+  critique: { model: "claude-sonnet-4-6", thinking: "off" },
 };
 
 export function resolvePhaseModel(

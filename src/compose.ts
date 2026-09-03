@@ -95,7 +95,7 @@ import {
 import { generateShortTitle as apfelGenerateShortTitle } from "./short-title.ts";
 import { makeDesktopNotifier, makeNotify } from "./notify.ts";
 import { PidFileLock } from "./lock.ts";
-import { selfReview } from "./self-review.ts";
+import { selfApprove } from "./self-approve.ts";
 import { applyLearning } from "./apply-learning.ts";
 import { processLearnings as runLearnings } from "./learnings.ts";
 import { refreshAnthropicPricingIfStale } from "./anthropic-pricing.ts";
@@ -1087,6 +1087,8 @@ export function composeTickDeps(
           agent: agentType,
           model: opts.model,
           thinking: opts.thinking,
+          critiqueModel: opts.critiqueModel,
+          critiqueThinking: opts.critiqueThinking,
           sessionId: opts.sessionId,
           resume: opts.resume,
           includePrinciples: config.tick.principles,
@@ -1100,8 +1102,8 @@ export function composeTickDeps(
       appendLog: appendTicketLog,
       resolveModelConfig: (phase, ticket) =>
         resolvePhaseModel(config, phase, ticket),
-      selfReview: (phase, ticketDir, worktreePath) =>
-        selfReview({
+      selfApprove: (phase, ticketDir, worktreePath) =>
+        selfApprove({
           phase,
           ticketDir,
           run: captureCommandRunner(),
