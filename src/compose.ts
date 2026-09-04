@@ -34,8 +34,7 @@ import { GitHubProvider } from "./providers/github.ts";
 import { JiraProvider } from "./providers/jira.ts";
 import { TodoTxtProvider } from "./providers/todo-txt.ts";
 import type { Provider } from "./providers/types.ts";
-import { jiraPickupAction } from "./tick-actions/jira-pickup.ts";
-import { jiraDoneAction } from "./tick-actions/jira-done.ts";
+import { pickupWorkItemAction } from "./tick-actions/pickup-work-item.ts";
 import { isPhaseAlive, spawnPhase } from "./executor.ts";
 import { bootId } from "./paths.ts";
 import {
@@ -395,23 +394,33 @@ export function composeTickDeps(
   });
 
   const providers: Provider[] = [githubProvider];
+  const jiraProviders: { baseUrl: string; instance: JiraProvider }[] = [];
 
   for (const entry of Object.values(config.jira ?? {})) {
-    providers.push(
-      new JiraProvider({
-        baseUrl: entry.baseUrl,
-        email: Deno.env.get("JIRA_EMAIL") ?? "",
-        apiToken: Deno.env.get("JIRA_API_TOKEN") ?? "",
-        project: entry.project,
-        doneStatusName: entry.statuses?.done ?? "Done",
-        http,
-        run: captureCommandRunner(),
-      }),
-    );
+    const jiraProvider = new JiraProvider({
+      baseUrl: entry.baseUrl,
+      email: Deno.env.get("JIRA_EMAIL") ?? "",
+      apiToken: Deno.env.get("JIRA_API_TOKEN") ?? "",
+      project: entry.project,
+      doneStatusName: entry.statuses?.done ?? "Done",
+      pickupStatusName: entry.statuses?.pickup ?? "In Progress",
+      http,
+      run: captureCommandRunner(),
+    });
+    providers.push(jiraProvider);
+    jiraProviders.push({ baseUrl: entry.baseUrl, instance: jiraProvider });
   }
 
   if (config.todoTxt) {
     providers.push(new TodoTxtProvider({ file: config.todoTxt.file }));
+  }
+
+  function findProvider(url: string, providerName: string): Provider {
+    if (providerName === "jira") {
+      const match = jiraProviders.find((j) => url.startsWith(j.baseUrl));
+      if (match) return match.instance;
+    }
+    return githubProvider;
   }
 
   const ollamaModels: OllamaLanguageModel[] = config.ollama
@@ -552,7 +561,7 @@ export function composeTickDeps(
     checkMergedPRAction({
       getPRState: (url) => githubProvider.prState(url),
       cleanupWorktree: removeWorktree,
-      closeWorkItem: (url: string) => githubProvider.close(url),
+      closeWorkItem: (url, provider) => findProvider(url, provider).close(url),
       writeTicket,
       appendLog: appendTicketLog,
     }),
@@ -841,28 +850,12 @@ export function composeTickDeps(
         }),
       ]
       : []),
-    ...Object.values(config.jira ?? {}).flatMap((entry) => [
-      jiraPickupAction({
-        baseUrl: entry.baseUrl,
-        email: Deno.env.get("JIRA_EMAIL") ?? "",
-        apiToken: Deno.env.get("JIRA_API_TOKEN") ?? "",
-        project: entry.project,
-        targetStatusName: entry.statuses?.pickup ?? "In Progress",
-        appendLog: appendTicketLog,
-        writeTicket,
-        http,
-      }),
-      jiraDoneAction({
-        baseUrl: entry.baseUrl,
-        email: Deno.env.get("JIRA_EMAIL") ?? "",
-        apiToken: Deno.env.get("JIRA_API_TOKEN") ?? "",
-        project: entry.project,
-        targetStatusName: entry.statuses?.done ?? "Done",
-        writeTicket,
-        appendLog: appendTicketLog,
-        http,
-      }),
-    ]),
+    pickupWorkItemAction({
+      pickupWorkItem: (url, provider) =>
+        findProvider(url, provider).pickup(url),
+      writeTicket,
+      appendLog: appendTicketLog,
+    }),
     checkNewCommentsAction({
       isProcessAlive: (ticketId) => isPhaseAlive(join(stateDir, ticketId)),
       writeTicket,
