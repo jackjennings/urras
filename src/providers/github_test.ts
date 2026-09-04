@@ -596,3 +596,104 @@ Deno.test(
     assertEquals(items[0].id, "github/fine/repo/2");
   },
 );
+
+Deno.test(
+  "GitHubProvider.fetchCurrent: returns title and body for a valid issue",
+  async () => {
+    const provider = new GitHubProvider({
+      repos: [],
+      accountResolver: fixedResolver("tok", "user"),
+      http: new HttpClient((_url, _init) =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              number: 42,
+              title: "The issue title",
+              body: "The issue body",
+              html_url: "https://github.com/myorg/myrepo/issues/42",
+            }),
+            { status: 200 },
+          ),
+        )
+      ),
+    });
+    const result = await provider.fetchCurrent(
+      "github/myorg/myrepo/42",
+    );
+    assertEquals(result, { title: "The issue title", body: "The issue body" });
+  },
+);
+
+Deno.test(
+  "GitHubProvider.fetchCurrent: normalizes null body to empty string",
+  async () => {
+    const provider = new GitHubProvider({
+      repos: [],
+      accountResolver: fixedResolver("tok", "user"),
+      http: new HttpClient((_url, _init) =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              number: 1,
+              title: "Title",
+              body: null,
+              html_url: "https://github.com/org/repo/issues/1",
+            }),
+            { status: 200 },
+          ),
+        )
+      ),
+    });
+    const result = await provider.fetchCurrent("github/org/repo/1");
+    assertEquals(result, { title: "Title", body: "" });
+  },
+);
+
+Deno.test(
+  "GitHubProvider.fetchCurrent: returns null on non-ok response",
+  async () => {
+    const provider = new GitHubProvider({
+      repos: [],
+      accountResolver: fixedResolver("tok", "user"),
+      http: new HttpClient((_url, _init) =>
+        Promise.resolve(new Response("Not found", { status: 404 }))
+      ),
+    });
+    const result = await provider.fetchCurrent("github/org/repo/99");
+    assertEquals(result, null);
+  },
+);
+
+Deno.test(
+  "GitHubProvider.fetchCurrent: calls correct API endpoint with resolved token",
+  async () => {
+    let capturedUrl = "";
+    let capturedAuth = "";
+    const provider = new GitHubProvider({
+      repos: [],
+      accountResolver: fixedResolver("my-token", "user"),
+      http: new HttpClient((url, init) => {
+        capturedUrl = url as string;
+        capturedAuth = (init?.headers as Record<string, string>)
+          ?.Authorization ?? "";
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              number: 5,
+              title: "T",
+              body: "B",
+              html_url: "https://github.com/org/r/issues/5",
+            }),
+            { status: 200 },
+          ),
+        );
+      }),
+    });
+    await provider.fetchCurrent("github/org/r/5");
+    assertEquals(
+      capturedUrl,
+      "https://api.github.com/repos/org/r/issues/5",
+    );
+    assertEquals(capturedAuth, "Bearer my-token");
+  },
+);

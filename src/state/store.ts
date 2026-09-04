@@ -174,6 +174,10 @@ const FIELDS: { [K in keyof TicketState]-?: Field<K> } = {
     write: (t) => t.lastSeenPrCommentTimestamp,
     read: (d) => normalizeTimestamp(d.lastSeenPrCommentTimestamp),
   },
+  lastUpstreamSyncTimestamp: {
+    write: (t) => t.lastUpstreamSyncTimestamp,
+    read: (d) => normalizeTimestamp(d.lastUpstreamSyncTimestamp),
+  },
   providerDone: {
     write: (t) => t.providerDone,
     read: (d) => d.providerDone as boolean | undefined,

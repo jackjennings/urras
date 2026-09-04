@@ -110,6 +110,70 @@ export class JiraProvider implements Provider {
     return data.comments ?? [];
   }
 
+  private async buildBody(issue: JiraIssue, auth: string): Promise<string> {
+    let description = issue.fields.description == null ||
+        typeof issue.fields.description !== "object"
+      ? ""
+      // deno-lint-ignore no-explicit-any
+      : adf2markdown(issue.fields.description as any).trim();
+    if (issue.fields.parent) {
+      const ancestors = await this.fetchAncestors(
+        issue.fields.parent.key,
+        auth,
+      );
+      if (ancestors) description = `${description}\n\n---\n\n${ancestors}`;
+    }
+    const comments = await this.fetchComments(issue.key, auth);
+    const keptComments: Array<{
+      displayName: string;
+      date: string;
+      body: string;
+    }> = [];
+    for (const comment of comments) {
+      const commentBody = comment.body == null ||
+          typeof comment.body !== "object"
+        ? ""
+        // deno-lint-ignore no-explicit-any
+        : adf2markdown(comment.body as any).trim();
+      if (!commentBody) continue;
+      const keep = await judgeComment(commentBody, this.run);
+      if (keep) {
+        keptComments.push({
+          displayName: comment.author.displayName,
+          date: comment.created.slice(0, 10),
+          body: commentBody,
+        });
+      }
+    }
+    if (keptComments.length > 0) {
+      const commentSection = "## Comments\n\n" +
+        keptComments
+          .map((c) => `**${c.displayName}** (${c.date})\n\n${c.body}`)
+          .join("\n\n");
+      description = `${description}\n\n---\n\n${commentSection}`;
+    }
+    return description;
+  }
+
+  async fetchCurrent(
+    ticketId: string,
+  ): Promise<{ title: string; body: string } | null> {
+    const key = ticketId.slice(5);
+    const auth = btoa(`${this.email}:${this.apiToken}`);
+    const url =
+      `${this.baseUrl}/rest/api/3/issue/${key}?fields=summary,description,parent`;
+    const res = await this.http.get(url, {
+      headers: {
+        Authorization: `Basic ${auth}`,
+        Accept: "application/json",
+      },
+    });
+    if (!res.ok) return null;
+    const issue = (await res.json()) as JiraIssue;
+    const body = await this.buildBody(issue, auth);
+    return { title: issue.fields.summary, body };
+  }
+
   async fetchNew(knownIds: Set<string>): Promise<WorkItem[]> {
     const jql =
       `assignee = currentUser() AND project = ${this.project} AND statusCategory != Done`;
@@ -142,47 +206,7 @@ export class JiraProvider implements Provider {
         continue;
       }
       if (!knownIds.has(id)) {
-        let description = issue.fields.description == null ||
-            typeof issue.fields.description !== "object"
-          ? ""
-          // deno-lint-ignore no-explicit-any
-          : adf2markdown(issue.fields.description as any).trim();
-        if (issue.fields.parent) {
-          const ancestors = await this.fetchAncestors(
-            issue.fields.parent.key,
-            auth,
-          );
-          if (ancestors) description = `${description}\n\n---\n\n${ancestors}`;
-        }
-        const comments = await this.fetchComments(issue.key, auth);
-        const keptComments: Array<{
-          displayName: string;
-          date: string;
-          body: string;
-        }> = [];
-        for (const comment of comments) {
-          const commentBody = comment.body == null ||
-              typeof comment.body !== "object"
-            ? ""
-            // deno-lint-ignore no-explicit-any
-            : adf2markdown(comment.body as any).trim();
-          if (!commentBody) continue;
-          const keep = await judgeComment(commentBody, this.run);
-          if (keep) {
-            keptComments.push({
-              displayName: comment.author.displayName,
-              date: comment.created.slice(0, 10),
-              body: commentBody,
-            });
-          }
-        }
-        if (keptComments.length > 0) {
-          const commentSection = "## Comments\n\n" +
-            keptComments
-              .map((c) => `**${c.displayName}** (${c.date})\n\n${c.body}`)
-              .join("\n\n");
-          description = `${description}\n\n---\n\n${commentSection}`;
-        }
+        const description = await this.buildBody(issue, auth);
         items.push({
           id,
           provider: "jira",

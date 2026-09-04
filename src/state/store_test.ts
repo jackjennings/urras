@@ -1728,6 +1728,7 @@ Deno.test(
         ciHandledRunIds: ["run-1"],
         lastSeenCommentTimestamp: "2026-08-01T00:00:00.000Z",
         lastSeenPrCommentTimestamp: "2026-08-02T00:00:00.000Z",
+        lastUpstreamSyncTimestamp: "2026-08-03T00:00:00.000Z",
         providerDone: true,
         providerPickedUp: true,
         outputRetries: 1,

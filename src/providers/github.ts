@@ -259,6 +259,30 @@ export class GitHubProvider implements Provider {
     return `https://github.com/${slug}`;
   }
 
+  async fetchCurrent(
+    ticketId: string,
+  ): Promise<{ title: string; body: string } | null> {
+    const parts = ticketId.split("/");
+    const org = parts[1];
+    const repo = parts[2];
+    const number = parts[3];
+    const slug = `${org}/${repo}`;
+    const resolved = this.resolveRepo(slug) ??
+      { canonical: slug, current: slug };
+    const { token } = this.accountResolver(resolved.canonical);
+    const url =
+      `https://api.github.com/repos/${resolved.current}/issues/${number}`;
+    const res = await this.http.get(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+      },
+    });
+    if (!res.ok) return null;
+    const issue = (await res.json()) as GitHubIssue;
+    return { title: issue.title, body: issue.body ?? "" };
+  }
+
   async fetchNew(knownIds: Set<string>): Promise<WorkItem[]> {
     const items: WorkItem[] = [];
     for (const repo of this.repos) {

@@ -135,7 +135,11 @@ export async function advancePhase(
     try {
       const contextFiles: string[] = [];
       for await (const entry of readDir(join(stateDir, ticket.id))) {
-        if (entry.isFile && entry.name.endsWith("-comment-context.md")) {
+        if (
+          entry.isFile &&
+          (entry.name.endsWith("-comment-context.md") ||
+            entry.name.endsWith("-upstream-edit-context.md"))
+        ) {
           contextFiles.push(entry.name);
         }
       }

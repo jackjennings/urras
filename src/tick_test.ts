@@ -91,6 +91,7 @@ Deno.test(
         return Promise.resolve([]);
       },
       close: () => Promise.resolve(),
+      fetchCurrent: () => Promise.resolve(null),
     };
     const deps = makeTickServiceDeps({
       providers: [provider],
@@ -114,6 +115,7 @@ Deno.test(
     const provider: Provider = {
       fetchNew: () => Promise.resolve([item]),
       close: () => Promise.resolve(),
+      fetchCurrent: () => Promise.resolve(null),
     };
     const writtenTickets: TicketState[] = [];
     const deps = makeTickServiceDeps({
@@ -147,6 +149,7 @@ Deno.test(
     const provider: Provider = {
       fetchNew: () => Promise.resolve([item]),
       close: () => Promise.resolve(),
+      fetchCurrent: () => Promise.resolve(null),
     };
     const appendLogSpy = spy(() => Promise.resolve());
     const deps = makeTickServiceDeps({
@@ -177,6 +180,7 @@ Deno.test(
     const provider: Provider = {
       fetchNew: () => Promise.resolve([item]),
       close: () => Promise.resolve(),
+      fetchCurrent: () => Promise.resolve(null),
     };
     const appendLogSpy = spy(() => Promise.resolve());
     const deps = makeTickServiceDeps({
@@ -1092,6 +1096,7 @@ Deno.test(
     const provider: Provider = {
       fetchNew: () => Promise.resolve([item]),
       close: () => Promise.resolve(),
+      fetchCurrent: () => Promise.resolve(null),
     };
     const writtenTickets: TicketState[] = [];
     const deps = makeTickServiceDeps({
@@ -1121,6 +1126,7 @@ Deno.test(
     const provider: Provider = {
       fetchNew: () => Promise.resolve([item]),
       close: () => Promise.resolve(),
+      fetchCurrent: () => Promise.resolve(null),
     };
     const writtenTickets: TicketState[] = [];
     const deps = makeTickServiceDeps({
@@ -1150,6 +1156,7 @@ Deno.test(
     const provider: Provider = {
       fetchNew: () => Promise.resolve([item]),
       close: () => Promise.resolve(),
+      fetchCurrent: () => Promise.resolve(null),
     };
     const writtenTickets: TicketState[] = [];
     const deps = makeTickServiceDeps({
