@@ -184,6 +184,10 @@ instructing the model to answer exactly `APPROVE` or `REJECT` — no code change
 Prompts exist for all five phases (`intake`, `enrichment`, `spec`, `plan`,
 `implementation`).
 
+When adding an optional section to a phase prompt, always update the
+corresponding `*-self-approve.md` to allow it. Self-approve prompts that assert
+an exact section count will reject valid outputs that include the new section.
+
 ## Critique pass
 
 Drop `src/phases/prompts/<phase>-critique.md` to opt a phase into an in-process
