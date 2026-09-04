@@ -26,9 +26,7 @@ export async function performRetry(
     );
   }
 
-  const targetStatus: TicketStatus = ticket.phase === "intake"
-    ? "new"
-    : "waiting";
+  const targetStatus: TicketStatus = "waiting";
 
   await patchTicket({
     status: targetStatus,
