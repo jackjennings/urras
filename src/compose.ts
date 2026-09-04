@@ -398,7 +398,11 @@ export function composeTickDeps(
   });
 
   const providers: Provider[] = [githubProvider];
-  const jiraProviders: { baseUrl: string; instance: JiraProvider }[] = [];
+  const jiraProviders: {
+    baseUrl: string;
+    project: string;
+    instance: JiraProvider;
+  }[] = [];
 
   for (const entry of Object.values(config.jira ?? {})) {
     const jiraProvider = new JiraProvider({
@@ -412,7 +416,11 @@ export function composeTickDeps(
       run: captureCommandRunner(),
     });
     providers.push(jiraProvider);
-    jiraProviders.push({ baseUrl: entry.baseUrl, instance: jiraProvider });
+    jiraProviders.push({
+      baseUrl: entry.baseUrl,
+      project: entry.project,
+      instance: jiraProvider,
+    });
   }
 
   if (config.todoTxt) {
@@ -1057,27 +1065,18 @@ export function composeTickDeps(
       isProcessAlive: (ticketId) => isPhaseAlive(join(stateDir, ticketId)),
       writeTicket,
       appendLog: appendTicketLog,
-      fetchGitHubIssue: async (ticketId) => {
-        const parts = ticketId.split("/");
-        const org = parts[1];
-        const repo = parts[2];
-        const number = parts[3];
-        const slug = `${org}/${repo}`;
-        const { token } = resolveAccount(slug);
-        const url =
-          `https://api.github.com/repos/${org}/${repo}/issues/${number}`;
-        const res = await http.get(url, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/vnd.github+json",
-          },
-        });
-        if (!res.ok) return null;
-        const issue = (await res.json()) as {
-          title: string;
-          body: string | null;
-        };
-        return { title: issue.title, body: issue.body };
+      fetchCurrentTicket: (ticketId) => {
+        if (ticketId.startsWith("github/")) {
+          return githubProvider.fetchCurrent(ticketId);
+        }
+        if (ticketId.startsWith("jira/")) {
+          const key = ticketId.slice(5);
+          const project = key.split("-")[0];
+          const match = jiraProviders.find((j) => j.project === project);
+          return match?.instance.fetchCurrent(ticketId) ??
+            Promise.resolve(null);
+        }
+        return Promise.resolve(null);
       },
       writeUpstreamEditContextFile: async (ticketDir, content) => {
         const timestamp = compactTimestamp(

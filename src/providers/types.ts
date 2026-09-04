@@ -10,6 +10,9 @@ export interface Provider {
   fetchNew(knownIds: Set<string>): Promise<WorkItem[]>;
   close(url: string): Promise<void>;
   pickup(url: string): Promise<void>;
+  fetchCurrent(
+    ticketId: string,
+  ): Promise<{ title: string; body: string } | null>;
 }
 
 export function compareSortKeys(

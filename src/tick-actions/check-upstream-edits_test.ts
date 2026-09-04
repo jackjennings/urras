@@ -49,7 +49,7 @@ function makeDeps(
     isProcessAlive: () => false,
     writeTicket: () => Promise.resolve(),
     appendLog: () => Promise.resolve(),
-    fetchGitHubIssue: () =>
+    fetchCurrentTicket: () =>
       Promise.resolve({ title: BASE.title, body: BASE.body }),
     writeUpstreamEditContextFile: () => Promise.resolve(),
     judgeUpstreamEdit: () => Promise.resolve(false),
@@ -99,10 +99,17 @@ Deno.test(
   },
 );
 
-Deno.test("checkUpstreamEditsAction: does not apply for jira provider", () => {
-  assertFalse(
+Deno.test("checkUpstreamEditsAction: applies for jira provider", () => {
+  assert(
     checkUpstreamEditsAction(makeDeps()).applies(
-      makeTicket({ ...BASE, provider: "jira" }),
+      makeTicket({
+        ...BASE,
+        id: "jira/PROJ-1",
+        provider: "jira",
+        url: "https://example.atlassian.net/browse/PROJ-1",
+        phase: "spec" as const,
+        status: "waiting" as const,
+      }),
     ),
   );
 });
@@ -187,7 +194,7 @@ Deno.test(
     const writeTicketSpy = spy(() => Promise.resolve());
     const result = await checkUpstreamEditsAction(
       makeDeps({
-        fetchGitHubIssue: () => Promise.resolve(null),
+        fetchCurrentTicket: () => Promise.resolve(null),
         writeTicket: writeTicketSpy,
       }),
     ).run(makeTicket(BASE), "/state");
@@ -203,7 +210,7 @@ Deno.test(
     const written: TicketState[] = [];
     const result = await checkUpstreamEditsAction(
       makeDeps({
-        fetchGitHubIssue: () =>
+        fetchCurrentTicket: () =>
           Promise.resolve({ title: BASE.title, body: BASE.body }),
         appendLog: (_sd, _id, entry) => {
           logged.push(entry);
@@ -231,7 +238,7 @@ Deno.test(
     const judgeSpy = spy(() => Promise.resolve(false));
     await checkUpstreamEditsAction(
       makeDeps({
-        fetchGitHubIssue: () =>
+        fetchCurrentTicket: () =>
           Promise.resolve({ title: BASE.title, body: BASE.body }),
         judgeUpstreamEdit: judgeSpy,
       }),
@@ -246,7 +253,7 @@ Deno.test(
     const writeContextSpy = spy(() => Promise.resolve());
     const result = await checkUpstreamEditsAction(
       makeDeps({
-        fetchGitHubIssue: () =>
+        fetchCurrentTicket: () =>
           Promise.resolve({ title: BASE.title, body: "Changed body" }),
         judgeUpstreamEdit: () => Promise.resolve(true),
         writeUpstreamEditContextFile: writeContextSpy,
@@ -263,7 +270,7 @@ Deno.test(
     const writeContextSpy = spy(() => Promise.resolve());
     const result = await checkUpstreamEditsAction(
       makeDeps({
-        fetchGitHubIssue: () =>
+        fetchCurrentTicket: () =>
           Promise.resolve({ title: BASE.title, body: "Changed body" }),
         judgeUpstreamEdit: () => Promise.resolve(false),
         writeUpstreamEditContextFile: writeContextSpy,
@@ -280,7 +287,7 @@ Deno.test(
     const writeContextSpy = spy(() => Promise.resolve());
     const result = await checkUpstreamEditsAction(
       makeDeps({
-        fetchGitHubIssue: () =>
+        fetchCurrentTicket: () =>
           Promise.resolve({ title: BASE.title, body: "Changed body" }),
         judgeUpstreamEdit: () => Promise.resolve(null),
         writeUpstreamEditContextFile: writeContextSpy,
@@ -297,7 +304,7 @@ Deno.test(
     const logged: Record<string, unknown>[] = [];
     await checkUpstreamEditsAction(
       makeDeps({
-        fetchGitHubIssue: () =>
+        fetchCurrentTicket: () =>
           Promise.resolve({ title: "New title", body: "New body" }),
         judgeUpstreamEdit: () => Promise.resolve(false),
         appendLog: (_sd, _id, entry) => {
@@ -320,7 +327,7 @@ Deno.test(
     const logged: Record<string, unknown>[] = [];
     await checkUpstreamEditsAction(
       makeDeps({
-        fetchGitHubIssue: () =>
+        fetchCurrentTicket: () =>
           Promise.resolve({ title: BASE.title, body: "Changed body" }),
         judgeUpstreamEdit: () => Promise.resolve(null),
         appendLog: (_sd, _id, entry) => {
@@ -341,7 +348,7 @@ Deno.test(
     );
     const result = await checkUpstreamEditsAction(
       makeDeps({
-        fetchGitHubIssue: () =>
+        fetchCurrentTicket: () =>
           Promise.resolve({ title: "New title", body: BASE.body }),
         judgeUpstreamEdit: () => Promise.resolve(false),
         generateShortTitle: generateSpy,
@@ -359,7 +366,7 @@ Deno.test(
     const generateSpy = spy(() => Promise.resolve(null));
     await checkUpstreamEditsAction(
       makeDeps({
-        fetchGitHubIssue: () =>
+        fetchCurrentTicket: () =>
           Promise.resolve({ title: BASE.title, body: "Changed body" }),
         judgeUpstreamEdit: () => Promise.resolve(false),
         generateShortTitle: generateSpy,
@@ -374,7 +381,7 @@ Deno.test(
   async () => {
     const result = await checkUpstreamEditsAction(
       makeDeps({
-        fetchGitHubIssue: () =>
+        fetchCurrentTicket: () =>
           Promise.resolve({ title: "New title", body: BASE.body }),
         judgeUpstreamEdit: () => Promise.resolve(false),
         generateShortTitle: () => Promise.resolve(null),
@@ -389,7 +396,7 @@ Deno.test(
   async () => {
     const result = await checkUpstreamEditsAction(
       makeDeps({
-        fetchGitHubIssue: () =>
+        fetchCurrentTicket: () =>
           Promise.resolve({ title: "New title", body: "New body" }),
         judgeUpstreamEdit: () => Promise.resolve(false),
       }),
@@ -405,7 +412,7 @@ Deno.test(
     const logged: Record<string, unknown>[] = [];
     await checkUpstreamEditsAction(
       makeDeps({
-        fetchGitHubIssue: () =>
+        fetchCurrentTicket: () =>
           Promise.resolve({ title: BASE.title, body: null }),
         judgeUpstreamEdit: () => Promise.resolve(false),
         appendLog: (_sd, _id, entry) => {
@@ -424,7 +431,7 @@ Deno.test(
     const written: { ticketDir: string; content: string }[] = [];
     await checkUpstreamEditsAction(
       makeDeps({
-        fetchGitHubIssue: () =>
+        fetchCurrentTicket: () =>
           Promise.resolve({ title: "New title", body: "New body" }),
         judgeUpstreamEdit: () => Promise.resolve(true),
         writeUpstreamEditContextFile: (ticketDir, content) => {
@@ -450,7 +457,7 @@ Deno.test(
     const written: { ticketDir: string; content: string }[] = [];
     await checkUpstreamEditsAction(
       makeDeps({
-        fetchGitHubIssue: () =>
+        fetchCurrentTicket: () =>
           Promise.resolve({ title: "New title", body: BASE.body }),
         judgeUpstreamEdit: () => Promise.resolve(true),
         writeUpstreamEditContextFile: (ticketDir, content) => {
@@ -471,13 +478,92 @@ Deno.test(
   async () => {
     const result = await checkUpstreamEditsAction(
       makeDeps({
-        fetchGitHubIssue: () =>
+        fetchCurrentTicket: () =>
           Promise.resolve({ title: "New title", body: BASE.body }),
         judgeUpstreamEdit: () => Promise.resolve(false),
       }),
     ).run(makeTicket(BASE), "/state");
     assert(
       (result as TicketState | null)?.lastUpstreamSyncTimestamp !== undefined,
+    );
+  },
+);
+
+const BASE_JIRA = {
+  id: "jira/PROJ-1",
+  provider: "jira" as const,
+  url: "https://example.atlassian.net/browse/PROJ-1",
+  phase: "spec" as const,
+  status: "waiting" as const,
+  title: "Original Jira title",
+  body: "Original Jira body",
+  created: "2026-01-01T00:00:00Z",
+};
+
+Deno.test(
+  "checkUpstreamEditsAction: does not apply for todo-txt provider",
+  () => {
+    assertFalse(
+      checkUpstreamEditsAction(makeDeps()).applies(
+        makeTicket({ ...BASE, provider: "todo-txt" }),
+      ),
+    );
+  },
+);
+
+Deno.test(
+  "checkUpstreamEditsAction: jira substantive edit sets revising and writes context file",
+  async () => {
+    const writeContextSpy = spy(() => Promise.resolve());
+    const result = await checkUpstreamEditsAction(
+      makeDeps({
+        fetchCurrentTicket: () =>
+          Promise.resolve({
+            title: BASE_JIRA.title,
+            body: "Changed Jira body",
+          }),
+        judgeUpstreamEdit: () => Promise.resolve(true),
+        writeUpstreamEditContextFile: writeContextSpy,
+      }),
+    ).run(makeTicket(BASE_JIRA), "/state");
+    assertEquals((result as TicketState | null)?.status, "revising");
+    assertSpyCalls(writeContextSpy, 1);
+  },
+);
+
+Deno.test(
+  "checkUpstreamEditsAction: jira fetch failure returns null",
+  async () => {
+    const writeTicketSpy = spy(() => Promise.resolve());
+    const result = await checkUpstreamEditsAction(
+      makeDeps({
+        fetchCurrentTicket: () => Promise.resolve(null),
+        writeTicket: writeTicketSpy,
+      }),
+    ).run(makeTicket(BASE_JIRA), "/state");
+    assertEquals(result, null);
+    assertSpyCalls(writeTicketSpy, 0);
+  },
+);
+
+Deno.test(
+  "checkUpstreamEditsAction: jira context file content references jira ticket URL",
+  async () => {
+    const written: string[] = [];
+    await checkUpstreamEditsAction(
+      makeDeps({
+        fetchCurrentTicket: () =>
+          Promise.resolve({ title: "New title", body: "New body" }),
+        judgeUpstreamEdit: () => Promise.resolve(true),
+        writeUpstreamEditContextFile: (_dir, content) => {
+          written.push(content);
+          return Promise.resolve();
+        },
+      }),
+    ).run(makeTicket(BASE_JIRA), "/state");
+    assertStringIncludes(
+      written[0],
+      "https://example.atlassian.net/browse/PROJ-1",
     );
   },
 );

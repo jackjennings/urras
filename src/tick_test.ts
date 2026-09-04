@@ -92,6 +92,7 @@ Deno.test(
       },
       close: () => Promise.resolve(),
       pickup: () => Promise.resolve(),
+      fetchCurrent: () => Promise.resolve(null),
     };
     const deps = makeTickServiceDeps({
       providers: [provider],
@@ -116,6 +117,7 @@ Deno.test(
       fetchNew: () => Promise.resolve([item]),
       close: () => Promise.resolve(),
       pickup: () => Promise.resolve(),
+      fetchCurrent: () => Promise.resolve(null),
     };
     const writtenTickets: TicketState[] = [];
     const deps = makeTickServiceDeps({
@@ -150,6 +152,7 @@ Deno.test(
       fetchNew: () => Promise.resolve([item]),
       close: () => Promise.resolve(),
       pickup: () => Promise.resolve(),
+      fetchCurrent: () => Promise.resolve(null),
     };
     const appendLogSpy = spy(() => Promise.resolve());
     const deps = makeTickServiceDeps({
@@ -181,6 +184,7 @@ Deno.test(
       fetchNew: () => Promise.resolve([item]),
       close: () => Promise.resolve(),
       pickup: () => Promise.resolve(),
+      fetchCurrent: () => Promise.resolve(null),
     };
     const appendLogSpy = spy(() => Promise.resolve());
     const deps = makeTickServiceDeps({
@@ -1097,6 +1101,7 @@ Deno.test(
       fetchNew: () => Promise.resolve([item]),
       close: () => Promise.resolve(),
       pickup: () => Promise.resolve(),
+      fetchCurrent: () => Promise.resolve(null),
     };
     const writtenTickets: TicketState[] = [];
     const deps = makeTickServiceDeps({
@@ -1127,6 +1132,7 @@ Deno.test(
       fetchNew: () => Promise.resolve([item]),
       close: () => Promise.resolve(),
       pickup: () => Promise.resolve(),
+      fetchCurrent: () => Promise.resolve(null),
     };
     const writtenTickets: TicketState[] = [];
     const deps = makeTickServiceDeps({
@@ -1157,6 +1163,7 @@ Deno.test(
       fetchNew: () => Promise.resolve([item]),
       close: () => Promise.resolve(),
       pickup: () => Promise.resolve(),
+      fetchCurrent: () => Promise.resolve(null),
     };
     const writtenTickets: TicketState[] = [];
     const deps = makeTickServiceDeps({
