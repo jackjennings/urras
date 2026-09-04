@@ -16,6 +16,7 @@ export class ClaudeLanguageModel implements LanguageModel {
       const { code, stdout } = await this.run([
         "claude",
         "--print",
+        "--dangerously-skip-permissions",
         "--output-format",
         "text",
         "--system-prompt",
@@ -47,6 +48,7 @@ export class ClaudeLanguageModel implements LanguageModel {
       const { code, stdout } = await this.run([
         "claude",
         "--print",
+        "--dangerously-skip-permissions",
         "--output-format",
         "text",
         "--system-prompt",
