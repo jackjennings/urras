@@ -29,6 +29,16 @@ export interface CeremonyRunnerDeps {
   listTickets(): Promise<string[]>;
   readTicket(id: string): Promise<TicketState>;
   generateText(request: LanguageModelRequest): Promise<string | null>;
+  generateObject<T>(
+    request: LanguageModelRequest & { schema: object },
+  ): Promise<T | null>;
+  runGit(
+    args: string[],
+  ): Promise<{ success: boolean; stdout: string; stderr: string }>;
+  runGh(
+    args: string[],
+    token: string,
+  ): Promise<{ success: boolean; stdout: string; stderr: string }>;
   commitState(): Promise<void>;
   timeoutMs?: number;
 }
@@ -122,6 +132,9 @@ export class CeremonyRunner {
           listTickets: this.#deps.listTickets,
           readTicket: this.#deps.readTicket,
           generateText: this.#deps.generateText,
+          generateObject: this.#deps.generateObject,
+          runGit: this.#deps.runGit,
+          runGh: this.#deps.runGh,
           commitState: this.#deps.commitState,
           notify: this.#deps.notify,
         }),

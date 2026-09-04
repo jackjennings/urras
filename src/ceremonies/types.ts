@@ -15,6 +15,16 @@ export interface CeremonyContext {
   listTickets(): Promise<string[]>;
   readTicket(id: string): Promise<TicketState>;
   generateText(request: LanguageModelRequest): Promise<string | null>;
+  generateObject<T>(
+    request: LanguageModelRequest & { schema: object },
+  ): Promise<T | null>;
+  runGit(
+    args: string[],
+  ): Promise<{ success: boolean; stdout: string; stderr: string }>;
+  runGh(
+    args: string[],
+    token: string,
+  ): Promise<{ success: boolean; stdout: string; stderr: string }>;
   writeOutput(content: string): Promise<void>;
   commitState(): Promise<void>;
   notify(title: string, message: string): Promise<void>;

@@ -56,6 +56,9 @@ function makeRunner(
       readTicket: opts.readTicket ??
         (() => Promise.reject(new Error("not called"))),
       generateText: opts.generateText ?? (() => Promise.resolve("text")),
+      generateObject: () => Promise.resolve(null),
+      runGit: () => Promise.resolve({ success: true, stdout: "", stderr: "" }),
+      runGh: () => Promise.resolve({ success: true, stdout: "", stderr: "" }),
       commitState: opts.commitState ?? (() => Promise.resolve()),
       timeoutMs: opts.timeoutMs,
     },
