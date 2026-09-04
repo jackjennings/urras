@@ -75,7 +75,9 @@ import {
   checkNewCommentsAction,
   type RawComment,
 } from "./tick-actions/check-new-comments.ts";
+import { checkUpstreamEditsAction } from "./tick-actions/check-upstream-edits.ts";
 import { judgeComment } from "./judge-comment.ts";
+import { judgeUpstreamEdit } from "./judge-upstream-edit.ts";
 import { adf2markdown } from "adf2markdown";
 import {
   installPackages,
@@ -1047,6 +1049,57 @@ export function composeTickDeps(
           join(ticketDir, `${timestamp}-comment-context.md`),
           content,
         );
+      },
+      config,
+    }),
+    checkUpstreamEditsAction({
+      isProcessAlive: (ticketId) => isPhaseAlive(join(stateDir, ticketId)),
+      writeTicket,
+      appendLog: appendTicketLog,
+      fetchGitHubIssue: async (ticketId) => {
+        const parts = ticketId.split("/");
+        const org = parts[1];
+        const repo = parts[2];
+        const number = parts[3];
+        const slug = `${org}/${repo}`;
+        const { token } = resolveAccount(slug);
+        const url =
+          `https://api.github.com/repos/${org}/${repo}/issues/${number}`;
+        const res = await http.get(url, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/vnd.github+json",
+          },
+        });
+        if (!res.ok) return null;
+        const issue = (await res.json()) as {
+          title: string;
+          body: string | null;
+        };
+        return { title: issue.title, body: issue.body };
+      },
+      writeUpstreamEditContextFile: async (ticketDir, content) => {
+        const timestamp = compactTimestamp(
+          Temporal.Now.zonedDateTimeISO("UTC"),
+        );
+        await writeTextFile(
+          join(ticketDir, `${timestamp}-upstream-edit-context.md`),
+          content,
+        );
+      },
+      judgeUpstreamEdit: (oldTitle, newTitle, oldBody, newBody) =>
+        judgeUpstreamEdit(
+          oldTitle,
+          newTitle,
+          oldBody,
+          newBody,
+          captureCommandRunner(),
+          ollamaModels,
+        ),
+      generateShortTitle: async (title, body) => {
+        const available = await checkApfelAvailable(defaultCommandRunner());
+        if (!available) return null;
+        return apfelGenerateShortTitle(captureCommandRunner(), title, body);
       },
       config,
     }),

@@ -118,6 +118,7 @@ export interface TicketState {
   ciHandledRunIds?: string[];
   lastSeenCommentTimestamp?: string;
   lastSeenPrCommentTimestamp?: string;
+  lastUpstreamSyncTimestamp?: string;
   providerDone?: boolean;
   providerPickedUp?: boolean;
   outputRetries?: number;
@@ -194,6 +195,7 @@ export interface Config {
     maxPromptTokens?: number;
     maxTurns: number;
     checkNewComments?: boolean;
+    checkUpstreamEdits?: boolean;
   };
   codebase: { roots: string[] };
   pi: { provider: string; packages: string[] };
