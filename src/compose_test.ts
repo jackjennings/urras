@@ -1,6 +1,7 @@
 import { assertEquals, assertRejects } from "@std/assert";
 import { assertSpyCalls, spy } from "@std/testing/mock";
 import {
+  applyLearningToRepo,
   ensureStatePrompts,
   GitHubAuthError,
   preflightGitHubCredentials,
@@ -9,7 +10,7 @@ import {
 } from "./compose.ts";
 import { PHASE_SEQUENCE } from "./phases/types.ts";
 import { join } from "@std/path";
-import type { Config } from "./state/types.ts";
+import type { Config, LearningState } from "./state/types.ts";
 
 function makeConfig(overrides: Partial<Config["github"]> = {}): Config {
   return {
@@ -798,5 +799,55 @@ Deno.test(
     } finally {
       await Deno.remove(ticketDir, { recursive: true });
     }
+  },
+);
+
+// ── applyLearningToRepo ───────────────────────────────────────────────────────
+
+Deno.test(
+  "applyLearningToRepo: kind=procedure routes to procedurePath",
+  async () => {
+    const prosePath = spy(() => Promise.resolve("prose-url"));
+    const procedurePath = spy(() => Promise.resolve("proc-url"));
+    const l = { kind: "procedure" } as unknown as LearningState;
+    const url = await applyLearningToRepo(l, "intent", {
+      prosePath,
+      procedurePath,
+    });
+    assertEquals(url, "proc-url");
+    assertSpyCalls(procedurePath, 1);
+    assertSpyCalls(prosePath, 0);
+  },
+);
+
+Deno.test(
+  "applyLearningToRepo: kind absent routes to prosePath",
+  async () => {
+    const prosePath = spy(() => Promise.resolve("prose-url"));
+    const procedurePath = spy(() => Promise.resolve("proc-url"));
+    const l = {} as unknown as LearningState;
+    const url = await applyLearningToRepo(l, "intent", {
+      prosePath,
+      procedurePath,
+    });
+    assertEquals(url, "prose-url");
+    assertSpyCalls(prosePath, 1);
+    assertSpyCalls(procedurePath, 0);
+  },
+);
+
+Deno.test(
+  "applyLearningToRepo: kind=fact routes to prosePath",
+  async () => {
+    const prosePath = spy(() => Promise.resolve("prose-url"));
+    const procedurePath = spy(() => Promise.resolve("proc-url"));
+    const l = { kind: "fact" } as unknown as LearningState;
+    const url = await applyLearningToRepo(l, "intent", {
+      prosePath,
+      procedurePath,
+    });
+    assertEquals(url, "prose-url");
+    assertSpyCalls(prosePath, 1);
+    assertSpyCalls(procedurePath, 0);
   },
 );
