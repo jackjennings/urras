@@ -428,8 +428,7 @@ async function stateCommit(
 ): Promise<void> {
   const run = (cmd: string[]) =>
     new Deno.Command(cmd[0], { args: cmd.slice(1), cwd: stateDir }).output();
-  await run(["git", "add", ...addArgs]);
-  const result = await run([
+  const commitCmd = [
     "git",
     "-c",
     "user.name=urras",
@@ -440,14 +439,23 @@ async function stateCommit(
     "commit",
     "-m",
     message,
-  ]);
-  if (result.code !== 0) {
+  ];
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 500));
+    }
+    await run(["git", "add", ...addArgs]);
+    const result = await run(commitCmd);
+    if (result.code === 0) return;
     const stderr = new TextDecoder().decode(result.stderr);
     const stdout = new TextDecoder().decode(result.stdout);
     if (
-      !stderr.includes("nothing to commit") &&
-      !stdout.includes("nothing to commit")
+      stderr.includes("nothing to commit") ||
+      stdout.includes("nothing to commit")
     ) {
+      return;
+    }
+    if (!stderr.includes("index.lock") || attempt === 2) {
       throw new Error(`git commit failed: ${stderr}`);
     }
   }

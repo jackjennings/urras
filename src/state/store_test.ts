@@ -516,6 +516,79 @@ Deno.test("commitTicket: silently succeeds when nothing to commit", async () => 
   await Deno.remove(dir, { recursive: true });
 });
 
+Deno.test(
+  "commitTicket: retries on index.lock contention and succeeds",
+  async () => {
+    const dir = await Deno.makeTempDir();
+    try {
+      await initGitRepo(dir);
+      const run = (cmd: string[]) =>
+        new Deno.Command(cmd[0], { args: cmd.slice(1), cwd: dir }).output();
+      await Deno.mkdir(join(dir, "gh-retry"));
+      await Deno.writeTextFile(
+        join(dir, "gh-retry", "meta.md"),
+        "---\nid: gh-retry\n---\n",
+      );
+      await run(["git", "add", "-A"]);
+      await run(["git", "commit", "-m", "initial"]);
+
+      await Deno.writeTextFile(
+        join(dir, "gh-retry", "meta.md"),
+        "---\nid: gh-retry\nstatus: updated\n---\n",
+      );
+
+      const lockPath = join(dir, ".git", "index.lock");
+      await Deno.writeTextFile(lockPath, "");
+      setTimeout(() => Deno.remove(lockPath).catch(() => {}), 100);
+
+      await commitTicket(dir, "gh-retry", "test: retry");
+
+      const log = await run(["git", "log", "--format=%s", "-1"]);
+      assertEquals(
+        new TextDecoder().decode(log.stdout).trim(),
+        "test: retry",
+      );
+    } finally {
+      await Deno.remove(dir, { recursive: true });
+    }
+  },
+);
+
+Deno.test(
+  "commitTicket: throws after 3 consecutive index.lock failures",
+  async () => {
+    const dir = await Deno.makeTempDir();
+    try {
+      await initGitRepo(dir);
+      const run = (cmd: string[]) =>
+        new Deno.Command(cmd[0], { args: cmd.slice(1), cwd: dir }).output();
+      await Deno.mkdir(join(dir, "gh-lockfail"));
+      await Deno.writeTextFile(
+        join(dir, "gh-lockfail", "meta.md"),
+        "---\nid: gh-lockfail\n---\n",
+      );
+      await run(["git", "add", "-A"]);
+      await run(["git", "commit", "-m", "initial"]);
+
+      await Deno.writeTextFile(
+        join(dir, "gh-lockfail", "meta.md"),
+        "---\nid: gh-lockfail\nstatus: updated\n---\n",
+      );
+
+      const lockPath = join(dir, ".git", "index.lock");
+      await Deno.writeTextFile(lockPath, "");
+
+      await assertRejects(
+        () => commitTicket(dir, "gh-lockfail", "test: lockfail"),
+        Error,
+        "git commit failed:",
+      );
+    } finally {
+      await Deno.remove(dir, { recursive: true });
+    }
+  },
+);
+
 Deno.test("appendTicketLog: creates log.ndjson with a single JSON entry", async () => {
   const dir = await Deno.makeTempDir();
   await Deno.mkdir(join(dir, "gh-1"));
