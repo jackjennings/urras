@@ -68,7 +68,7 @@ Deno.test(
 );
 
 Deno.test(
-  "performRetry: resets intake/needs-attention to intake/new",
+  "performRetry: resets intake/needs-attention to intake/waiting",
   async () => {
     const ticket = makeTicket({ phase: "intake", status: "needs-attention" });
     const stateDir = await Deno.makeTempDir();
@@ -79,7 +79,7 @@ Deno.test(
       const meta = await Deno.readTextFile(
         join(stateDir, ticket.id, "meta.md"),
       );
-      assertStringIncludes(meta, "status: new");
+      assertStringIncludes(meta, "status: waiting");
       assertStringIncludes(meta, "phase: intake");
       assertFalse(meta.includes("pid:"));
     } finally {
@@ -142,7 +142,7 @@ Deno.test(
 );
 
 Deno.test(
-  "performRetry: appends log with 'new' as target for intake phase",
+  "performRetry: appends log with 'waiting' as target for intake phase",
   async () => {
     const ticket = makeTicket({ phase: "intake", status: "needs-attention" });
     const stateDir = await Deno.makeTempDir();
@@ -157,7 +157,7 @@ Deno.test(
       assertEquals(entry.event, "status-transition");
       assertEquals(entry.phase, "intake");
       assertEquals(entry.from, "needs-attention");
-      assertEquals(entry.to, "new");
+      assertEquals(entry.to, "waiting");
     } finally {
       await Deno.remove(stateDir, { recursive: true });
     }
