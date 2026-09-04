@@ -182,6 +182,25 @@ Deno.test("selfApprove: passes --model claude-haiku-4-5 to claude", async () => 
   }
 });
 
+Deno.test("selfApprove: passes --dangerously-skip-permissions to claude", async () => {
+  const tempDir = await Deno.makeTempDir();
+  try {
+    await Deno.writeTextFile(
+      join(tempDir, "20260717T120000-intake.md"),
+      "output",
+    );
+    const run = runnerReturning("APPROVE");
+    await selfApprove({ phase: "intake", ticketDir: tempDir, run });
+    const args = (run as ReturnType<typeof spy>).calls[0].args[0] as string[];
+    assert(
+      args.includes("--dangerously-skip-permissions"),
+      "--dangerously-skip-permissions must be present in args",
+    );
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
 Deno.test("selfApprove: APPROVE is case-insensitive", async () => {
   const tempDir = await Deno.makeTempDir();
   try {
