@@ -6,7 +6,7 @@ export interface CheckUpstreamEditsDeps {
   isProcessAlive: (ticketId: string) => boolean;
   writeTicket: (stateDir: string, t: TicketState) => Promise<void>;
   appendLog: (stateDir: string, id: string, entry: object) => Promise<void>;
-  fetchGitHubIssue: (
+  fetchCurrentTicket: (
     ticketId: string,
   ) => Promise<{ title: string; body: string | null } | null>;
   writeUpstreamEditContextFile: (
@@ -44,7 +44,7 @@ export function checkUpstreamEditsAction(
     label: "Checking upstream edits",
     applies(ticket: TicketState): boolean {
       return (
-        ticket.provider === "github" &&
+        (ticket.provider === "github" || ticket.provider === "jira") &&
         MONITORED_PHASES.has(ticket.phase) &&
         ticket.status === "waiting" &&
         !deps.isProcessAlive(ticket.id) &&
@@ -60,7 +60,7 @@ export function checkUpstreamEditsAction(
     ): Promise<TicketState | null> {
       const ticketDir = join(stateDir, ticket.id);
 
-      const fetched = await deps.fetchGitHubIssue(ticket.id);
+      const fetched = await deps.fetchCurrentTicket(ticket.id);
       if (fetched === null) return null;
 
       const fetchedTitle = fetched.title;

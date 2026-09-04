@@ -66,6 +66,12 @@ export class TodoTxtProvider implements Provider {
     return items;
   }
 
+  fetchCurrent(
+    _ticketId: string,
+  ): Promise<{ title: string; body: string } | null> {
+    return Promise.resolve(null);
+  }
+
   async close(url: string): Promise<void> {
     const match = url.match(/^todo-txt:\/\/(.+)#([0-9a-f]{8})$/);
     if (!match) throw new Error(`Cannot parse todo-txt URL: ${url}`);
