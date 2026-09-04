@@ -10,8 +10,10 @@ import {
 } from "@std/assert";
 import { join } from "@std/path";
 import { assertSpyCall, assertSpyCalls, spy } from "@std/testing/mock";
+import { Effect } from "effect";
 import { advancePhase, type TickDeps } from "./advance.ts";
 import type { TicketState } from "../state/types.ts";
+import { SelfReviewModelError } from "../self-approve.ts";
 import { loadPromptFile } from "./runners.ts";
 import { makeTickDeps, makeTicket } from "../test-support.ts";
 
@@ -1592,7 +1594,9 @@ Deno.test(
         join(ticketDir, "20260101T100001-spec.md"),
         "content",
       );
-      const readSelfApproveSpy = spy(() => Promise.resolve(null));
+      const readSelfApproveSpy = spy(() =>
+        Effect.succeed({ approved: false, reason: null })
+      );
       await advancePhase(
         ticket,
         stateDir,
@@ -1620,7 +1624,9 @@ Deno.test(
         join(ticketDir, "20260101T100001-spec.md"),
         "content",
       );
-      const readSelfApproveSpy = spy(() => Promise.resolve(null));
+      const readSelfApproveSpy = spy(() =>
+        Effect.succeed({ approved: false, reason: null })
+      );
       await advancePhase(
         ticket,
         stateDir,
@@ -1656,7 +1662,9 @@ Deno.test(
         join(ticketDir, "20260101T100002-spec.md"),
         "second output",
       );
-      const readSelfApproveSpy = spy(() => Promise.resolve(null));
+      const readSelfApproveSpy = spy(() =>
+        Effect.succeed({ approved: false, reason: null })
+      );
       await advancePhase(
         ticket,
         stateDir,
@@ -1689,7 +1697,9 @@ Deno.test(
         join(ticketDir, "20260101T100001-plan.md"),
         "content",
       );
-      const readSelfApproveSpy = spy(() => Promise.resolve(null));
+      const readSelfApproveSpy = spy(() =>
+        Effect.succeed({ approved: false, reason: null })
+      );
       await advancePhase(
         ticket,
         stateDir,
@@ -1717,7 +1727,9 @@ Deno.test(
         join(ticketDir, "20260101T100001-plan.md"),
         "content",
       );
-      const readSelfApproveSpy = spy(() => Promise.resolve(null));
+      const readSelfApproveSpy = spy(() =>
+        Effect.succeed({ approved: false, reason: null })
+      );
       await advancePhase(
         ticket,
         stateDir,
@@ -1856,8 +1868,7 @@ Deno.test(
         writeTicket: writeTicketSpy,
         appendLog: appendLogSpy,
         resolveModelConfig: () => ({ model: "m", thinking: "off" }),
-        readSelfApprove: () =>
-          Promise.resolve({ approved: true, reason: null }),
+        readSelfApprove: () => Effect.succeed({ approved: true, reason: null }),
       }),
     );
     assertSpyCalls(writeTicketSpy, 2);
@@ -1916,14 +1927,18 @@ Deno.test(
 );
 
 Deno.test(
-  "advancePhase: readSelfApprove returning null is treated as false",
+  "advancePhase: readSelfApprove failing Effect logs self-review-failed and does not approve",
   async () => {
     const ticket = makeTicket({ phase: "intake", status: "running" });
     const writeTicketSpy = spy((_dir: string, _t: TicketState) =>
       Promise.resolve()
     );
+    const logEntries: object[] = [];
     const appendLogSpy = spy(
-      (_dir: string, _id: string, _entry: object) => Promise.resolve(),
+      (_dir: string, _id: string, entry: object) => {
+        logEntries.push(entry);
+        return Promise.resolve();
+      },
     );
     await advancePhase(
       ticket,
@@ -1932,11 +1947,15 @@ Deno.test(
         writeTicket: writeTicketSpy,
         appendLog: appendLogSpy,
         resolveModelConfig: () => ({ model: "m", thinking: "off" }),
-        readSelfApprove: () => Promise.resolve(null),
+        readSelfApprove: () => Effect.fail(new SelfReviewModelError()),
       }),
     );
     assertSpyCalls(writeTicketSpy, 1);
-    assertSpyCalls(appendLogSpy, 1);
+    assertSpyCalls(appendLogSpy, 2);
+    assertEquals(logEntries[1], {
+      event: "self-review-failed",
+      phase: "intake",
+    });
   },
 );
 
@@ -1984,7 +2003,7 @@ Deno.test(
         writePhaseOutput: writePhaseOutputSpy,
         resolveModelConfig: () => ({ model: "m", thinking: "off" }),
         readSelfApprove: () =>
-          Promise.resolve({
+          Effect.succeed({
             approved: false,
             reason: "REJECT\nCriterion 1 violated.",
           }),
@@ -2032,7 +2051,7 @@ Deno.test(
     const readSelfApproveSpy = spy((ticketDir: string, phase: string) => {
       capturedTicketDir = ticketDir;
       capturedPhase = phase;
-      return Promise.resolve(null);
+      return Effect.succeed({ approved: false, reason: null });
     });
     await advancePhase(
       ticket,
@@ -2603,7 +2622,8 @@ Deno.test(
           stateDir,
           makeTickDeps({
             resolveModelConfig: () => ({ model: "m", thinking: "off" }),
-            readSelfApprove: () => Promise.resolve(null),
+            readSelfApprove: () =>
+              Effect.succeed({ approved: false, reason: null }),
           }),
         )
       );
@@ -3690,5 +3710,60 @@ Deno.test(
     assertExists(captured.opts);
     assertEquals(captured.opts.critiqueModel, "claude-haiku-4-5");
     assertEquals(captured.opts.critiqueThinking, "minimal");
+  },
+);
+
+Deno.test(
+  "advancePhase: selfApprove failing Effect logs self-review-failed event",
+  async () => {
+    const ticket = makeTicket({ phase: "intake", status: "running" });
+    const logEntries: object[] = [];
+    const appendLogSpy = spy(
+      (_dir: string, _id: string, entry: object) => {
+        logEntries.push(entry);
+        return Promise.resolve();
+      },
+    );
+    const writePhaseOutputSpy = spy(() => Promise.resolve());
+    await advancePhase(
+      ticket,
+      "/state",
+      makeTickDeps({
+        appendLog: appendLogSpy,
+        writePhaseOutput: writePhaseOutputSpy,
+        resolveModelConfig: () => ({ model: "m", thinking: "off" }),
+        readSelfApprove: () => Effect.fail(new SelfReviewModelError()),
+      }),
+    );
+    assertSpyCalls(writePhaseOutputSpy, 0);
+    assertEquals(logEntries.length, 2);
+    assertEquals(logEntries[1], {
+      event: "self-review-failed",
+      phase: "intake",
+    });
+  },
+);
+
+Deno.test(
+  "advancePhase: selfApprove failing Effect does not transition ticket status",
+  async () => {
+    const ticket = makeTicket({ phase: "intake", status: "running" });
+    const writtenTickets: TicketState[] = [];
+    const writeTicketSpy = spy((_dir: string, t: TicketState) => {
+      writtenTickets.push(t);
+      return Promise.resolve();
+    });
+    await advancePhase(
+      ticket,
+      "/state",
+      makeTickDeps({
+        writeTicket: writeTicketSpy,
+        resolveModelConfig: () => ({ model: "m", thinking: "off" }),
+        readSelfApprove: () => Effect.fail(new SelfReviewModelError()),
+      }),
+    );
+    assertSpyCalls(writeTicketSpy, 1);
+    assertEquals(writtenTickets[0].status, "waiting");
+    assertEquals(writtenTickets[0].approvals, []);
   },
 );

@@ -1,4 +1,5 @@
 import type { TicketState } from "./state/types.ts";
+import { Effect } from "effect";
 import { removeSync } from "./filesystem.ts";
 import type { TickServiceDeps } from "./tick.ts";
 import type { TickDeps } from "./phases/advance.ts";
@@ -32,7 +33,7 @@ export function makeTickDeps(overrides: Partial<TickDeps> = {}): TickDeps {
     writePhaseOutput: () => Promise.resolve(),
     appendLog: () => Promise.resolve(),
     resolveModelConfig: () => ({ model: "claude-sonnet-4-6", thinking: "off" }),
-    readSelfApprove: () => Promise.resolve(null),
+    readSelfApprove: () => Effect.succeed({ approved: false, reason: null }),
     markPRsReady: () => Promise.resolve(),
     readPhaseOutput: () => Promise.resolve("content"),
     appendPrinciples: () => Promise.resolve(),
