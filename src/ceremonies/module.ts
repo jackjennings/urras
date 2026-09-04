@@ -16,6 +16,7 @@ export interface ModuleCeremonyDeps {
   generateText(request: LanguageModelRequest): Promise<string | null>;
   commitState(): Promise<void>;
   notify?(title: string, message: string): Promise<void>;
+  pushTicket(ticket: { title: string; body: string }): Promise<void>;
 }
 
 export class ModuleCeremony implements Ceremony {
@@ -85,6 +86,7 @@ export class ModuleCeremony implements Ceremony {
       },
       log: (fields) =>
         this.#deps.appendTickLog({ ...fields, ceremony: this.name }),
+      pushTicket: (ticket) => this.#deps.pushTicket(ticket),
     };
 
     try {

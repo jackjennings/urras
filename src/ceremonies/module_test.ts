@@ -28,6 +28,7 @@ function makeCeremony(
     readTicket: () => Promise.resolve(makeTicket()),
     generateText: () => Promise.resolve("text"),
     commitState: () => Promise.resolve(),
+    pushTicket: () => Promise.resolve(),
     ...overrides,
   });
 }
@@ -225,6 +226,27 @@ Deno.test("ModuleCeremony: commitState is reachable from the context", async () 
     const commitState = spy(() => Promise.resolve());
     await makeCeremony(dir, { commitState }).run(TEST_NOW, join(dir, "output"));
     assertSpyCalls(commitState, 1);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("ModuleCeremony: pushTicket is reachable from the context", async () => {
+  const dir = await makeModuleDir(
+    `export default async function (context) {
+      await context.pushTicket({ title: "Fix bug", body: "Desc" });
+    }`,
+  );
+  try {
+    const pushTicket = spy((_ticket: { title: string; body: string }) =>
+      Promise.resolve()
+    );
+    await makeCeremony(dir, { pushTicket }).run(TEST_NOW, join(dir, "output"));
+    assertSpyCalls(pushTicket, 1);
+    assertEquals(pushTicket.calls[0].args[0], {
+      title: "Fix bug",
+      body: "Desc",
+    });
   } finally {
     await Deno.remove(dir, { recursive: true });
   }
