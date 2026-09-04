@@ -5,9 +5,11 @@ violated and why.
 
 Criteria:
 
-1. The output contains exactly three top-level sections: `## Relevant Code`,
-   `## Dependencies and Constraints`, and `## Open Questions`, in that order. No
-   additional `##` sections are present.
+1. The output contains the three required top-level sections `## Relevant Code`,
+   `## Dependencies and Constraints`, and `## Open Questions`, in that order. An
+   optional `## Revised Scope` section may appear after `## Open Questions` when
+   the agent determined intake scoped the ticket to the wrong repository. No
+   other `##` sections are present.
 2. Each of the three sections contains at least one sentence with non-whitespace
    characters.
 3. The output does not contain internally contradictory claims: the same file,

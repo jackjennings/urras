@@ -27,6 +27,17 @@ actual output or help text rather than assuming.
 Anything ambiguous in the ticket that will need to be resolved during spec or
 planning.
 
+If you have determined that intake scoped the ticket to the wrong repository,
+include a `## Revised Scope` section with the correct slug list:
+
+```yaml
+scope:
+  - org/correct-repo
+```
+
+Omit this section entirely when intake scope is correct. List slug entries only;
+do not include local paths or `(new)` markers.
+
 {{principles}}
 
 {{notion}}
