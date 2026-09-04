@@ -30,6 +30,7 @@ export interface CeremonyRunnerDeps {
   readTicket(id: string): Promise<TicketState>;
   generateText(request: LanguageModelRequest): Promise<string | null>;
   commitState(): Promise<void>;
+  pushTicket(ticket: { title: string; body: string }): Promise<void>;
   timeoutMs?: number;
 }
 
@@ -124,6 +125,7 @@ export class CeremonyRunner {
           generateText: this.#deps.generateText,
           commitState: this.#deps.commitState,
           notify: this.#deps.notify,
+          pushTicket: this.#deps.pushTicket,
         }),
         ceremonyDir,
         true,

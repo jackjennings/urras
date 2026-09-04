@@ -41,6 +41,7 @@ function makeRunner(
       request: LanguageModelRequest,
     ) => Promise<string | null>;
     commitState?: () => Promise<void>;
+    pushTicket?: (ticket: { title: string; body: string }) => Promise<void>;
     timeoutMs?: number;
   } = {},
 ): CeremonyRunner {
@@ -57,6 +58,7 @@ function makeRunner(
         (() => Promise.reject(new Error("not called"))),
       generateText: opts.generateText ?? (() => Promise.resolve("text")),
       commitState: opts.commitState ?? (() => Promise.resolve()),
+      pushTicket: opts.pushTicket ?? (() => Promise.resolve()),
       timeoutMs: opts.timeoutMs,
     },
     opts.ceremonies ?? [],
@@ -942,6 +944,32 @@ Deno.test("CeremonyRunner: an approved module runs", async () => {
       ),
       "done\n",
     );
+  } finally {
+    await Deno.remove(stateDir, { recursive: true });
+  }
+});
+
+Deno.test("CeremonyRunner: pushTicket from approved module calls the dep", async () => {
+  using _lazyboy = withLazyboyDir();
+  const stateDir = await Deno.makeTempDir();
+  try {
+    const dir = await writeModuleCeremony(
+      stateDir,
+      "digest",
+      `export default async function (context) {
+        await context.pushTicket({ title: "Fix bug", body: "Desc" });
+      }`,
+    );
+    await writeApprovals({ digest: { hash: await ceremonyHash(dir) } });
+    const pushTicket = spy(
+      (_ticket: { title: string; body: string }) => Promise.resolve(),
+    );
+    await makeRunner(stateDir, { now: () => TEST_NOW, pushTicket }).run();
+    assertSpyCalls(pushTicket, 1);
+    assertEquals(pushTicket.calls[0].args[0], {
+      title: "Fix bug",
+      body: "Desc",
+    });
   } finally {
     await Deno.remove(stateDir, { recursive: true });
   }

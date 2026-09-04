@@ -19,6 +19,7 @@ export interface CeremonyContext {
   commitState(): Promise<void>;
   notify(title: string, message: string): Promise<void>;
   log(entry: object): Promise<void>;
+  pushTicket(ticket: { title: string; body: string }): Promise<void>;
 }
 
 export type CeremonyModule = (
