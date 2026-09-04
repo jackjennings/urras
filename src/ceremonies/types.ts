@@ -35,6 +35,7 @@ export interface CeremonyContext {
   notify(title: string, message: string): Promise<void>;
   log(entry: object): Promise<void>;
   getModel(chain: ModelChainEntry[]): LanguageModel;
+  pushTicket(ticket: { title: string; body: string }): Promise<void>;
 }
 
 export type CeremonyModule = (
