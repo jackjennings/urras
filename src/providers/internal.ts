@@ -76,6 +76,10 @@ export class InternalProvider implements Provider {
     return items;
   }
 
+  pickup(_url: string): Promise<void> {
+    return Promise.resolve();
+  }
+
   close(_url: string): Promise<void> {
     return Promise.resolve();
   }
