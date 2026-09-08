@@ -27,6 +27,8 @@ import {
   readPhaseSessionId,
   readSelfApprove,
 } from "./run-phase.ts";
+import { Effect } from "effect";
+import { SelfReviewModelError } from "./self-approve.ts";
 import { judgePrinciples } from "./judge-principles.ts";
 import { expandHome } from "./config.ts";
 import { urrasDir } from "./paths.ts";
@@ -1148,7 +1150,15 @@ export function composeTickDeps(
       appendLog: appendTicketLog,
       resolveModelConfig: (phase, ticket) =>
         resolvePhaseModel(config, phase, ticket),
-      readSelfApprove: (ticketDir, phase) => readSelfApprove(ticketDir, phase),
+      readSelfApprove: (ticketDir, phase) =>
+        Effect.tryPromise({
+          try: async () => {
+            const result = await readSelfApprove(ticketDir, phase);
+            if (result === null) throw new SelfReviewModelError();
+            return result;
+          },
+          catch: () => new SelfReviewModelError(),
+        }),
       readPhaseOutput,
       appendPrinciples: async (sd, ticketId, phase, outputContent) => {
         if (!config.tick.principles) return;
