@@ -483,9 +483,9 @@ Deno.test(
       const readTicketSpy = spy(readTicketImpl);
       let refreshCalled = false;
       const deps: HudWatcherDeps = {
-        readTicketFn: readTicketSpy,
-        readTicketTokensFn: () => Promise.resolve(null),
-        isPhaseAliveFn: () => false,
+        readTicket: readTicketSpy,
+        readTicketTokens: () => Promise.resolve(null),
+        isPhaseAlive: () => false,
       };
 
       await handleTicketWatcherEvent({
@@ -533,9 +533,9 @@ Deno.test(
       );
       let refreshCalled = false;
       const deps: HudWatcherDeps = {
-        readTicketFn: readTicketSpy,
-        readTicketTokensFn: () => Promise.resolve(null),
-        isPhaseAliveFn: () => false,
+        readTicket: readTicketSpy,
+        readTicketTokens: () => Promise.resolve(null),
+        isPhaseAlive: () => false,
       };
 
       await handleTicketWatcherEvent({
@@ -592,9 +592,9 @@ Deno.test(
         Promise.resolve({ id } as unknown as TicketState)
       );
       const deps: HudWatcherDeps = {
-        readTicketFn: readTicketSpy,
-        readTicketTokensFn: () => Promise.resolve(null),
-        isPhaseAliveFn: () => false,
+        readTicket: readTicketSpy,
+        readTicketTokens: () => Promise.resolve(null),
+        isPhaseAlive: () => false,
       };
 
       await handleRootWatcherEvent({
@@ -659,10 +659,10 @@ Deno.test(
       ]);
       const watchers = new Set<Deno.FsWatcher>();
       const deps: HudWatcherDeps = {
-        readTicketFn: (_s: string, id: string) =>
+        readTicket: (_s: string, id: string) =>
           Promise.resolve({ id } as unknown as TicketState),
-        readTicketTokensFn: () => Promise.resolve(null),
-        isPhaseAliveFn: () => false,
+        readTicketTokens: () => Promise.resolve(null),
+        isPhaseAlive: () => false,
       };
 
       await handleRootWatcherEvent({
@@ -690,10 +690,10 @@ Deno.test(
   "loadTicketEntry: returns ok entry when readTicket succeeds",
   async () => {
     const deps: HudWatcherDeps = {
-      readTicketFn: (_s: string, id: string) =>
+      readTicket: (_s: string, id: string) =>
         Promise.resolve({ id } as unknown as TicketState),
-      readTicketTokensFn: () => Promise.resolve(42),
-      isPhaseAliveFn: () => true,
+      readTicketTokens: () => Promise.resolve(42),
+      isPhaseAlive: () => true,
     };
     const entry = await loadTicketEntry("/state", "github/org/repo/1", deps);
     assert(entry.ok);
@@ -708,9 +708,9 @@ Deno.test(
   "loadTicketEntry: returns error entry when readTicket throws",
   async () => {
     const deps: HudWatcherDeps = {
-      readTicketFn: () => Promise.reject(new Error("parse failed")),
-      readTicketTokensFn: () => Promise.resolve(null),
-      isPhaseAliveFn: () => false,
+      readTicket: () => Promise.reject(new Error("parse failed")),
+      readTicketTokens: () => Promise.resolve(null),
+      isPhaseAlive: () => false,
     };
     const entry = await loadTicketEntry("/state", "github/org/repo/1", deps);
     assertFalse(entry.ok);

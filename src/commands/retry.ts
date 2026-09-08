@@ -14,7 +14,9 @@ export async function performRetry(
     commitFn = commitTicket,
     readTicketFn = readTicketWithPatch,
   }: {
+    // deno-lint-ignore no-fn-suffix/no-fn-suffix
     commitFn?: typeof commitTicket;
+    // deno-lint-ignore no-fn-suffix/no-fn-suffix
     readTicketFn?: typeof readTicketWithPatch;
   } = {},
 ): Promise<{ phase: TicketPhase; targetStatus: TicketStatus }> {

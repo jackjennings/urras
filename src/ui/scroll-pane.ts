@@ -25,6 +25,7 @@ export class ScrollPane implements Component, Focusable {
   private titleFn: () => string;
   private getHeight: () => number;
   private expanded?: {
+    // deno-lint-ignore no-fn-suffix/no-fn-suffix
     getLinesFn: (width: number) => string[];
     width: number;
     lines: string[];

@@ -14,9 +14,13 @@ import { defaultCommandRunner } from "../apfel.ts";
 import type { Command } from "./types.ts";
 
 export type TickUpdateDeps = {
+  // deno-lint-ignore no-fn-suffix/no-fn-suffix
   updateFn: (dir: string) => Promise<UpdateOutcome>;
+  // deno-lint-ignore no-fn-suffix/no-fn-suffix
   logFn: typeof appendTickLog;
+  // deno-lint-ignore no-fn-suffix/no-fn-suffix
   reexecFn: (indexPath: string) => Promise<void>;
+  // deno-lint-ignore no-fn-suffix/no-fn-suffix
   notifyDivergenceFn: (divergence: Divergence | null) => Promise<void>;
 };
 

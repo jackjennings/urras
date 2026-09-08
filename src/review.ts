@@ -256,7 +256,9 @@ export async function applyApproval(
     readTicketFn = readTicketWithPatch,
     commitFn = commitTicket,
   }: {
+    // deno-lint-ignore no-fn-suffix/no-fn-suffix
     readTicketFn?: typeof readTicketWithPatch;
+    // deno-lint-ignore no-fn-suffix/no-fn-suffix
     commitFn?: typeof commitTicket;
   } = {},
 ): Promise<void> {
@@ -520,7 +522,9 @@ export async function review(
     isTerminal?: () => boolean;
     readStdin?: () => Promise<string>;
     stateDir?: string;
+    // deno-lint-ignore no-fn-suffix/no-fn-suffix
     readTicketFn?: typeof readTicketWithPatch;
+    // deno-lint-ignore no-fn-suffix/no-fn-suffix
     commitFn?: typeof commitTicket;
   } = {},
 ): Promise<void> {

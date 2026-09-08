@@ -35,9 +35,9 @@ export type TicketEntry =
   | { ok: false; id: string; error: string };
 
 export interface HudWatcherDeps {
-  readTicketFn: (stateDir: string, id: string) => Promise<TicketState>;
-  readTicketTokensFn: (ticketDir: string) => Promise<number | null>;
-  isPhaseAliveFn: (ticketDir: string) => boolean;
+  readTicket: (stateDir: string, id: string) => Promise<TicketState>;
+  readTicketTokens: (ticketDir: string) => Promise<number | null>;
+  isPhaseAlive: (ticketDir: string) => boolean;
 }
 
 const BLOCKED_COMMANDS = new Set(["hud", "shell", "tail", "review"]);
@@ -233,10 +233,10 @@ export async function loadTicketEntry(
   const ticketDir = join(stateDir, id);
   try {
     const [ticket, tokens] = await Promise.all([
-      deps.readTicketFn(stateDir, id),
-      deps.readTicketTokensFn(ticketDir),
+      deps.readTicket(stateDir, id),
+      deps.readTicketTokens(ticketDir),
     ]);
-    const alive = deps.isPhaseAliveFn(ticketDir);
+    const alive = deps.isPhaseAlive(ticketDir);
     return { ok: true, ticket, tokens, alive };
   } catch (error) {
     return {
@@ -483,9 +483,9 @@ export const hud: Command = {
     const ticketDirMap = new Map<string, string>();
     const ticketWatchers = new Set<Deno.FsWatcher>();
     const hudDeps: HudWatcherDeps = {
-      readTicketFn: readTicket,
-      readTicketTokensFn: readTicketTokens,
-      isPhaseAliveFn: isPhaseAlive,
+      readTicket,
+      readTicketTokens,
+      isPhaseAlive,
     };
 
     commandEditor.onSubmit = async (value: string) => {

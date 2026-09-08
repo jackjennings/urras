@@ -1,4 +1,7 @@
 {
+  "lint": {
+    "plugins": ["./lint-plugins/no-fn-suffix.ts"]
+  },
   "tasks": {
     "start": "deno run --allow-all src/index.ts",
     "test": "URRAS_DIR=$(mktemp -d) deno test --allow-all src/ migrations/ bin/",

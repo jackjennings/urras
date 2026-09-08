@@ -201,6 +201,7 @@ export function calculateAnthropicCost(
 export interface RefreshAnthropicPricingDeps {
   homeDir: string;
   fetcher: typeof fetch;
+  // deno-lint-ignore no-fn-suffix/no-fn-suffix
   logFn: typeof appendTickLog;
 }
 
