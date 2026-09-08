@@ -802,6 +802,26 @@ Deno.test(
 );
 
 Deno.test(
+  "index: catches command error and exits 1 with message only",
+  async () => {
+    const stateDir = await Deno.makeTempDir();
+    const home = await makeFakeHome(stateDir);
+    try {
+      const result = await runIndex(["approve", "nonexistent-ticket"], {
+        HOME: home,
+      });
+      assertEquals(result.code, 1);
+      const stderr = new TextDecoder().decode(result.stderr);
+      assertFalse(stderr.includes("Uncaught"));
+      assertStringIncludes(stderr, "nonexistent-ticket");
+    } finally {
+      await Deno.remove(stateDir, { recursive: true });
+      await Deno.remove(home, { recursive: true });
+    }
+  },
+);
+
+Deno.test(
   "tick.sh: does not call lazyboy update",
   async () => {
     const tickSh = new URL("../scripts/tick.sh", import.meta.url).pathname;

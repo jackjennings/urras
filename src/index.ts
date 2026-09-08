@@ -46,4 +46,9 @@ if (Deno.args[1] === "--help") {
   Deno.exit(0);
 }
 
-await command.run(Deno.args.slice(1));
+try {
+  await command.run(Deno.args.slice(1));
+} catch (err) {
+  console.error(err instanceof Error ? err.message : String(err));
+  Deno.exit(1);
+}
