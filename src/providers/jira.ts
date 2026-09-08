@@ -27,6 +27,7 @@ export class JiraProvider implements Provider {
   private apiToken: string;
   private project: string;
   private doneStatusName: string;
+  private pickupStatusName: string;
   private http: HttpClient;
   private run: CommandRunner;
 
@@ -36,6 +37,7 @@ export class JiraProvider implements Provider {
     apiToken: string;
     project: string;
     doneStatusName: string;
+    pickupStatusName?: string;
     http: HttpClient;
     run?: CommandRunner;
   }) {
@@ -44,6 +46,7 @@ export class JiraProvider implements Provider {
     this.apiToken = opts.apiToken;
     this.project = opts.project;
     this.doneStatusName = opts.doneStatusName;
+    this.pickupStatusName = opts.pickupStatusName ?? "In Progress";
     this.http = opts.http;
     this.run = opts.run ?? captureCommandRunner();
   }
@@ -59,6 +62,21 @@ export class JiraProvider implements Provider {
       apiToken: this.apiToken,
       issueKey: match[1],
       targetStatusName: this.doneStatusName,
+      http: this.http,
+    });
+  }
+
+  async pickup(url: string): Promise<void> {
+    const match = url.match(/\/browse\/([^/]+)$/);
+    if (!match) {
+      throw new Error(`Cannot parse Jira issue URL: ${url}`);
+    }
+    await jiraTransition({
+      baseUrl: this.baseUrl,
+      email: this.email,
+      apiToken: this.apiToken,
+      issueKey: match[1],
+      targetStatusName: this.pickupStatusName,
       http: this.http,
     });
   }

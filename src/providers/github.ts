@@ -210,6 +210,10 @@ export class GitHubProvider implements Provider {
     };
   }
 
+  pickup(_url: string): Promise<void> {
+    return Promise.resolve();
+  }
+
   async close(url: string): Promise<void> {
     const parsed = parseIssueUrl(url);
     if (!parsed) {

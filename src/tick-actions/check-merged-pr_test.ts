@@ -294,7 +294,7 @@ Deno.test(
     const closedUrls: string[] = [];
     const result = await makeAction({
       getPRState: () => Promise.resolve("merged"),
-      closeWorkItem: (url) => {
+      closeWorkItem: (url, _provider) => {
         closedUrls.push(url);
         return Promise.resolve();
       },

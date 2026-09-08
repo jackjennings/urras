@@ -9,6 +9,7 @@ export interface WorkItem {
 export interface Provider {
   fetchNew(knownIds: Set<string>): Promise<WorkItem[]>;
   close(url: string): Promise<void>;
+  pickup(url: string): Promise<void>;
 }
 
 export function compareSortKeys(
