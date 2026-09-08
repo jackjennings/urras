@@ -171,6 +171,7 @@ export async function advancePhase(
         phase: activePhase,
         tokens,
         maxTokens: threshold,
+        scope: ticket.scope,
       });
     }
     const { model: revisingModel, thinking: revisingThinking } = deps
@@ -245,6 +246,7 @@ export async function advancePhase(
         phase: "intake",
         tokens,
         maxTokens: threshold,
+        scope: ticket.scope,
       });
     }
     const { model: intakeModel, thinking: intakeThinking } = deps
@@ -733,6 +735,7 @@ export async function advancePhase(
         phase: next,
         tokens,
         maxTokens: threshold,
+        scope: ticket.scope,
       });
     }
     let resolvedTicket = ticket;

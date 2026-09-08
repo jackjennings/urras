@@ -2792,7 +2792,11 @@ Deno.test(
 Deno.test(
   "advancePhase: emits prompt-too-long for intake path when threshold exceeded",
   async () => {
-    const ticket = makeTicket({ phase: "intake", status: "new" });
+    const ticket = makeTicket({
+      phase: "intake",
+      status: "new",
+      scope: ["jackjennings/lazyboy"],
+    });
     const appendLogSpy = spy(
       (_dir: string, _id: string, _entry: object) => Promise.resolve(),
     );
@@ -2816,6 +2820,7 @@ Deno.test(
     assertEquals(warning.event, "prompt-too-long");
     assertEquals(warning.phase, "intake");
     assertEquals(warning.maxTokens, 1);
+    assertEquals(warning.scope, ["jackjennings/lazyboy"]);
     assertLess(0, warning.tokens as number);
   },
 );
@@ -2823,7 +2828,11 @@ Deno.test(
 Deno.test(
   "advancePhase: emits prompt-too-long for revising path when threshold exceeded",
   async () => {
-    const ticket = makeTicket({ phase: "enrichment", status: "revising" });
+    const ticket = makeTicket({
+      phase: "enrichment",
+      status: "revising",
+      scope: ["jackjennings/lazyboy"],
+    });
     const appendLogSpy = spy(
       (_dir: string, _id: string, _entry: object) => Promise.resolve(),
     );
@@ -2846,6 +2855,7 @@ Deno.test(
     assert(warning !== undefined, "expected prompt-too-long event");
     assertEquals(warning.phase, "enrichment");
     assertEquals(warning.maxTokens, 1);
+    assertEquals(warning.scope, ["jackjennings/lazyboy"]);
     assertLess(0, warning.tokens as number);
   },
 );
@@ -2929,6 +2939,7 @@ Deno.test(
     const ticket = makeTicket({
       phase: "intake",
       status: "waiting",
+      scope: ["jackjennings/lazyboy"],
       approvals: [{
         timestamp: "2026-08-06T00:00:00Z",
         actor: "human",
@@ -2957,6 +2968,7 @@ Deno.test(
     assert(warning !== undefined, "expected prompt-too-long event");
     assertEquals(warning.phase, "enrichment");
     assertEquals(warning.maxTokens, 1);
+    assertEquals(warning.scope, ["jackjennings/lazyboy"]);
     assertLess(0, warning.tokens as number);
   },
 );
