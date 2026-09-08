@@ -185,7 +185,9 @@ Deno.test("selfApprove: passes --dangerously-skip-permissions to claude", async 
       "output",
     );
     const run = runnerReturning("APPROVE");
-    await Effect.runPromise(selfApprove({ phase: "intake", ticketDir: tempDir, run }));
+    await Effect.runPromise(
+      selfApprove({ phase: "intake", ticketDir: tempDir, run }),
+    );
     const args = (run as ReturnType<typeof spy>).calls[0].args[0] as string[];
     assert(
       args.includes("--dangerously-skip-permissions"),
