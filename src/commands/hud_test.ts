@@ -10,18 +10,25 @@ import {
 } from "@std/assert";
 import { dirname, join } from "@std/path";
 import { dim, stripAnsiCode } from "@std/fmt/colors";
+import { assertSpyCalls, spy } from "@std/testing/mock";
+import type { TicketState } from "../state/types.ts";
 import {
   formatHudHeader,
   formatTickLogLine,
+  handleRootWatcherEvent,
+  handleTicketWatcherEvent,
   HUD_CHROME_ROWS,
   hudAutocompleteProvider,
+  type HudWatcherDeps,
   isBlockedCommand,
+  loadTicketEntry,
   logPaneLines,
   openLogWatch,
   paneHeights,
   parseCommand,
   readTickLog,
   TICK_LOG_TAIL_LINES,
+  type TicketEntry,
 } from "./hud.ts";
 
 // ── formatTickLogLine ─────────────────────────────────────────────────────────
@@ -447,3 +454,268 @@ Deno.test("hudAutocompleteProvider: applyCompletion handles token-2 replacement"
     cursorCol: 37,
   });
 });
+
+// ── handleTicketWatcherEvent ──────────────────────────────────────────────────
+
+Deno.test(
+  "handleTicketWatcherEvent: re-reads only the changed ticket",
+  async () => {
+    const tmpDir = await Deno.makeTempDir();
+    try {
+      const idA = "github/org/repo/1";
+      const idB = "github/org/repo/2";
+      const fakeEntry = (id: string): TicketEntry => ({
+        ok: true,
+        ticket: { id } as unknown as TicketState,
+        tokens: null,
+        alive: false,
+      });
+      const ticketMap = new Map<string, TicketEntry>([
+        [idA, fakeEntry(idA)],
+        [idB, fakeEntry(idB)],
+      ]);
+      const ticketDirMap = new Map<string, string>([
+        [join(tmpDir, idA), idA],
+        [join(tmpDir, idB), idB],
+      ]);
+      const readTicketImpl = (_s: string, id: string) =>
+        Promise.resolve({ id } as unknown as TicketState);
+      const readTicketSpy = spy(readTicketImpl);
+      let refreshCalled = false;
+      const deps: HudWatcherDeps = {
+        readTicketFn: readTicketSpy,
+        readTicketTokensFn: () => Promise.resolve(null),
+        isPhaseAliveFn: () => false,
+      };
+
+      await handleTicketWatcherEvent({
+        stateDir: tmpDir,
+        eventPath: join(tmpDir, idA, "meta.md"),
+        ticketMap,
+        ticketDirMap,
+        deps,
+        scheduleRefresh: () => {
+          refreshCalled = true;
+        },
+      });
+
+      assertSpyCalls(readTicketSpy, 1);
+      assertEquals(readTicketSpy.calls[0].args[1], idA);
+      assert(refreshCalled);
+    } finally {
+      await Deno.remove(tmpDir, { recursive: true });
+    }
+  },
+);
+
+Deno.test(
+  "handleTicketWatcherEvent: discards event outside any known ticket dir",
+  async () => {
+    const tmpDir = await Deno.makeTempDir();
+    try {
+      const idA = "github/org/repo/1";
+      const ticketMap = new Map<string, TicketEntry>([
+        [
+          idA,
+          {
+            ok: true,
+            ticket: { id: idA } as unknown as TicketState,
+            tokens: null,
+            alive: false,
+          },
+        ],
+      ]);
+      const ticketDirMap = new Map<string, string>([
+        [join(tmpDir, idA), idA],
+      ]);
+      const readTicketSpy = spy((_s: string, id: string) =>
+        Promise.resolve({ id } as unknown as TicketState)
+      );
+      let refreshCalled = false;
+      const deps: HudWatcherDeps = {
+        readTicketFn: readTicketSpy,
+        readTicketTokensFn: () => Promise.resolve(null),
+        isPhaseAliveFn: () => false,
+      };
+
+      await handleTicketWatcherEvent({
+        stateDir: tmpDir,
+        eventPath: join(tmpDir, ".git", "index"),
+        ticketMap,
+        ticketDirMap,
+        deps,
+        scheduleRefresh: () => {
+          refreshCalled = true;
+        },
+      });
+
+      assertSpyCalls(readTicketSpy, 0);
+      assertFalse(refreshCalled);
+    } finally {
+      await Deno.remove(tmpDir, { recursive: true });
+    }
+  },
+);
+
+// ── handleRootWatcherEvent ────────────────────────────────────────────────────
+
+Deno.test(
+  "handleRootWatcherEvent: adds newly appearing ticket to map and starts watcher",
+  async () => {
+    const tmpDir = await Deno.makeTempDir();
+    try {
+      const idA = "github/org/repo/1";
+      const idB = "github/org/repo/2";
+
+      await Deno.mkdir(join(tmpDir, idA), { recursive: true });
+      await Deno.mkdir(join(tmpDir, idB), { recursive: true });
+      await Deno.writeTextFile(join(tmpDir, idA, "meta.md"), "---\n---\n");
+      await Deno.writeTextFile(join(tmpDir, idB, "meta.md"), "---\n---\n");
+
+      const ticketMap = new Map<string, TicketEntry>([
+        [
+          idA,
+          {
+            ok: true,
+            ticket: { id: idA } as unknown as TicketState,
+            tokens: null,
+            alive: false,
+          },
+        ],
+      ]);
+      const ticketDirMap = new Map<string, string>([
+        [join(tmpDir, idA), idA],
+      ]);
+      const watchers = new Set<Deno.FsWatcher>();
+      let refreshCalled = false;
+      const readTicketSpy = spy((_s: string, id: string) =>
+        Promise.resolve({ id } as unknown as TicketState)
+      );
+      const deps: HudWatcherDeps = {
+        readTicketFn: readTicketSpy,
+        readTicketTokensFn: () => Promise.resolve(null),
+        isPhaseAliveFn: () => false,
+      };
+
+      await handleRootWatcherEvent({
+        stateDir: tmpDir,
+        ticketMap,
+        ticketDirMap,
+        watchers,
+        deps,
+        scheduleRefresh: () => {
+          refreshCalled = true;
+        },
+      });
+
+      assert(ticketMap.has(idB));
+      assert(ticketDirMap.has(join(tmpDir, idB)));
+      assertEquals(watchers.size, 1);
+      assert(refreshCalled);
+      assertSpyCalls(readTicketSpy, 1);
+      assertEquals(readTicketSpy.calls[0].args[1], idB);
+
+      for (const w of watchers) w.close();
+    } finally {
+      await Deno.remove(tmpDir, { recursive: true });
+    }
+  },
+);
+
+Deno.test(
+  "handleRootWatcherEvent: removes deleted ticket from maps",
+  async () => {
+    const tmpDir = await Deno.makeTempDir();
+    try {
+      const idA = "github/org/repo/1";
+
+      await Deno.mkdir(join(tmpDir, idA), { recursive: true });
+      await Deno.writeTextFile(join(tmpDir, idA, "meta.md"), "---\n---\n");
+
+      const idGone = "github/org/repo/99";
+      const ticketMap = new Map<string, TicketEntry>([
+        [
+          idA,
+          {
+            ok: true,
+            ticket: { id: idA } as unknown as TicketState,
+            tokens: null,
+            alive: false,
+          },
+        ],
+        [
+          idGone,
+          {
+            ok: true,
+            ticket: { id: idGone } as unknown as TicketState,
+            tokens: null,
+            alive: false,
+          },
+        ],
+      ]);
+      const ticketDirMap = new Map<string, string>([
+        [join(tmpDir, idA), idA],
+        [join(tmpDir, idGone), idGone],
+      ]);
+      const watchers = new Set<Deno.FsWatcher>();
+      const deps: HudWatcherDeps = {
+        readTicketFn: (_s: string, id: string) =>
+          Promise.resolve({ id } as unknown as TicketState),
+        readTicketTokensFn: () => Promise.resolve(null),
+        isPhaseAliveFn: () => false,
+      };
+
+      await handleRootWatcherEvent({
+        stateDir: tmpDir,
+        ticketMap,
+        ticketDirMap,
+        watchers,
+        deps,
+        scheduleRefresh: () => {},
+      });
+
+      assertFalse(ticketMap.has(idGone));
+      assertFalse(ticketDirMap.has(join(tmpDir, idGone)));
+
+      for (const w of watchers) w.close();
+    } finally {
+      await Deno.remove(tmpDir, { recursive: true });
+    }
+  },
+);
+
+// ── loadTicketEntry ───────────────────────────────────────────────────────────
+
+Deno.test(
+  "loadTicketEntry: returns ok entry when readTicket succeeds",
+  async () => {
+    const deps: HudWatcherDeps = {
+      readTicketFn: (_s: string, id: string) =>
+        Promise.resolve({ id } as unknown as TicketState),
+      readTicketTokensFn: () => Promise.resolve(42),
+      isPhaseAliveFn: () => true,
+    };
+    const entry = await loadTicketEntry("/state", "github/org/repo/1", deps);
+    assert(entry.ok);
+    if (entry.ok) {
+      assertEquals(entry.tokens, 42);
+      assert(entry.alive);
+    }
+  },
+);
+
+Deno.test(
+  "loadTicketEntry: returns error entry when readTicket throws",
+  async () => {
+    const deps: HudWatcherDeps = {
+      readTicketFn: () => Promise.reject(new Error("parse failed")),
+      readTicketTokensFn: () => Promise.resolve(null),
+      isPhaseAliveFn: () => false,
+    };
+    const entry = await loadTicketEntry("/state", "github/org/repo/1", deps);
+    assertFalse(entry.ok);
+    if (!entry.ok) {
+      assertStringIncludes(entry.error, "parse failed");
+    }
+  },
+);
