@@ -48,11 +48,20 @@ import {
   type RepoIdentityTable,
 } from "./providers/github/repo-identity.ts";
 import {
+  canonicalLoginFor,
+  currentLoginFor,
+  makeOrgTableIO,
+  type OrgIdentityTable,
+} from "./providers/github/org-identity.ts";
+import {
   parsePrUrl,
   parseTicketId,
   slugOf,
 } from "./providers/github/identity.ts";
-import { reconcileRepoIdentities as runReconcile } from "./providers/github/reconcile-identities.ts";
+import {
+  reconcileOrgIdentities as runReconcileOrgs,
+  reconcileRepoIdentities as runReconcile,
+} from "./providers/github/reconcile-identities.ts";
 import {
   cloneRemoteRepo,
   createWorktree,
@@ -364,8 +373,10 @@ export function composeTickDeps(
 
   let persistedTable: RepoIdentityTable = {};
   let confirmedCurrentSlugs: Map<string, string> = new Map();
+  let persistedOrgTable: OrgIdentityTable = {};
 
   const tableIO = makeTableIO(join(stateDir, "repos.json"));
+  const orgTableIO = makeOrgTableIO(join(stateDir, "orgs.json"));
 
   function resolveAccount(slug: string): { token: string; login: string } {
     const canonical = canonicalSlugFor(persistedTable, slug);
@@ -395,6 +406,30 @@ export function composeTickDeps(
     repos: config.github.repos,
     accountResolver: resolveAccount,
     resolveRepo,
+    resolveOrg: (bareOrg) => ({
+      canonical: canonicalLoginFor(persistedOrgTable, bareOrg),
+      currentLogin: currentLoginFor(persistedOrgTable, bareOrg),
+    }),
+    registerRepo: async (nameWithOwner, databaseId) => {
+      if (persistedTable[canonicalSlugFor(persistedTable, nameWithOwner)]) {
+        return;
+      }
+      persistedTable[nameWithOwner] = {
+        repoId: databaseId,
+        currentSlug: nameWithOwner,
+        aliases: [nameWithOwner],
+        blockedBy: null,
+      };
+      try {
+        await tableIO.writeTable(persistedTable);
+      } catch (e) {
+        appendTickLog({
+          event: "repo-identity-reconcile-failed",
+          context: "register-repo",
+          error: String(e),
+        });
+      }
+    },
     http,
   });
 
@@ -1650,11 +1685,25 @@ export function composeTickDeps(
         log: (event, data) =>
           appendTickLog({ event, ...(data as Record<string, unknown>) }),
         notify: (title, body) => desktopNotifier(title, body),
-        repos: config.github.repos,
+        repos: config.github.repos.filter((r) => r.includes("/")),
       });
       confirmedCurrentSlugs = new Map(
         [...confirmed.entries()].map(([k, v]) => [k, v.currentSlug]),
       );
+      persistedOrgTable = await orgTableIO.readTable();
+      await runReconcileOrgs({
+        http,
+        accountResolver: resolveAccount,
+        readTable: () => Promise.resolve(persistedOrgTable),
+        writeTable: async (t) => {
+          persistedOrgTable = t;
+          await orgTableIO.writeTable(t);
+        },
+        log: (event, data) =>
+          appendTickLog({ event, ...(data as Record<string, unknown>) }),
+        notify: (title, body) => desktopNotifier(title, body),
+        orgs: config.github.repos.filter((r) => !r.includes("/")),
+      });
     },
     notifyTickFailure: (error: string) =>
       desktopNotifier("Tick failed", error.slice(0, 200)),
