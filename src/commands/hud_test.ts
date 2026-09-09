@@ -13,6 +13,7 @@ import { dim, stripAnsiCode } from "@std/fmt/colors";
 import { assertSpyCalls, spy } from "@std/testing/mock";
 import type { TicketState } from "../state/types.ts";
 import {
+  checkReviewPreconditions,
   formatHudHeader,
   formatTickLogLine,
   handleRootWatcherEvent,
@@ -30,6 +31,7 @@ import {
   TICK_LOG_TAIL_LINES,
   type TicketEntry,
 } from "./hud.ts";
+import { makeTicket } from "../test-support.ts";
 
 // ── formatTickLogLine ─────────────────────────────────────────────────────────
 
@@ -264,8 +266,8 @@ Deno.test("isBlockedCommand: returns true for tail", () => {
   assert(isBlockedCommand("tail"));
 });
 
-Deno.test("isBlockedCommand: returns true for review", () => {
-  assert(isBlockedCommand("review"));
+Deno.test("isBlockedCommand: returns false for review", () => {
+  assertFalse(isBlockedCommand("review"));
 });
 
 Deno.test("isBlockedCommand: returns false for approve", () => {
@@ -716,6 +718,91 @@ Deno.test(
     assertFalse(entry.ok);
     if (!entry.ok) {
       assertStringIncludes(entry.error, "parse failed");
+    }
+  },
+);
+
+// ── checkReviewPreconditions ──────────────────────────────────────────────────
+
+Deno.test(
+  "checkReviewPreconditions: returns usage string when id is empty",
+  async () => {
+    const result = await checkReviewPreconditions("", "/state");
+    assertStringIncludes(result!, "Usage: review <ticket-id>");
+  },
+);
+
+Deno.test(
+  "checkReviewPreconditions: returns running error when ticket status is running",
+  async () => {
+    const ticketId = "github/test/repo/1";
+    const result = await checkReviewPreconditions(ticketId, "/state", {
+      readTicketFn: (_sd, _id) =>
+        Promise.resolve(makeTicket({ id: ticketId, status: "running" })),
+    });
+    assertStringIncludes(result!, "currently running");
+    assertStringIncludes(result!, ticketId);
+  },
+);
+
+Deno.test(
+  "checkReviewPreconditions: returns done error when ticket status is done",
+  async () => {
+    const ticketId = "github/test/repo/2";
+    const result = await checkReviewPreconditions(ticketId, "/state", {
+      readTicketFn: (_sd, _id) =>
+        Promise.resolve(
+          makeTicket({ id: ticketId, phase: "merge", status: "done" }),
+        ),
+    });
+    assertStringIncludes(result!, "done");
+    assertStringIncludes(result!, ticketId);
+  },
+);
+
+Deno.test(
+  "checkReviewPreconditions: returns no-output error when no phase output exists",
+  async () => {
+    const tempDir = await Deno.makeTempDir();
+    try {
+      const ticketId = "github/test/repo/3";
+      const ticketDir = join(tempDir, ticketId);
+      await Deno.mkdir(ticketDir, { recursive: true });
+      const result = await checkReviewPreconditions(ticketId, tempDir, {
+        readTicketFn: (_sd, _id) =>
+          Promise.resolve(
+            makeTicket({ id: ticketId, phase: "spec", status: "waiting" }),
+          ),
+      });
+      assertStringIncludes(result!, 'No output for phase "spec"');
+      assertStringIncludes(result!, ticketId);
+    } finally {
+      await Deno.remove(tempDir, { recursive: true });
+    }
+  },
+);
+
+Deno.test(
+  "checkReviewPreconditions: returns null when ticket is reviewable",
+  async () => {
+    const tempDir = await Deno.makeTempDir();
+    try {
+      const ticketId = "github/test/repo/4";
+      const ticketDir = join(tempDir, ticketId);
+      await Deno.mkdir(ticketDir, { recursive: true });
+      await Deno.writeTextFile(
+        join(ticketDir, "20260101T000000-spec.md"),
+        "spec output",
+      );
+      const result = await checkReviewPreconditions(ticketId, tempDir, {
+        readTicketFn: (_sd, _id) =>
+          Promise.resolve(
+            makeTicket({ id: ticketId, phase: "spec", status: "waiting" }),
+          ),
+      });
+      assertEquals(result, null);
+    } finally {
+      await Deno.remove(tempDir, { recursive: true });
     }
   },
 );
