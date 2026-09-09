@@ -2,9 +2,9 @@ import { join, toFileUrl } from "@std/path";
 import { parse } from "@std/toml";
 import { mkdir, readTextFile, writeTextFile } from "../filesystem.ts";
 import { compactTimestamp } from "../timestamp.ts";
-import type { LanguageModelRequest } from "../models/types.ts";
+import type { LanguageModel, LanguageModelRequest } from "../models/types.ts";
 import type { TicketState } from "../state/types.ts";
-import type { Ceremony, CeremonyContext } from "./types.ts";
+import type { Ceremony, CeremonyContext, ModelChainEntry } from "./types.ts";
 
 export interface ModuleCeremonyDeps {
   name: string;
@@ -26,6 +26,7 @@ export interface ModuleCeremonyDeps {
   ): Promise<{ success: boolean; stdout: string; stderr: string }>;
   commitState(): Promise<void>;
   notify?(title: string, message: string): Promise<void>;
+  getModel(chain: ModelChainEntry[]): LanguageModel;
 }
 
 export class ModuleCeremony implements Ceremony {
@@ -98,6 +99,12 @@ export class ModuleCeremony implements Ceremony {
       },
       log: (fields) =>
         this.#deps.appendTickLog({ ...fields, ceremony: this.name }),
+      getModel: (chain) => {
+        if (chain.length === 0) {
+          throw new Error("getModel requires at least one chain entry");
+        }
+        return this.#deps.getModel(chain);
+      },
     };
 
     try {

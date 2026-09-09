@@ -1,7 +1,7 @@
 import { join } from "@std/path";
 import { parse } from "@std/toml";
 import { isRegularFile, readDir, readTextFile, stat } from "./filesystem.ts";
-import type { Ceremony } from "./ceremonies/types.ts";
+import type { Ceremony, ModelChainEntry } from "./ceremonies/types.ts";
 import { isValidCeremonyName } from "./ceremonies/types.ts";
 import { PromptCeremony } from "./ceremonies/prompt.ts";
 import { ModuleCeremony } from "./ceremonies/module.ts";
@@ -13,7 +13,7 @@ import {
 import type { ApprovalRecord } from "./ceremonies/approvals.ts";
 import { compactTimestamp } from "./timestamp.ts";
 import type { TicketState } from "./state/types.ts";
-import type { LanguageModelRequest } from "./models/types.ts";
+import type { LanguageModel, LanguageModelRequest } from "./models/types.ts";
 
 export type { Ceremony } from "./ceremonies/types.ts";
 
@@ -41,6 +41,7 @@ export interface CeremonyRunnerDeps {
   ): Promise<{ success: boolean; stdout: string; stderr: string }>;
   commitState(): Promise<void>;
   timeoutMs?: number;
+  getModel(chain: ModelChainEntry[]): LanguageModel;
 }
 
 function parseTimestampPrefix(filename: string): Temporal.PlainDateTime | null {
@@ -137,6 +138,7 @@ export class CeremonyRunner {
           runGh: this.#deps.runGh,
           commitState: this.#deps.commitState,
           notify: this.#deps.notify,
+          getModel: (chain) => this.#deps.getModel(chain),
         }),
         ceremonyDir,
         true,

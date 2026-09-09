@@ -1072,6 +1072,26 @@ export function composeTickDeps(
         new ClaudeLanguageModel(captureCommandRunner(), {
           model: "claude-sonnet-4-6",
         }).generateObject(request),
+      getModel: (chain) => {
+        if (chain.length === 0) {
+          throw new Error("getModel requires at least one chain entry");
+        }
+        const models = chain.map((entry) => {
+          if (entry.provider === "claude") {
+            return new ClaudeLanguageModel(captureCommandRunner(), {
+              model: entry.model,
+            });
+          } else if (entry.provider === "ollama") {
+            return new OllamaLanguageModel(fetch, {
+              model: entry.model,
+              url: config.ollama?.url,
+            });
+          } else {
+            return new ApfelLanguageModel(captureCommandRunner());
+          }
+        });
+        return new FallbackLanguageModel(models);
+      },
       runGit: async (args) => {
         const cmd = new Deno.Command("git", {
           args,

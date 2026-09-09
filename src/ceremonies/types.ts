@@ -1,5 +1,10 @@
 import type { TicketState } from "../state/types.ts";
-import type { LanguageModelRequest } from "../models/types.ts";
+import type { LanguageModel, LanguageModelRequest } from "../models/types.ts";
+
+export type ModelChainEntry =
+  | { provider: "claude"; model: string }
+  | { provider: "ollama"; model: string }
+  | { provider: "apfel" };
 
 export interface Ceremony {
   readonly name: string;
@@ -29,6 +34,7 @@ export interface CeremonyContext {
   commitState(): Promise<void>;
   notify(title: string, message: string): Promise<void>;
   log(entry: object): Promise<void>;
+  getModel(chain: ModelChainEntry[]): LanguageModel;
 }
 
 export type CeremonyModule = (
