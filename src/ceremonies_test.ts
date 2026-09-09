@@ -16,7 +16,7 @@ import {
   writeApprovals,
 } from "./ceremonies/approvals.ts";
 import { urrasDir } from "./paths.ts";
-import { withLazyboyDir } from "./test-support.ts";
+import { withUrrasDir } from "./test-support.ts";
 import type { TicketState } from "./state/types.ts";
 import type { Ceremony } from "./ceremonies/types.ts";
 import type { CommandRunner } from "./apfel.ts";
@@ -383,7 +383,7 @@ Deno.test("CeremonyRunner: interval ceremony runs when no prior output file exis
 });
 
 Deno.test("CeremonyRunner: prompt ceremony dir runs PromptCeremony", async () => {
-  using _lazyboy = withLazyboyDir();
+  using _lazyboy = withUrrasDir();
   const stateDir = await Deno.makeTempDir();
   try {
     const ceremonyDir = join(stateDir, "ceremonies", "docs-gap");
@@ -744,7 +744,7 @@ async function writePromptCeremony(
 }
 
 Deno.test("CeremonyRunner: unapproved prompt ceremony does not run", async () => {
-  using _lazyboy = withLazyboyDir();
+  using _lazyboy = withUrrasDir();
   const stateDir = await Deno.makeTempDir();
   try {
     await writePromptCeremony(stateDir, "digest");
@@ -768,7 +768,7 @@ Deno.test("CeremonyRunner: unapproved prompt ceremony does not run", async () =>
 });
 
 Deno.test("CeremonyRunner: approved prompt ceremony runs", async () => {
-  using _lazyboy = withLazyboyDir();
+  using _lazyboy = withUrrasDir();
   const stateDir = await Deno.makeTempDir();
   try {
     const dir = await writePromptCeremony(stateDir, "digest");
@@ -782,7 +782,7 @@ Deno.test("CeremonyRunner: approved prompt ceremony runs", async () => {
 });
 
 Deno.test("CeremonyRunner: editing an approved prompt ceremony revokes it", async () => {
-  using _lazyboy = withLazyboyDir();
+  using _lazyboy = withUrrasDir();
   const stateDir = await Deno.makeTempDir();
   try {
     const dir = await writePromptCeremony(stateDir, "digest");
@@ -797,7 +797,7 @@ Deno.test("CeremonyRunner: editing an approved prompt ceremony revokes it", asyn
 });
 
 Deno.test("CeremonyRunner: built-in ceremony needs no approval", async () => {
-  using _lazyboy = withLazyboyDir();
+  using _lazyboy = withUrrasDir();
   const stateDir = await Deno.makeTempDir();
   try {
     await Deno.mkdir(join(stateDir, "ceremonies", "standup"), {
@@ -817,7 +817,7 @@ Deno.test("CeremonyRunner: built-in ceremony needs no approval", async () => {
 });
 
 Deno.test("CeremonyRunner: unapproved ceremony that is not due is silent", async () => {
-  using _lazyboy = withLazyboyDir();
+  using _lazyboy = withUrrasDir();
   const stateDir = await Deno.makeTempDir();
   try {
     await writePromptCeremony(stateDir, "digest", 'time = "23:00"\n');
@@ -830,7 +830,7 @@ Deno.test("CeremonyRunner: unapproved ceremony that is not due is silent", async
 });
 
 Deno.test("CeremonyRunner: warns and notifies once per due window", async () => {
-  using _lazyboy = withLazyboyDir();
+  using _lazyboy = withUrrasDir();
   const stateDir = await Deno.makeTempDir();
   try {
     await writePromptCeremony(stateDir, "digest");
@@ -856,7 +856,7 @@ Deno.test("CeremonyRunner: warns and notifies once per due window", async () => 
 });
 
 Deno.test("CeremonyRunner: warns again in the next window", async () => {
-  using _lazyboy = withLazyboyDir();
+  using _lazyboy = withUrrasDir();
   const stateDir = await Deno.makeTempDir();
   try {
     await writePromptCeremony(stateDir, "digest");
@@ -871,7 +871,7 @@ Deno.test("CeremonyRunner: warns again in the next window", async () => {
 });
 
 Deno.test("CeremonyRunner: warning preserves an existing hash", async () => {
-  using _lazyboy = withLazyboyDir();
+  using _lazyboy = withUrrasDir();
   const stateDir = await Deno.makeTempDir();
   try {
     const dir = await writePromptCeremony(stateDir, "digest");
@@ -888,7 +888,7 @@ Deno.test("CeremonyRunner: warning preserves an existing hash", async () => {
 });
 
 Deno.test("CeremonyRunner: a throwing notifier does not abort the run", async () => {
-  using _lazyboy = withLazyboyDir();
+  using _lazyboy = withUrrasDir();
   const stateDir = await Deno.makeTempDir();
   try {
     await writePromptCeremony(stateDir, "digest");
@@ -913,7 +913,7 @@ async function writeModuleCeremony(
 }
 
 Deno.test("CeremonyRunner: an unapproved module is never imported", async () => {
-  using _lazyboy = withLazyboyDir();
+  using _lazyboy = withUrrasDir();
   const stateDir = await Deno.makeTempDir();
   const sentinel = await Deno.makeTempFile();
   await Deno.remove(sentinel);
@@ -932,7 +932,7 @@ Deno.test("CeremonyRunner: an unapproved module is never imported", async () => 
 });
 
 Deno.test("CeremonyRunner: an approved module runs", async () => {
-  using _lazyboy = withLazyboyDir();
+  using _lazyboy = withUrrasDir();
   const stateDir = await Deno.makeTempDir();
   try {
     const dir = await writeModuleCeremony(
@@ -956,7 +956,7 @@ Deno.test("CeremonyRunner: an approved module runs", async () => {
 });
 
 Deno.test("CeremonyRunner: pushTicket from approved module calls the dep", async () => {
-  using _lazyboy = withLazyboyDir();
+  using _lazyboy = withUrrasDir();
   const stateDir = await Deno.makeTempDir();
   try {
     const dir = await writeModuleCeremony(
@@ -982,7 +982,7 @@ Deno.test("CeremonyRunner: pushTicket from approved module calls the dep", async
 });
 
 Deno.test("CeremonyRunner: index.ts wins over prompt.md", async () => {
-  using _lazyboy = withLazyboyDir();
+  using _lazyboy = withUrrasDir();
   const stateDir = await Deno.makeTempDir();
   try {
     const dir = await writeModuleCeremony(
@@ -1004,7 +1004,7 @@ Deno.test("CeremonyRunner: index.ts wins over prompt.md", async () => {
 });
 
 Deno.test("CeremonyRunner: a ceremony directory with an unsafe name is skipped", async () => {
-  using _lazyboy = withLazyboyDir();
+  using _lazyboy = withUrrasDir();
   const stateDir = await Deno.makeTempDir();
   try {
     const unsafe = 'x" & (do shell script "id") & "y';
@@ -1034,7 +1034,7 @@ Deno.test("CeremonyRunner: a ceremony directory with an unsafe name is skipped",
 });
 
 Deno.test("CeremonyRunner: a non-regular-file index.ts is never treated as a module", async () => {
-  using _lazyboy = withLazyboyDir();
+  using _lazyboy = withUrrasDir();
   const stateDir = await Deno.makeTempDir();
   try {
     const dir = await writePromptCeremony(stateDir, "digest");
@@ -1058,7 +1058,7 @@ Deno.test("CeremonyRunner: a non-regular-file index.ts is never treated as a mod
 });
 
 Deno.test("CeremonyRunner: an unreadable ceremony does not abort the remaining ceremonies", async () => {
-  using _lazyboy = withLazyboyDir();
+  using _lazyboy = withUrrasDir();
   const stateDir = await Deno.makeTempDir();
   try {
     const broken = join(stateDir, "ceremonies", "alpha");
@@ -1108,7 +1108,7 @@ Deno.test("CeremonyRunner: directory-as-config.toml logs warning and does not ru
 });
 
 Deno.test("CeremonyRunner: a corrupt approvals file does not destroy stored approvals", async () => {
-  using _lazyboy = withLazyboyDir();
+  using _lazyboy = withUrrasDir();
   const stateDir = await Deno.makeTempDir();
   try {
     await writePromptCeremony(stateDir, "digest");
@@ -1157,7 +1157,7 @@ Deno.test("CeremonyRunner: discovers ceremonies from extensionsDir, not stateDir
 });
 
 Deno.test("CeremonyRunner: output written to stateDir/ceremonies/<name>/output when extensionsDir differs", async () => {
-  using _lazyboy = withLazyboyDir();
+  using _lazyboy = withUrrasDir();
   const stateDir = await Deno.makeTempDir();
   const extensionsDir = await Deno.makeTempDir();
   try {

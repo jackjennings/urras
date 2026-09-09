@@ -1,10 +1,10 @@
 import { assertEquals } from "@std/assert";
 import { join } from "@std/path";
 import { appendTickLog } from "./logger.ts";
-import { withLazyboyDir } from "./test-support.ts";
+import { withUrrasDir } from "./test-support.ts";
 
 Deno.test("appendTickLog: writes to combined log without id field", async () => {
-  using lazy = withLazyboyDir();
+  using lazy = withUrrasDir();
   await appendTickLog({ event: "tick-failed", error: "boom" });
   const combined = await Deno.readTextFile(
     join(lazy.path, "log.ndjson"),
@@ -15,7 +15,7 @@ Deno.test("appendTickLog: writes to combined log without id field", async () => 
 });
 
 Deno.test("appendTickLog: tick log entry is unchanged", async () => {
-  using lazy = withLazyboyDir();
+  using lazy = withUrrasDir();
   await appendTickLog({ event: "stale-lock" });
   const tick = await Deno.readTextFile(
     join(lazy.path, "tick.ndjson"),
@@ -26,7 +26,7 @@ Deno.test("appendTickLog: tick log entry is unchanged", async () => {
 });
 
 Deno.test("appendTickLog: tick log write succeeds when combined log write fails", async () => {
-  using lazy = withLazyboyDir();
+  using lazy = withUrrasDir();
   await Deno.mkdir(join(lazy.path, "log.ndjson"), { recursive: true });
   await appendTickLog({ event: "tick-already-running" });
   const tick = await Deno.readTextFile(

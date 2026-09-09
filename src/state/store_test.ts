@@ -20,7 +20,7 @@ import {
   writeLearning,
   writeTicket,
 } from "./store.ts";
-import { makeTicket, withLazyboyDir } from "../test-support.ts";
+import { makeTicket, withUrrasDir } from "../test-support.ts";
 import type { ArtifactType, LearningState, TicketState } from "./types.ts";
 
 const BASE = { id: "gh-1" };
@@ -621,7 +621,7 @@ Deno.test("appendTicketLog: appends successive entries on separate lines", async
 });
 
 Deno.test("appendTicketLog: writes combined log entry with id field", async () => {
-  using lazy = withLazyboyDir();
+  using lazy = withUrrasDir();
   const stateDir = await Deno.makeTempDir();
   try {
     await Deno.mkdir(join(stateDir, "github/test/repo/1"), { recursive: true });
@@ -641,7 +641,7 @@ Deno.test("appendTicketLog: writes combined log entry with id field", async () =
 });
 
 Deno.test("appendTicketLog: per-ticket log entry has no id field", async () => {
-  using _lazy = withLazyboyDir();
+  using _lazy = withUrrasDir();
   const stateDir = await Deno.makeTempDir();
   try {
     await Deno.mkdir(join(stateDir, "gh-1"));
@@ -658,7 +658,7 @@ Deno.test("appendTicketLog: per-ticket log entry has no id field", async () => {
 });
 
 Deno.test("appendTicketLog: primary write succeeds when combined log write fails", async () => {
-  using lazy = withLazyboyDir();
+  using lazy = withUrrasDir();
   const stateDir = await Deno.makeTempDir();
   try {
     // make log.ndjson a directory so writeTextFile to it fails

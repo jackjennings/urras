@@ -19,7 +19,7 @@ import {
   writeApprovals,
 } from "./approvals.ts";
 import { urrasDir } from "../paths.ts";
-import { withLazyboyDir } from "../test-support.ts";
+import { withUrrasDir } from "../test-support.ts";
 
 async function makeCeremonyDir(
   files: Record<string, string>,
@@ -76,18 +76,18 @@ Deno.test("ceremonyHash: covers nested files outside output", async () => {
 });
 
 Deno.test("readApprovals: missing file reads as empty", async () => {
-  using _dir = withLazyboyDir();
+  using _dir = withUrrasDir();
   assertEquals(await readApprovals(), {});
 });
 
 Deno.test("writeApprovals: round-trips", async () => {
-  using _dir = withLazyboyDir();
+  using _dir = withUrrasDir();
   await writeApprovals({ standup: { hash: "sha256:abc" } });
   assertEquals(await readApprovals(), { standup: { hash: "sha256:abc" } });
 });
 
 Deno.test("isCeremonyApproved: true when the hash matches", async () => {
-  using _lazyboy = withLazyboyDir();
+  using _lazyboy = withUrrasDir();
   const dir = await makeCeremonyDir({ "prompt.md": "x\n" });
   try {
     await writeApprovals({ digest: { hash: await ceremonyHash(dir) } });
@@ -98,7 +98,7 @@ Deno.test("isCeremonyApproved: true when the hash matches", async () => {
 });
 
 Deno.test("isCeremonyApproved: false after the directory changes", async () => {
-  using _lazyboy = withLazyboyDir();
+  using _lazyboy = withUrrasDir();
   const dir = await makeCeremonyDir({ "prompt.md": "x\n" });
   try {
     await writeApprovals({ digest: { hash: await ceremonyHash(dir) } });
@@ -110,7 +110,7 @@ Deno.test("isCeremonyApproved: false after the directory changes", async () => {
 });
 
 Deno.test("isCeremonyApproved: false when the entry has no hash", async () => {
-  using _lazyboy = withLazyboyDir();
+  using _lazyboy = withUrrasDir();
   const dir = await makeCeremonyDir({ "prompt.md": "x\n" });
   try {
     await writeApprovals({ digest: { lastWarnedWindow: "20260811" } });
@@ -248,7 +248,7 @@ Deno.test("ceremonyManifest: an unclassifiable entry is recorded as unsupported"
 });
 
 Deno.test("isCeremonyApproved: adding a FIFO index.ts to an approved ceremony revokes it", async () => {
-  using _lazyboy = withLazyboyDir();
+  using _lazyboy = withUrrasDir();
   const dir = await makeCeremonyDir({
     "config.toml": 'time = "09:00"\n',
     "prompt.md": "summarize the day\n",
@@ -299,7 +299,7 @@ Deno.test("ceremonyHash: distinct non-UTF-8 files hash differently", async () =>
 });
 
 Deno.test("isCeremonyApproved: swapping a non-UTF-8 blob revokes approval", async () => {
-  using _lazyboy = withLazyboyDir();
+  using _lazyboy = withUrrasDir();
   const dir = await makeCeremonyDir({ "prompt.md": "x\n" });
   try {
     const blob = join(dir, "data.wasm");
@@ -314,7 +314,7 @@ Deno.test("isCeremonyApproved: swapping a non-UTF-8 blob revokes approval", asyn
 });
 
 Deno.test("readApprovals: unparseable file throws instead of reading as empty", async () => {
-  using _lazyboy = withLazyboyDir();
+  using _lazyboy = withUrrasDir();
   await writeApprovals({ digest: { hash: "sha256:abc" } });
   await Deno.writeTextFile(
     join(urrasDir(), "ceremony-approvals.json"),
@@ -324,7 +324,7 @@ Deno.test("readApprovals: unparseable file throws instead of reading as empty", 
 });
 
 Deno.test("readApprovals: a JSON array is rejected as corrupt", async () => {
-  using _lazyboy = withLazyboyDir();
+  using _lazyboy = withUrrasDir();
   await Deno.mkdir(urrasDir(), { recursive: true });
   await Deno.writeTextFile(
     join(urrasDir(), "ceremony-approvals.json"),
@@ -334,7 +334,7 @@ Deno.test("readApprovals: a JSON array is rejected as corrupt", async () => {
 });
 
 Deno.test("isCeremonyApproved: a corrupt approvals file denies approval", async () => {
-  using _lazyboy = withLazyboyDir();
+  using _lazyboy = withUrrasDir();
   const dir = await makeCeremonyDir({ "prompt.md": "x\n" });
   try {
     await Deno.mkdir(urrasDir(), { recursive: true });
@@ -349,7 +349,7 @@ Deno.test("isCeremonyApproved: a corrupt approvals file denies approval", async 
 });
 
 Deno.test("writeApprovals: leaves no temporary files behind", async () => {
-  using _lazyboy = withLazyboyDir();
+  using _lazyboy = withUrrasDir();
   await writeApprovals({ digest: { hash: "sha256:abc" } });
   const names: string[] = [];
   for await (const entry of Deno.readDir(urrasDir())) names.push(entry.name);
@@ -369,7 +369,7 @@ Deno.test("ceremonyHash: exceeding the file cap fails closed", async () => {
 });
 
 Deno.test("isCeremonyApproved: exceeding the file cap denies approval", async () => {
-  using _lazyboy = withLazyboyDir();
+  using _lazyboy = withUrrasDir();
   const dir = await makeCeremonyDir({ "prompt.md": "x\n" });
   try {
     await writeApprovals({ digest: { hash: await ceremonyHash(dir) } });
