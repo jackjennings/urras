@@ -429,7 +429,11 @@ Deno.test(
   "reconcileOrgIdentities: detects org rename via /organizations/<orgId>",
   async () => {
     const table: OrgIdentityTable = {
-      hellboxpy: { orgId: 42, currentLogin: "hellboxpy", aliases: ["hellboxpy"] },
+      hellboxpy: {
+        orgId: 42,
+        currentLogin: "hellboxpy",
+        aliases: ["hellboxpy"],
+      },
     };
     const written: OrgIdentityTable[] = [];
     const notifyTitles: string[] = [];
@@ -471,7 +475,11 @@ Deno.test(
   "reconcileOrgIdentities: non-ok response on refresh logs failure and leaves table unwritten",
   async () => {
     const table: OrgIdentityTable = {
-      hellboxpy: { orgId: 42, currentLogin: "hellboxpy", aliases: ["hellboxpy"] },
+      hellboxpy: {
+        orgId: 42,
+        currentLogin: "hellboxpy",
+        aliases: ["hellboxpy"],
+      },
     };
     const loggedEvents: string[] = [];
     const written: OrgIdentityTable[] = [];
@@ -497,7 +505,11 @@ Deno.test(
   "reconcileOrgIdentities: does not re-register an org already in the table",
   async () => {
     const table: OrgIdentityTable = {
-      hellboxpy: { orgId: 42, currentLogin: "hellboxpy", aliases: ["hellboxpy"] },
+      hellboxpy: {
+        orgId: 42,
+        currentLogin: "hellboxpy",
+        aliases: ["hellboxpy"],
+      },
     };
     const orgLookupCalls: string[] = [];
     await reconcileOrgIdentities(makeOrgDeps({

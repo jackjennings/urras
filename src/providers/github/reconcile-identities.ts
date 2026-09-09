@@ -1,10 +1,7 @@
 import { HttpClient } from "../../http-client.ts";
 import { canonicalSlugFor, type RepoIdentityTable } from "./repo-identity.ts";
 import { githubGraphQL } from "./graphql.ts";
-import {
-  canonicalLoginFor,
-  type OrgIdentityTable,
-} from "./org-identity.ts";
+import { canonicalLoginFor, type OrgIdentityTable } from "./org-identity.ts";
 
 export interface ReconcileRepoIdentitiesDeps {
   http: HttpClient;
