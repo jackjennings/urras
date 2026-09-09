@@ -76,7 +76,9 @@ import {
   checkNewCommentsAction,
   type RawComment,
 } from "./tick-actions/check-new-comments.ts";
+import { checkUpstreamEditsAction } from "./tick-actions/check-upstream-edits.ts";
 import { judgeComment } from "./judge-comment.ts";
+import { judgeUpstreamEdit } from "./judge-upstream-edit.ts";
 import { adf2markdown } from "adf2markdown";
 import {
   installPackages,
@@ -396,7 +398,11 @@ export function composeTickDeps(
   });
 
   const providers: Provider[] = [githubProvider];
-  const jiraProviders: { baseUrl: string; instance: JiraProvider }[] = [];
+  const jiraProviders: {
+    baseUrl: string;
+    project: string;
+    instance: JiraProvider;
+  }[] = [];
 
   for (const entry of Object.values(config.jira ?? {})) {
     const jiraProvider = new JiraProvider({
@@ -410,7 +416,11 @@ export function composeTickDeps(
       run: captureCommandRunner(),
     });
     providers.push(jiraProvider);
-    jiraProviders.push({ baseUrl: entry.baseUrl, instance: jiraProvider });
+    jiraProviders.push({
+      baseUrl: entry.baseUrl,
+      project: entry.project,
+      instance: jiraProvider,
+    });
   }
 
   if (config.todoTxt) {
@@ -1048,6 +1058,48 @@ export function composeTickDeps(
           join(ticketDir, `${timestamp}-comment-context.md`),
           content,
         );
+      },
+      config,
+    }),
+    checkUpstreamEditsAction({
+      isProcessAlive: (ticketId) => isPhaseAlive(join(stateDir, ticketId)),
+      writeTicket,
+      appendLog: appendTicketLog,
+      fetchCurrentTicket: (ticketId) => {
+        if (ticketId.startsWith("github/")) {
+          return githubProvider.fetchCurrent(ticketId);
+        }
+        if (ticketId.startsWith("jira/")) {
+          const key = ticketId.slice(5);
+          const project = key.split("-")[0];
+          const match = jiraProviders.find((j) => j.project === project);
+          return match?.instance.fetchCurrent(ticketId) ??
+            Promise.resolve(null);
+        }
+        return Promise.resolve(null);
+      },
+      writeUpstreamEditContextFile: async (ticketDir, content) => {
+        const timestamp = compactTimestamp(
+          Temporal.Now.zonedDateTimeISO("UTC"),
+        );
+        await writeTextFile(
+          join(ticketDir, `${timestamp}-upstream-edit-context.md`),
+          content,
+        );
+      },
+      judgeUpstreamEdit: (oldTitle, newTitle, oldBody, newBody) =>
+        judgeUpstreamEdit(
+          oldTitle,
+          newTitle,
+          oldBody,
+          newBody,
+          captureCommandRunner(),
+          ollamaModels,
+        ),
+      generateShortTitle: async (title, body) => {
+        const available = await checkApfelAvailable(defaultCommandRunner());
+        if (!available) return null;
+        return apfelGenerateShortTitle(captureCommandRunner(), title, body);
       },
       config,
     }),

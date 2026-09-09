@@ -923,3 +923,91 @@ Deno.test("close uses configured done status name", async () => {
   await provider.close(`${BASE_URL}/browse/PROJ-1`);
   assertEquals(JSON.parse(requests[1].body!), { transition: { id: "41" } });
 });
+
+Deno.test("JiraProvider.fetchCurrent: returns title and body for a valid issue", async () => {
+  const provider = new JiraProvider({
+    baseUrl: BASE_URL,
+    email: "test@example.com",
+    apiToken: "token",
+    project: "PROJ",
+    doneStatusName: "Done",
+    http: new HttpClient((_url, _init) =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify(makeIssue("PROJ-1", "The title", adfText("The body"))),
+          { status: 200 },
+        ),
+      )
+    ),
+  });
+  const result = await provider.fetchCurrent("jira/PROJ-1");
+  assertEquals(result?.title, "The title");
+  assertStringIncludes(result?.body ?? "", "The body");
+});
+
+Deno.test("JiraProvider.fetchCurrent: returns null on non-ok response", async () => {
+  const provider = new JiraProvider({
+    baseUrl: BASE_URL,
+    email: "test@example.com",
+    apiToken: "token",
+    project: "PROJ",
+    doneStatusName: "Done",
+    http: new HttpClient((_url, _init) =>
+      Promise.resolve(new Response("Not found", { status: 404 }))
+    ),
+  });
+  const result = await provider.fetchCurrent("jira/PROJ-1");
+  assertEquals(result, null);
+});
+
+Deno.test(
+  "JiraProvider.fetchCurrent: calls correct single-issue endpoint",
+  async () => {
+    const capturedUrls: string[] = [];
+    const provider = new JiraProvider({
+      baseUrl: BASE_URL,
+      email: "test@example.com",
+      apiToken: "token",
+      project: "PROJ",
+      doneStatusName: "Done",
+      http: new HttpClient((url, _init) => {
+        capturedUrls.push(url as string);
+        return Promise.resolve(
+          new Response(
+            JSON.stringify(makeIssue("PROJ-5", "T")),
+            { status: 200 },
+          ),
+        );
+      }),
+    });
+    await provider.fetchCurrent("jira/PROJ-5");
+    assertEquals(
+      capturedUrls[0],
+      `${BASE_URL}/rest/api/3/issue/PROJ-5?fields=summary,description,parent`,
+    );
+  },
+);
+
+Deno.test(
+  "JiraProvider.fetchCurrent: null description returns empty body",
+  async () => {
+    const provider = new JiraProvider({
+      baseUrl: BASE_URL,
+      email: "test@example.com",
+      apiToken: "token",
+      project: "PROJ",
+      doneStatusName: "Done",
+      http: new HttpClient((_url, _init) =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify(makeIssue("PROJ-1", "Title", null)),
+            { status: 200 },
+          ),
+        )
+      ),
+    });
+    const result = await provider.fetchCurrent("jira/PROJ-1");
+    assertEquals(result?.title, "Title");
+    assertEquals(result?.body, "");
+  },
+);
