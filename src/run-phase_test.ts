@@ -3552,6 +3552,182 @@ Deno.test(
   },
 );
 
+Deno.test(
+  "executePhase: passes ticketId through so self-approve content includes ticket context",
+  async () => {
+    const ticketDir = await Deno.makeTempDir();
+    const homeDir = await Deno.makeTempDir();
+    try {
+      const agent: CodeAgent = {
+        runPhase: () => {
+          return Deno.writeTextFile(
+            join(ticketDir, "20260101T120000-intake.md"),
+            "## Proposed Scope\n\n```yaml\nscope:\n  - jackjennings/lazyboy\n```\n",
+          ).then(() => ({ stdout: "", stderr: "", code: 0 }));
+        },
+      };
+      const run: CommandRunner = spy(() =>
+        Promise.resolve({ code: 0, stdout: "APPROVE" })
+      );
+      await executePhase(
+        {
+          ticketDir,
+          stateDir: dirname(ticketDir),
+          outputFile: "20260101T120000-intake.md",
+          phase: "intake",
+          scopeDirs: [],
+          prompt: "p",
+          worktrees: {},
+          homeDir,
+          provider: "github",
+          ticketId: "github/jackjennings/lazyboy/652",
+          model: "claude-sonnet-4-6",
+          thinking: "off",
+          agentType: "pi",
+          run,
+        },
+        agent,
+      );
+      const calls = (run as ReturnType<typeof spy>).calls;
+      const selfApproveCall = calls.find((c) =>
+        (c.args[0] as string[]).includes("--dangerously-skip-permissions")
+      );
+      assertExists(selfApproveCall);
+      const args = selfApproveCall.args[0] as string[];
+      assertStringIncludes(args[args.length - 1], "## Ticket");
+      assertStringIncludes(
+        args[args.length - 1],
+        "github/jackjennings/lazyboy/652",
+      );
+    } finally {
+      await Deno.remove(ticketDir, { recursive: true });
+      await Deno.remove(homeDir, { recursive: true });
+    }
+  },
+);
+
+Deno.test(
+  "executePhase: picks the worktree matching the ticket's own project path for self-approve diff, not a hardcoded key",
+  async () => {
+    const ticketDir = await Deno.makeTempDir();
+    const homeDir = await Deno.makeTempDir();
+    const { worktreeDir, originDir } = await setupGitWorktreeForTest();
+    try {
+      const agent: CodeAgent = {
+        runPhase: () => {
+          return Deno.writeTextFile(
+            join(ticketDir, "20260101T120000-implementation.md"),
+            "## Changes Made\n\n- new-feature.ts\n",
+          ).then(() => ({ stdout: "", stderr: "", code: 0 }));
+        },
+      };
+      const run: CommandRunner = spy(() =>
+        Promise.resolve({ code: 0, stdout: "APPROVE" })
+      );
+      await executePhase(
+        {
+          ticketDir,
+          stateDir: dirname(ticketDir),
+          outputFile: "20260101T120000-implementation.md",
+          phase: "implementation",
+          scopeDirs: [],
+          prompt: "p",
+          worktrees: {
+            "someorg/somerepo": { path: worktreeDir, branch: "main" },
+          },
+          homeDir,
+          provider: "github",
+          ticketId: "github/someorg/somerepo/9",
+          model: "claude-sonnet-4-6",
+          thinking: "off",
+          agentType: "pi",
+          run,
+        },
+        agent,
+      );
+      const calls = (run as ReturnType<typeof spy>).calls;
+      const selfApproveCall = calls.find((c) =>
+        (c.args[0] as string[]).includes("--dangerously-skip-permissions")
+      );
+      assertExists(selfApproveCall);
+      const args = selfApproveCall.args[0] as string[];
+      assertStringIncludes(args[args.length - 1], "## Changed Files");
+      assertStringIncludes(args[args.length - 1], "new-feature.ts");
+    } finally {
+      await Deno.remove(ticketDir, { recursive: true });
+      await Deno.remove(homeDir, { recursive: true });
+      await Deno.remove(worktreeDir, { recursive: true });
+      await Deno.remove(originDir, { recursive: true });
+    }
+  },
+);
+
+async function runCmdForTest(args: string[], cwd?: string): Promise<void> {
+  await new Deno.Command(args[0], {
+    args: args.slice(1),
+    cwd,
+    stdout: "null",
+    stderr: "null",
+  }).output();
+}
+
+async function setupGitWorktreeForTest(): Promise<
+  { worktreeDir: string; originDir: string }
+> {
+  const originDir = await Deno.makeTempDir();
+  const worktreeDir = await Deno.makeTempDir();
+
+  await runCmdForTest(["git", "init", "--bare", originDir]);
+  await runCmdForTest(["git", "init", worktreeDir]);
+  await runCmdForTest([
+    "git",
+    "-C",
+    worktreeDir,
+    "config",
+    "user.email",
+    "t@t.com",
+  ]);
+  await runCmdForTest(["git", "-C", worktreeDir, "config", "user.name", "T"]);
+  await runCmdForTest([
+    "git",
+    "-C",
+    worktreeDir,
+    "remote",
+    "add",
+    "origin",
+    originDir,
+  ]);
+
+  await Deno.writeTextFile(join(worktreeDir, "README.md"), "initial");
+  await runCmdForTest(["git", "-C", worktreeDir, "add", "."]);
+  await runCmdForTest(["git", "-C", worktreeDir, "commit", "-m", "initial"]);
+  await runCmdForTest([
+    "git",
+    "-C",
+    worktreeDir,
+    "push",
+    "origin",
+    "HEAD:main",
+  ]);
+  await runCmdForTest(["git", "-C", worktreeDir, "fetch", "origin"]);
+
+  await Deno.writeTextFile(
+    join(worktreeDir, "new-feature.ts"),
+    "export const x = 1;",
+  );
+  await runCmdForTest(["git", "-C", worktreeDir, "add", "."]);
+  await runCmdForTest([
+    "git",
+    "-C",
+    worktreeDir,
+    "commit",
+    "-m",
+    "feat: add feature",
+  ]);
+
+  return { worktreeDir, originDir };
+}
+
 // ── readSelfApprove ──────────────────────────────────────────────────────────
 
 Deno.test("readSelfApprove: returns null when no matching file exists", async () => {

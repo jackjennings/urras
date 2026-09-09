@@ -84,7 +84,7 @@ export function makeTickServiceDeps(
   };
 }
 
-export function withLazyboyDir(): Disposable & { path: string } {
+export function withUrrasDir(): Disposable & { path: string } {
   const path = Deno.makeTempDirSync();
   const original = Deno.env.get("URRAS_DIR");
   Deno.env.set("URRAS_DIR", path);

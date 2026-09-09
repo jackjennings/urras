@@ -58,6 +58,20 @@ Deno.test("buildPhaseArgs: does not include bash wrapper flags", () => {
   assertFalse(args.includes("bash"));
 });
 
+Deno.test("buildPhaseArgs: includes --ticket-id when ticketId provided", () => {
+  const args = buildPhaseArgs(
+    makeOpts({ ticketId: "github/jackjennings/lazyboy/652" }),
+  );
+  const idx = args.indexOf("--ticket-id");
+  assertNotEquals(idx, -1);
+  assertEquals(args[idx + 1], "github/jackjennings/lazyboy/652");
+});
+
+Deno.test("buildPhaseArgs: omits --ticket-id when not provided", () => {
+  const args = buildPhaseArgs(makeOpts());
+  assertFalse(args.includes("--ticket-id"));
+});
+
 Deno.test("buildPhaseArgs: first two args are run --allow-all", () => {
   const args = buildPhaseArgs(makeOpts());
   assertEquals(args[0], "run");

@@ -19,7 +19,7 @@ import {
   makeTickDeps,
   makeTicket,
   makeTickServiceDeps,
-  withLazyboyDir,
+  withUrrasDir,
 } from "./test-support.ts";
 import type { Provider, WorkItem } from "./providers/types.ts";
 import { CorruptRepoIdentitiesError } from "./providers/github/repo-identity.ts";
@@ -202,7 +202,7 @@ Deno.test(
 Deno.test(
   "TickService: unreadable ticket logs ticket-read-error and valid tickets proceed",
   async () => {
-    using _dir = withLazyboyDir();
+    using _dir = withUrrasDir();
     const validTicket = makeTicket({
       id: "gh-valid",
       phase: "intake",
@@ -1500,7 +1500,7 @@ Deno.test(
 Deno.test(
   "TickService: CorruptRepoIdentitiesError skips capture, advance still runs, logs repo-identity-unavailable",
   async () => {
-    using lb = withLazyboyDir();
+    using lb = withUrrasDir();
     let fetchNewCalled = false;
     let migratesCalled = false;
 

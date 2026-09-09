@@ -189,6 +189,21 @@ When adding an optional section to a phase prompt, always update the
 corresponding `*-self-approve.md` to allow it. Self-approve prompts that assert
 an exact section count will reject valid outputs that include the new section.
 
+The built-in prompt can be extended (never replaced) from the state dir, using
+the same `loadStatePrompt` hierarchy as phase-generation prompts (see "Phase
+prompts" above): `{stateDir}/prompts/{phase}-self-approve.md` (global),
+`{stateDir}/prompts/{provider}/{phase}-self-approve.md` (provider-scoped), and
+`{stateDir}/prompts/{provider}/{projectPath}/{phase}-self-approve.md`
+(project-scoped, e.g. `.../github/acme/widgets/implementation-self-approve.md`).
+Any that exist are appended, in that order, after the built-in prompt.
+`selfApprove` derives the ticket's own provider from the first path segment of
+`ticketId` (e.g. `github` from `github/acme/widgets/652`) — never from
+`ExecutePhaseOptions.provider`, which is the LLM backend provider
+(`anthropic`/`bedrock`, from `[pi].provider`) and is a different concept
+entirely. The content sent to the self-approve model is also prefixed with a
+`## Ticket` section naming `ticketId`, so even a non-project-scoped supplement
+can write identity-based conditionals.
+
 ## Critique pass
 
 Drop `src/phases/prompts/<phase>-critique.md` to opt a phase into an in-process
@@ -331,15 +346,14 @@ through it — state-dir code is agent-authored and untrusted until approved.
 Anything that writes under the runtime dir — the combined `log.ndjson`,
 `tick.ndjson`, and future logging — must resolve its base path via `urrasDir()`
 (`src/paths.ts`), never `join(HOME, ".urras", …)` inline. It returns
-`$URRAS_DIR` when set, else `$HOME/.urras` (with filesystem fallback to
-`$HOME/.lazyboy`). This is the single seam that keeps tests from writing to the
-operator's real `~/.urras`: `deno task
-test` sets `URRAS_DIR=$(mktemp -d)`, so
-any code routed through `urrasDir()` is isolated automatically with no per-test
-setup. Single-file runs go through `deno task test:file <path>`, which sets it
-the same way — do not invoke `deno test` directly (see Commands). A test that
-inspects the combined/tick log directly uses `withLazyboyDir()`
-(`src/test-support.ts`) for its own scratch dir.
+`$URRAS_DIR` when set, else `$HOME/.urras`. This is the single seam that keeps
+tests from writing to the operator's real `~/.urras`: `deno task
+test` sets
+`URRAS_DIR=$(mktemp -d)`, so any code routed through `urrasDir()` is isolated
+automatically with no per-test setup. Single-file runs go through
+`deno task test:file <path>`, which sets it the same way — do not invoke
+`deno test` directly (see Commands). A test that inspects the combined/tick log
+directly uses `withUrrasDir()` (`src/test-support.ts`) for its own scratch dir.
 
 Non-log paths (`worktrees/`, `pi/`, `claude-code/`, `anthropic-pricing.json`,
 `tick.pid`, `last-worked.json`) still read `HOME`/`opts.homeDir` directly; their
@@ -741,7 +755,7 @@ IDs are POSIX relative paths (`join(stateDir, id, …)` resolves them); the
 slashes create the namespaced directory structure under `stateDir`.
 
 - **GitHub**: `github/<org>/<repo>/<issue-number>` (e.g.
-  `github/jackjennings/lazyboy/23`).
+  `github/acme/widgets/23`).
 - **Jira**: `jira/<issue-key>` (e.g. `jira/PROJ-123`; keys are globally unique
   per instance).
 

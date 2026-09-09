@@ -7,7 +7,7 @@ import {
   writeLastDivergence,
 } from "./update-divergence.ts";
 import type { Divergence } from "./commands/update.ts";
-import { withLazyboyDir } from "./test-support.ts";
+import { withUrrasDir } from "./test-support.ts";
 
 function makeStore(initial: Divergence | null = null) {
   let stored = initial;
@@ -103,25 +103,25 @@ Deno.test("formatDivergenceMessage: singular commit wording", () => {
 });
 
 Deno.test("readLastDivergence: returns null when no state file exists", async () => {
-  using _dir = withLazyboyDir();
+  using _dir = withUrrasDir();
   assertEquals(await readLastDivergence(), null);
 });
 
 Deno.test("writeLastDivergence: round-trips through the runtime dir", async () => {
-  using _dir = withLazyboyDir();
+  using _dir = withUrrasDir();
   await writeLastDivergence({ ahead: 4, behind: 2 });
   assertEquals(await readLastDivergence(), { ahead: 4, behind: 2 });
 });
 
 Deno.test("writeLastDivergence: null clears the stored state", async () => {
-  using _dir = withLazyboyDir();
+  using _dir = withUrrasDir();
   await writeLastDivergence({ ahead: 4, behind: 2 });
   await writeLastDivergence(null);
   assertEquals(await readLastDivergence(), null);
 });
 
 Deno.test("readLastDivergence: returns null when the state file is corrupt", async () => {
-  using dir = withLazyboyDir();
+  using dir = withUrrasDir();
   await Deno.writeTextFile(`${dir.path}/update-divergence.json`, "not json");
   assertEquals(await readLastDivergence(), null);
 });

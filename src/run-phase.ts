@@ -466,6 +466,7 @@ export async function executePhase(
     worktrees: Record<string, { path: string; branch: string }>;
     homeDir: string;
     provider: string;
+    ticketId?: string;
     model: string;
     thinking: string;
     agentType: "pi" | "claude-code";
@@ -715,12 +716,18 @@ export async function executePhase(
   }
 
   try {
+    const ticketProvider = opts.ticketId?.split("/")[0];
     const selfApproveResult = await Effect.runPromise(selfApprove({
       phase: opts.phase,
       ticketDir: opts.ticketDir,
-      run: captureCommandRunner(),
-      worktreePath: opts.worktrees["jackjennings/lazyboy"]?.path,
+      run: opts.run ?? captureCommandRunner(),
+      worktreePath: (ticketProvider && opts.ticketId)
+        ? opts.worktrees[deriveProjectPath(ticketProvider, opts.ticketId)]
+          ?.path
+        : undefined,
       ollamaModels: opts.ollamaModels,
+      stateDir: opts.stateDir,
+      ticketId: opts.ticketId,
     }));
     await writeTextFile(
       join(opts.ticketDir, opts.outputFile + ".selfapprove"),
@@ -794,6 +801,7 @@ if (import.meta.main) {
       "prompt",
       "worktrees",
       "provider",
+      "ticket-id",
       "model",
       "thinking",
       "context-files",
@@ -852,6 +860,7 @@ if (import.meta.main) {
       worktrees,
       homeDir,
       provider: args["provider"]!,
+      ticketId: args["ticket-id"] ?? undefined,
       model: args["model"]!,
       thinking: args["thinking"]!,
       agentType,

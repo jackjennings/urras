@@ -7,6 +7,7 @@ import { ClaudeLanguageModel } from "./models/claude.ts";
 import { FallbackLanguageModel } from "./models/fallback.ts";
 import { OllamaLanguageModel } from "./models/ollama.ts";
 import { runGit } from "./worktree.ts";
+import { loadStatePrompt } from "./phases/runners.ts";
 
 const PROMPT_DIR = new URL("./phases/prompts/", import.meta.url).pathname;
 
@@ -24,12 +25,16 @@ async function executeReview({
   run,
   worktreePath,
   ollamaModels,
+  stateDir,
+  ticketId,
 }: {
   phase: string;
   ticketDir: string;
   run: CommandRunner;
   worktreePath?: string;
   ollamaModels?: OllamaLanguageModel[];
+  stateDir?: string;
+  ticketId?: string;
 }): Promise<SelfReviewOutcome> {
   let systemPrompt: string;
   try {
@@ -40,12 +45,27 @@ async function executeReview({
     return { approved: false, reason: null };
   }
 
+  if (stateDir) {
+    const ticketProvider = ticketId?.split("/")[0];
+    const supplement = await loadStatePrompt(
+      `${phase}-self-approve`,
+      stateDir,
+      ticketProvider,
+      ticketId,
+    );
+    if (supplement) systemPrompt += `\n\n${supplement}`;
+  }
+
   const found = await findLatestPhaseOutput(ticketDir);
   if (!found) return { approved: false, reason: null };
 
   let outputContent = await readTextFile(
     join(ticketDir, found.filename),
   );
+
+  if (ticketId) {
+    outputContent = `## Ticket\n\n${ticketId}\n\n${outputContent}`;
+  }
 
   if (worktreePath) {
     try {
@@ -81,6 +101,8 @@ export function selfApprove(opts: {
   run: CommandRunner;
   worktreePath?: string;
   ollamaModels?: OllamaLanguageModel[];
+  stateDir?: string;
+  ticketId?: string;
 }): Effect.Effect<SelfReviewOutcome, SelfReviewModelError> {
   return Effect.tryPromise({
     try: () => executeReview(opts),
