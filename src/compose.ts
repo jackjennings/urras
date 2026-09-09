@@ -801,8 +801,14 @@ export function composeTickDeps(
               `fix it, re-run that command, and confirm it passes before claiming FIXED. Common ` +
               `cases:\n` +
               `- Lint or format violations, often left behind by conflict resolution: run the ` +
-              `repository's own check command (for example \`deno fmt\` and \`deno lint\`) and ` +
-              `commit the result.\n` +
+              `repository's own check command (for example \`deno fmt\` and \`deno lint\`), then ` +
+              `stage the changed files with \`git add\`. If \`git-absorb\` is on PATH (\`which ` +
+              `git-absorb\` exits 0), run \`git absorb --and-rebase --force\` to fold the fix ` +
+              `into the commit that introduced the violation. If \`git-absorb\` is absent, or if ` +
+              `\`git absorb --and-rebase --force\` exits non-zero for any reason (including no ` +
+              `absorbable commits found), fall back to a plain \`git commit\` with an appropriate ` +
+              `message. A non-zero absorb exit is a normal fallback condition — do not treat it as ` +
+              `a reason for \`VERDICT: UNFIXABLE\`.\n` +
               `- Commit messages rejected by commitlint: reword the offending commits rather than ` +
               `adding a new one. Prefer \`git commit --amend -m\` when only the tip commit is bad. ` +
               `For older commits use a non-interactive rebase driven by GIT_SEQUENCE_EDITOR and ` +
