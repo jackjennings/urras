@@ -31,6 +31,9 @@ function makeCeremony(
     runGit: () => Promise.resolve({ success: true, stdout: "", stderr: "" }),
     runGh: () => Promise.resolve({ success: true, stdout: "", stderr: "" }),
     commitState: () => Promise.resolve(),
+    getModel: () => {
+      throw new Error("getModel not implemented in test");
+    },
     ...overrides,
   });
 }
@@ -212,6 +215,58 @@ Deno.test("ModuleCeremony: notify without an injected notifier does not fail the
       await Deno.readTextFile(join(outputDir, "20260727T100000-digest.md")),
       "ran to completion",
     );
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("ModuleCeremony: getModel delegates to dep and is reachable from context", async () => {
+  const dir = await makeModuleDir(
+    `export default async function (context) {
+      const model = context.getModel([{ provider: "ollama", model: "llama3.1" }]);
+      await context.writeOutput(model.name);
+    }`,
+  );
+  try {
+    const fakeModel = {
+      name: "test-model",
+      generateText: () => Promise.resolve(""),
+      generateObject: () => Promise.resolve(null),
+    };
+    const getModel = spy(() => fakeModel);
+    const outputDir = join(dir, "output");
+    await makeCeremony(dir, { getModel }).run(TEST_NOW, outputDir);
+    assertSpyCalls(getModel, 1);
+    assertEquals(
+      await Deno.readTextFile(join(outputDir, "20260727T100000-digest.md")),
+      "test-model",
+    );
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("ModuleCeremony: getModel with empty chain causes ceremony-failed", async () => {
+  const dir = await makeModuleDir(
+    `export default async function (context) {
+      context.getModel([]);
+    }`,
+  );
+  try {
+    const appendTickLog = spy((_entry: object) => Promise.resolve());
+    const getModel = spy(() => {
+      throw new Error("should not reach dep");
+    });
+    await makeCeremony(dir, { getModel, appendTickLog }).run(
+      TEST_NOW,
+      join(dir, "output"),
+    );
+    assertSpyCalls(getModel, 0);
+    assertEquals(appendTickLog.calls[0].args[0], {
+      event: "ceremony-warning",
+      ceremony: "digest",
+      reason: "ceremony-failed",
+    });
   } finally {
     await Deno.remove(dir, { recursive: true });
   }

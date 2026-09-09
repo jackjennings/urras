@@ -61,6 +61,9 @@ function makeRunner(
       runGh: () => Promise.resolve({ success: true, stdout: "", stderr: "" }),
       commitState: opts.commitState ?? (() => Promise.resolve()),
       timeoutMs: opts.timeoutMs,
+      getModel: () => {
+        throw new Error("getModel not implemented in test");
+      },
     },
     opts.ceremonies ?? [],
   );
