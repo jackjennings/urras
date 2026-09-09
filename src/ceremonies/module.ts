@@ -27,6 +27,7 @@ export interface ModuleCeremonyDeps {
   commitState(): Promise<void>;
   notify?(title: string, message: string): Promise<void>;
   getModel(chain: ModelChainEntry[]): LanguageModel;
+  pushTicket(ticket: { title: string; body: string }): Promise<void>;
 }
 
 export class ModuleCeremony implements Ceremony {
@@ -105,6 +106,7 @@ export class ModuleCeremony implements Ceremony {
         }
         return this.#deps.getModel(chain);
       },
+      pushTicket: (ticket) => this.#deps.pushTicket(ticket),
     };
 
     try {

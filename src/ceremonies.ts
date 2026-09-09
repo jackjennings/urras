@@ -40,6 +40,7 @@ export interface CeremonyRunnerDeps {
     token: string,
   ): Promise<{ success: boolean; stdout: string; stderr: string }>;
   commitState(): Promise<void>;
+  pushTicket(ticket: { title: string; body: string }): Promise<void>;
   timeoutMs?: number;
   getModel(chain: ModelChainEntry[]): LanguageModel;
 }
@@ -139,6 +140,7 @@ export class CeremonyRunner {
           commitState: this.#deps.commitState,
           notify: this.#deps.notify,
           getModel: (chain) => this.#deps.getModel(chain),
+          pushTicket: this.#deps.pushTicket,
         }),
         ceremonyDir,
         true,

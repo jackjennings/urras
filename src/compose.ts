@@ -35,6 +35,7 @@ import { urrasDir } from "./paths.ts";
 import { GitHubProvider } from "./providers/github.ts";
 import { JiraProvider } from "./providers/jira.ts";
 import { TodoTxtProvider } from "./providers/todo-txt.ts";
+import { InternalProvider } from "./providers/internal.ts";
 import type { Provider } from "./providers/types.ts";
 import { pickupWorkItemAction } from "./tick-actions/pickup-work-item.ts";
 import { isPhaseAlive, spawnPhase } from "./executor.ts";
@@ -426,6 +427,10 @@ export function composeTickDeps(
   if (config.todoTxt) {
     providers.push(new TodoTxtProvider({ file: config.todoTxt.file }));
   }
+
+  providers.push(
+    new InternalProvider(join(stateDir, "internal", "queue.ndjson")),
+  );
 
   function findProvider(url: string, providerName: string): Provider {
     if (providerName === "jira") {
@@ -1174,6 +1179,23 @@ export function composeTickDeps(
       commitState: async () => {
         await ensureRunPidGitignored(stateDir);
         await commitState(stateDir, "ceremony: state-dir");
+      },
+      pushTicket: async (ticket) => {
+        const internalDir = join(stateDir, "internal");
+        await mkdir(internalDir, { recursive: true });
+        const id = "internal/" + crypto.randomUUID();
+        const createdAt = Temporal.Now.instant().toString();
+        const entry = JSON.stringify({
+          id,
+          title: ticket.title,
+          body: ticket.body,
+          createdAt,
+        });
+        await writeTextFile(
+          join(internalDir, "queue.ndjson"),
+          entry + "\n",
+          { append: true },
+        );
       },
     },
     [
