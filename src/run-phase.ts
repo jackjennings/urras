@@ -531,6 +531,15 @@ export async function executePhase(
     // file didn't exist; nothing to do
   }
 
+  try {
+    await writeTextFile(
+      join(opts.ticketDir, opts.outputFile.replace(/\.md$/, ".prompt")),
+      opts.prompt + pathContext,
+    );
+  } catch {
+    // sidecar write failure does not affect the returned exit code
+  }
+
   const startMs = Temporal.Now.instant().epochMilliseconds;
   const mainResult = await agent.runPhase({
     prompt: opts.prompt + pathContext,
