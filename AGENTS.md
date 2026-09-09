@@ -189,6 +189,22 @@ When adding an optional section to a phase prompt, always update the
 corresponding `*-self-approve.md` to allow it. Self-approve prompts that assert
 an exact section count will reject valid outputs that include the new section.
 
+The built-in prompt can be extended (never replaced) from the state dir, using
+the same `loadStatePrompt` hierarchy as phase-generation prompts (see "Phase
+prompts" above): `{stateDir}/prompts/{phase}-self-approve.md` (global),
+`{stateDir}/prompts/{provider}/{phase}-self-approve.md` (provider-scoped), and
+`{stateDir}/prompts/{provider}/{projectPath}/{phase}-self-approve.md`
+(project-scoped, e.g.
+`.../github/jackjennings/lazyboy/implementation-self-approve.md`). Any that
+exist are appended, in that order, after the built-in prompt. `selfApprove`
+derives the ticket's own provider from the first path segment of `ticketId`
+(e.g. `github` from `github/jackjennings/lazyboy/652`) — never from
+`ExecutePhaseOptions.provider`, which is the LLM backend provider
+(`anthropic`/`bedrock`, from `[pi].provider`) and is a different concept
+entirely. The content sent to the self-approve model is also prefixed with a
+`## Ticket` section naming `ticketId`, so even a non-project-scoped supplement
+can write identity-based conditionals.
+
 ## Critique pass
 
 Drop `src/phases/prompts/<phase>-critique.md` to opt a phase into an in-process

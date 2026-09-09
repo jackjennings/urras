@@ -12,6 +12,7 @@ export interface ExecutorOptions {
   anthropicApiKey: string;
   worktrees: Record<string, WorktreeInfo>;
   provider: string;
+  ticketId?: string;
   model: string;
   thinking: string;
   critiqueModel?: string;
@@ -65,6 +66,9 @@ export function buildPhaseArgs(opts: ExecutorOptions): string[] {
     "--agent",
     opts.agent,
   );
+  if (opts.ticketId !== undefined) {
+    args.push("--ticket-id", opts.ticketId);
+  }
   if (opts.critiqueModel !== undefined) {
     args.push("--critique-model", opts.critiqueModel);
   }

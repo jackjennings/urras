@@ -414,3 +414,143 @@ Deno.test("selfApprove: continues without diff when worktreePath git command fai
     await Deno.remove(tempDir, { recursive: true });
   }
 });
+
+Deno.test("selfApprove: appends global state-dir self-approve supplement to system prompt", async () => {
+  const tempDir = await Deno.makeTempDir();
+  const stateDir = await Deno.makeTempDir();
+  try {
+    await Deno.writeTextFile(
+      join(tempDir, "20260717T120000-intake.md"),
+      "output",
+    );
+    await Deno.mkdir(join(stateDir, "prompts"), { recursive: true });
+    await Deno.writeTextFile(
+      join(stateDir, "prompts", "intake-self-approve.md"),
+      "Always approve tickets scoped to example/repo.",
+    );
+    const run = runnerReturning("APPROVE");
+    await Effect.runPromise(
+      selfApprove({ phase: "intake", ticketDir: tempDir, run, stateDir }),
+    );
+    const args = (run as ReturnType<typeof spy>).calls[0].args[0] as string[];
+    const promptIdx = args.indexOf("--system-prompt");
+    assertStringIncludes(
+      args[promptIdx + 1],
+      "Always approve tickets scoped to example/repo.",
+    );
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+    await Deno.remove(stateDir, { recursive: true });
+  }
+});
+
+Deno.test("selfApprove: appends project-scoped self-approve supplement for matching ticket", async () => {
+  const tempDir = await Deno.makeTempDir();
+  const stateDir = await Deno.makeTempDir();
+  try {
+    await Deno.writeTextFile(
+      join(tempDir, "20260717T120000-implementation.md"),
+      "output",
+    );
+    const projectPromptDir = join(
+      stateDir,
+      "prompts",
+      "github",
+      "jackjennings",
+      "lazyboy",
+    );
+    await Deno.mkdir(projectPromptDir, { recursive: true });
+    await Deno.writeTextFile(
+      join(projectPromptDir, "implementation-self-approve.md"),
+      "Approve unconditionally for this repository.",
+    );
+    const run = runnerReturning("APPROVE");
+    await Effect.runPromise(
+      selfApprove({
+        phase: "implementation",
+        ticketDir: tempDir,
+        run,
+        stateDir,
+        ticketId: "github/jackjennings/lazyboy/652",
+      }),
+    );
+    const args = (run as ReturnType<typeof spy>).calls[0].args[0] as string[];
+    const promptIdx = args.indexOf("--system-prompt");
+    assertStringIncludes(
+      args[promptIdx + 1],
+      "Approve unconditionally for this repository.",
+    );
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+    await Deno.remove(stateDir, { recursive: true });
+  }
+});
+
+Deno.test("selfApprove: does not apply another project's scoped supplement", async () => {
+  const tempDir = await Deno.makeTempDir();
+  const stateDir = await Deno.makeTempDir();
+  try {
+    await Deno.writeTextFile(
+      join(tempDir, "20260717T120000-implementation.md"),
+      "output",
+    );
+    const otherProjectPromptDir = join(
+      stateDir,
+      "prompts",
+      "github",
+      "someoneelse",
+      "otherrepo",
+    );
+    await Deno.mkdir(otherProjectPromptDir, { recursive: true });
+    await Deno.writeTextFile(
+      join(otherProjectPromptDir, "implementation-self-approve.md"),
+      "Approve unconditionally for this repository.",
+    );
+    const run = runnerReturning("APPROVE");
+    await Effect.runPromise(
+      selfApprove({
+        phase: "implementation",
+        ticketDir: tempDir,
+        run,
+        stateDir,
+        ticketId: "github/jackjennings/lazyboy/652",
+      }),
+    );
+    const args = (run as ReturnType<typeof spy>).calls[0].args[0] as string[];
+    const promptIdx = args.indexOf("--system-prompt");
+    assert(
+      !args[promptIdx + 1].includes(
+        "Approve unconditionally for this repository.",
+      ),
+      "should not include another project's supplement",
+    );
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+    await Deno.remove(stateDir, { recursive: true });
+  }
+});
+
+Deno.test("selfApprove: prepends ticket id to content sent to model when ticketId provided", async () => {
+  const tempDir = await Deno.makeTempDir();
+  try {
+    await Deno.writeTextFile(
+      join(tempDir, "20260717T120000-intake.md"),
+      "output",
+    );
+    const run = runnerReturning("APPROVE");
+    await Effect.runPromise(
+      selfApprove({
+        phase: "intake",
+        ticketDir: tempDir,
+        run,
+        ticketId: "github/jackjennings/lazyboy/652",
+      }),
+    );
+    const args = (run as ReturnType<typeof spy>).calls[0].args[0] as string[];
+    const content = args[args.length - 1];
+    assertStringIncludes(content, "## Ticket");
+    assertStringIncludes(content, "github/jackjennings/lazyboy/652");
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
