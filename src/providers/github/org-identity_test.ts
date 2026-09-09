@@ -9,7 +9,11 @@ Deno.test(
   "canonicalLoginFor: returns the key when login is a canonical entry",
   () => {
     const table: OrgIdentityTable = {
-      hellboxpy: { orgId: 1, currentLogin: "hellboxpy", aliases: ["hellboxpy"] },
+      hellboxpy: {
+        orgId: 1,
+        currentLogin: "hellboxpy",
+        aliases: ["hellboxpy"],
+      },
     };
     assertEquals(canonicalLoginFor(table, "hellboxpy"), "hellboxpy");
   },
