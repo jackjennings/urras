@@ -18,10 +18,8 @@ import type {
   ApprovalRecord,
   CeremonyManifestEntry,
 } from "../ceremonies/approvals.ts";
-import {
-  BUILT_IN_CEREMONY_NAMES,
-  isValidCeremonyName,
-} from "../ceremonies/types.ts";
+import { BUILT_IN_CEREMONY_NAMES } from "../ceremonies/built-ins.ts";
+import { isValidCeremonyName } from "../ceremonies/types.ts";
 
 export async function performApprove(
   stateDir: string,
@@ -69,7 +67,7 @@ export async function performApproveCeremony(
   if (!isValidCeremonyName(name)) {
     throw new Error(`Invalid ceremony name: ${name}`);
   }
-  if (BUILT_IN_CEREMONY_NAMES.includes(name)) {
+  if ((BUILT_IN_CEREMONY_NAMES as ReadonlyArray<string>).includes(name)) {
     throw new Error(`${name} is a built-in ceremony and needs no approval`);
   }
   const ceremonyDir = join(extensionsDir, "ceremonies", name);
