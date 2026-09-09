@@ -80,6 +80,12 @@ export class InternalProvider implements Provider {
     return Promise.resolve();
   }
 
+  fetchCurrent(
+    _ticketId: string,
+  ): Promise<{ title: string; body: string } | null> {
+    return Promise.resolve(null);
+  }
+
   close(_url: string): Promise<void> {
     return Promise.resolve();
   }

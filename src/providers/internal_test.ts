@@ -145,3 +145,8 @@ Deno.test("close resolves without error", async () => {
   const provider = new InternalProvider("/nonexistent/queue.ndjson");
   await provider.close(`internal://${UUID}`);
 });
+
+Deno.test("fetchCurrent returns null", async () => {
+  const provider = new InternalProvider("/nonexistent/queue.ndjson");
+  assertEquals(await provider.fetchCurrent(`internal/${UUID}`), null);
+});
