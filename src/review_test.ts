@@ -28,7 +28,11 @@ import {
   type ReviewSessionOptions,
   wrapDiffLines,
 } from "./review.ts";
-import type { KeybindingsManager, OverlayHandle, TUI } from "@earendil-works/pi-tui";
+import type {
+  KeybindingsManager,
+  OverlayHandle,
+  TUI,
+} from "@earendil-works/pi-tui";
 import { join } from "@std/path";
 import { readTicket, writeTicket } from "./state/store.ts";
 import { makeTicket } from "./test-support.ts";
@@ -1577,7 +1581,14 @@ function makeReviewSession(
     ...overrides,
   });
 
-  return { session, tui, closeSpy, getKeybindingsFn, setKeybindingsFn, savedKb };
+  return {
+    session,
+    tui,
+    closeSpy,
+    getKeybindingsFn,
+    setKeybindingsFn,
+    savedKb,
+  };
 }
 
 Deno.test("ReviewSession: saves current keybindings on construction", () => {
