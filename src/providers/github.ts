@@ -24,6 +24,18 @@ type CloneFn = (
   token: string,
 ) => Promise<void>;
 
+const ORG_SEARCH_QUERY = `query($q: String!, $after: String) {
+    search(type: ISSUE, query: $q, first: 100, after: $after) {
+      nodes {
+        ... on Issue {
+          number title body url
+          repository { nameWithOwner databaseId }
+        }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }`;
+
 const REPO_ISSUES_QUERY =
   `query($owner: String!, $name: String!, $login: String!, $after: String) {
     repository(owner: $owner, name: $name) {
@@ -73,13 +85,21 @@ export function formatGitHubApiError(
 }
 
 export class GitHubProvider implements Provider {
-  private repos: string[];
+  private orgRepoSlugs: string[];
+  private bareOrgs: string[];
   private accountResolver: AccountResolver;
   private http: HttpClient;
   private _clone: CloneFn;
   private resolveRepo: (
     slug: string,
   ) => { canonical: string; current: string } | null;
+  private resolveOrg: (
+    bareOrg: string,
+  ) => { canonical: string; currentLogin: string };
+  private registerRepo: (
+    nameWithOwner: string,
+    databaseId: number,
+  ) => Promise<void>;
 
   constructor(
     opts: {
@@ -90,14 +110,25 @@ export class GitHubProvider implements Provider {
       resolveRepo?: (
         slug: string,
       ) => { canonical: string; current: string } | null;
+      resolveOrg?: (
+        bareOrg: string,
+      ) => { canonical: string; currentLogin: string };
+      registerRepo?: (
+        nameWithOwner: string,
+        databaseId: number,
+      ) => Promise<void>;
     },
   ) {
-    this.repos = opts.repos;
+    this.orgRepoSlugs = opts.repos.filter((r) => r.includes("/"));
+    this.bareOrgs = opts.repos.filter((r) => !r.includes("/"));
     this.accountResolver = opts.accountResolver;
     this.http = opts.http;
     this._clone = opts._clone ?? this.defaultClone.bind(this);
     this.resolveRepo = opts.resolveRepo ??
       ((s) => ({ canonical: s, current: s }));
+    this.resolveOrg = opts.resolveOrg ??
+      ((bareOrg) => ({ canonical: bareOrg, currentLogin: bareOrg }));
+    this.registerRepo = opts.registerRepo ?? (() => Promise.resolve());
   }
 
   private async defaultClone(
@@ -269,7 +300,7 @@ export class GitHubProvider implements Provider {
 
   async fetchNew(knownIds: Set<string>): Promise<WorkItem[]> {
     const items: WorkItem[] = [];
-    for (const repo of this.repos) {
+    for (const repo of this.orgRepoSlugs) {
       const resolved = this.resolveRepo(repo);
       if (resolved === null) {
         console.log(
@@ -325,6 +356,63 @@ export class GitHubProvider implements Provider {
           });
         }
       }
+    }
+    for (const bareOrg of this.bareOrgs) {
+      const { currentLogin } = this.resolveOrg(bareOrg);
+      const { token, login } = this.accountResolver(bareOrg);
+      const q = `org:${currentLogin} assignee:${login} is:open is:issue`;
+      let after: string | null = null;
+      const registeredInThisRun = new Set<string>();
+      do {
+        const gqlData = await githubGraphQL(
+          this.http,
+          token,
+          ORG_SEARCH_QUERY,
+          { q, after },
+        ) as {
+          search: {
+            nodes: Array<{
+              number: number;
+              title: string;
+              body: string;
+              url: string;
+              repository: { nameWithOwner: string; databaseId: number };
+            }>;
+            pageInfo: { hasNextPage: boolean; endCursor: string | null };
+          };
+        };
+        for (const node of gqlData.search.nodes) {
+          if (!registeredInThisRun.has(node.repository.nameWithOwner)) {
+            registeredInThisRun.add(node.repository.nameWithOwner);
+            await this.registerRepo(
+              node.repository.nameWithOwner,
+              node.repository.databaseId,
+            );
+          }
+          const [org, repo] = node.repository.nameWithOwner.split("/");
+          const id = ticketIdFor({ org, repo, number: node.number });
+          const legacyId = `gh-${node.number}`;
+          if (knownIds.has(legacyId)) {
+            console.log(
+              `GitHubProvider.fetchNew: ${id} already tracked as legacy id ` +
+                `${legacyId} (pending namespace-ticket-ids migration), skipping`,
+            );
+            continue;
+          }
+          if (!knownIds.has(id)) {
+            items.push({
+              id,
+              provider: "github",
+              title: node.title,
+              description: node.body ?? "",
+              url: node.url,
+            });
+          }
+        }
+        after = gqlData.search.pageInfo.hasNextPage
+          ? gqlData.search.pageInfo.endCursor
+          : null;
+      } while (after !== null);
     }
     return items;
   }
