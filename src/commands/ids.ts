@@ -3,14 +3,16 @@ import { expandHome, loadConfig } from "../config.ts";
 import type { Command } from "./types.ts";
 import { join } from "@std/path";
 import { readDir } from "../filesystem.ts";
-import { BUILT_IN_CEREMONY_NAMES } from "../ceremonies/types.ts";
+import { BUILT_IN_CEREMONY_NAMES } from "../ceremonies/built-ins.ts";
 
 export async function listCeremonyIds(stateDir: string): Promise<string[]> {
   const ids: string[] = [];
   try {
     for await (const entry of readDir(join(stateDir, "ceremonies"))) {
       if (!entry.isDirectory) continue;
-      if (BUILT_IN_CEREMONY_NAMES.includes(entry.name)) continue;
+      if (
+        (BUILT_IN_CEREMONY_NAMES as ReadonlyArray<string>).includes(entry.name)
+      ) continue;
       ids.push(`ceremony/${entry.name}`);
     }
   } catch (e) {

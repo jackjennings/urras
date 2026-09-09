@@ -234,6 +234,60 @@ const FIELDS: { [K in keyof TicketState]-?: Field<K> } = {
   },
 };
 
+type LearningFieldCodec<K extends keyof LearningState> = {
+  write(l: LearningState): unknown;
+  read(d: Record<string, unknown>): LearningState[K];
+};
+
+const LEARNING_FIELDS: {
+  [K in keyof LearningState]-?: LearningFieldCodec<K>;
+} = {
+  id: {
+    write: (l) => l.id,
+    read: (d) => d.id as string,
+  },
+  ticketId: {
+    write: (l) => l.ticketId,
+    read: (d) => d.ticketId as string,
+  },
+  repo: {
+    write: (l) => l.repo,
+    read: (d) => d.repo as string,
+  },
+  targetFile: {
+    write: (l) => l.targetFile,
+    read: (d) => d.targetFile as string,
+  },
+  prTitle: {
+    write: (l) => l.prTitle,
+    read: (d) => d.prTitle as string,
+  },
+  prBody: {
+    write: (l) => l.prBody,
+    read: (d) => d.prBody as string,
+  },
+  status: {
+    write: (l) => l.status,
+    read: (d) => (d.status as LearningStatus) ?? "pending",
+  },
+  prs: {
+    write: (l) => l.prs,
+    read: (d) =>
+      Array.isArray(d.prs)
+        ? (d.prs as unknown[]).flatMap((entry) => {
+          const normalized = normalizePrEntry(entry);
+          if (!normalized) {
+            console.error(
+              "listLearnings: dropping prs entry without url",
+            );
+            return [];
+          }
+          return [normalized];
+        })
+        : [],
+  },
+};
+
 export async function readTicket(
   stateDir: string,
   id: string,
@@ -491,16 +545,13 @@ export async function writeLearning(
 ): Promise<void> {
   const learningsDir = join(stateDir, "learnings");
   await mkdir(learningsDir, { recursive: true });
-  const raw = matter.stringify(`${intent.trim()}\n`, {
-    id: learning.id,
-    ticketId: learning.ticketId,
-    repo: learning.repo,
-    targetFile: learning.targetFile,
-    prTitle: learning.prTitle,
-    prBody: learning.prBody,
-    status: learning.status,
-    prs: learning.prs,
-  });
+  const frontmatter: Record<string, unknown> = {};
+  for (const [key, codec] of Object.entries(LEARNING_FIELDS)) {
+    frontmatter[key] = (codec as LearningFieldCodec<keyof LearningState>).write(
+      learning,
+    );
+  }
+  const raw = matter.stringify(`${intent.trim()}\n`, frontmatter);
   await writeTextFile(join(learningsDir, `${learning.id}.md`), raw);
 }
 
@@ -519,28 +570,14 @@ export async function listLearnings(
           console.error(`listLearnings: skipping file without id ${file.name}`);
           continue;
         }
+        const result: Record<string, unknown> = {};
+        for (const [key, codec] of Object.entries(LEARNING_FIELDS)) {
+          result[key] = (codec as LearningFieldCodec<keyof LearningState>).read(
+            data,
+          );
+        }
         entries.push({
-          learning: {
-            id: data.id,
-            ticketId: data.ticketId as string,
-            repo: data.repo as string,
-            targetFile: data.targetFile as string,
-            prTitle: data.prTitle as string,
-            prBody: data.prBody as string,
-            status: (data.status as LearningStatus) ?? "pending",
-            prs: Array.isArray(data.prs)
-              ? (data.prs as unknown[]).flatMap((entry) => {
-                const normalized = normalizePrEntry(entry);
-                if (!normalized) {
-                  console.error(
-                    `listLearnings: dropping prs entry without url in ${file.name}`,
-                  );
-                  return [];
-                }
-                return [normalized];
-              })
-              : [],
-          },
+          learning: result as unknown as LearningState,
           intent: content.trim(),
         });
       } catch {

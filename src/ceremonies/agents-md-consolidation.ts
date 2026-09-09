@@ -31,7 +31,8 @@ async function loadSystemPrompt(): Promise<string> {
 }
 
 export class AgentsMdConsolidationCeremony implements Ceremony {
-  readonly name = "agents-md-consolidation";
+  static readonly NAME = "agents-md-consolidation";
+  readonly name = AgentsMdConsolidationCeremony.NAME;
   readonly #deps: AgentsMdConsolidationCeremonyDeps;
 
   constructor(deps: AgentsMdConsolidationCeremonyDeps) {

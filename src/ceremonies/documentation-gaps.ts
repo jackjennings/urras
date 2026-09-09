@@ -159,7 +159,8 @@ async function callLlm(
 }
 
 export class DocumentationGapsCeremony implements Ceremony {
-  readonly name = "documentation-gaps";
+  static readonly NAME = "documentation-gaps";
+  readonly name = DocumentationGapsCeremony.NAME;
   readonly #deps: DocumentationGapsCeremonyDeps;
 
   constructor(deps: DocumentationGapsCeremonyDeps) {
