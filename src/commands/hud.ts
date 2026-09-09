@@ -30,6 +30,16 @@ import { ScrollPane } from "../ui/scroll-pane.ts";
 import type { Command } from "./types.ts";
 import { mkdir, open, readTextFile } from "../filesystem.ts";
 
+export type TicketEntry =
+  | { ok: true; ticket: TicketState; tokens: number | null; alive: boolean }
+  | { ok: false; id: string; error: string };
+
+export interface HudWatcherDeps {
+  readTicket: (stateDir: string, id: string) => Promise<TicketState>;
+  readTicketTokens: (ticketDir: string) => Promise<number | null>;
+  isPhaseAlive: (ticketDir: string) => boolean;
+}
+
 const BLOCKED_COMMANDS = new Set(["hud", "shell", "tail", "review"]);
 
 export function isBlockedCommand(name: string): boolean {
@@ -97,76 +107,6 @@ export function logPaneLines(lines: string[]): string[] {
 export async function openLogWatch(parentDir: string): Promise<Deno.FsWatcher> {
   await mkdir(parentDir, { recursive: true });
   return Deno.watchFs(parentDir);
-}
-
-async function readState(
-  stateDir: string,
-  config: { tick: { concurrency: number } },
-): Promise<{ header: string; statusLines: string[] }> {
-  const [enabled, ids] = await Promise.all([
-    isLaunchdEnabled(),
-    listTickets(stateDir),
-  ]);
-  const settled = await Promise.allSettled(
-    ids.map((id) => readTicket(stateDir, id)),
-  );
-  const tickets: TicketState[] = [];
-  const brokenRows: string[] = [];
-  for (let i = 0; i < settled.length; i++) {
-    const result = settled[i];
-    if (result.status === "fulfilled") {
-      tickets.push(result.value);
-    } else {
-      const err = result.reason;
-      brokenRows.push(
-        formatBrokenRow(
-          ids[i],
-          err instanceof Error ? err.message : String(err),
-        ),
-      );
-    }
-  }
-  tickets.sort(compareTickets);
-  const visible = tickets.filter((t) => !shouldHideTicket(t.phase, t.status));
-  const tokenTotals = await Promise.all(
-    visible.map((t) => readTicketTokens(join(stateDir, t.id))),
-  );
-  const running = tickets.filter(
-    (t) => t.status === "running" && isPhaseAlive(join(stateDir, t.id)),
-  ).length;
-  const statusLines = [
-    ...formatStatusHeader().split("\n"),
-    ...visible.map((t, i) =>
-      formatStatusRow(
-        t.id,
-        t.phase,
-        t.status,
-        t.approvals,
-        formatTokens(tokenTotals[i]),
-        t.shortTitle ?? t.title,
-      )
-    ),
-    ...brokenRows,
-  ];
-  let progress: string | undefined;
-  try {
-    const raw = await readTextFile(
-      join(urrasDir(), "tick-progress.json"),
-    );
-    const data = JSON.parse(raw) as { label?: string };
-    if (data.label) progress = data.label;
-  } catch {
-    // missing or unparseable
-  }
-  return {
-    header: formatHudHeader(
-      enabled,
-      running,
-      config.tick.concurrency,
-      progress,
-    ),
-    statusLines,
-  };
 }
 
 export const HUD_CHROME_ROWS = 3;
@@ -285,6 +225,161 @@ export function hudAutocompleteProvider(
   };
 }
 
+export async function loadTicketEntry(
+  stateDir: string,
+  id: string,
+  deps: HudWatcherDeps,
+): Promise<TicketEntry> {
+  const ticketDir = join(stateDir, id);
+  try {
+    const [ticket, tokens] = await Promise.all([
+      deps.readTicket(stateDir, id),
+      deps.readTicketTokens(ticketDir),
+    ]);
+    const alive = deps.isPhaseAlive(ticketDir);
+    return { ok: true, ticket, tokens, alive };
+  } catch (error) {
+    return {
+      ok: false,
+      id,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+export async function handleTicketWatcherEvent(opts: {
+  stateDir: string;
+  eventPath: string;
+  ticketMap: Map<string, TicketEntry>;
+  ticketDirMap: Map<string, string>;
+  deps: HudWatcherDeps;
+  scheduleRefresh: () => void;
+}): Promise<void> {
+  const {
+    stateDir,
+    eventPath,
+    ticketMap,
+    ticketDirMap,
+    deps,
+    scheduleRefresh,
+  } = opts;
+  let id: string | undefined;
+  for (const [dir, ticketId] of ticketDirMap) {
+    if (eventPath === dir || eventPath.startsWith(dir + "/")) {
+      id = ticketId;
+      break;
+    }
+  }
+  if (!id) return;
+  ticketMap.set(id, await loadTicketEntry(stateDir, id, deps));
+  scheduleRefresh();
+}
+
+export async function handleRootWatcherEvent(opts: {
+  stateDir: string;
+  ticketMap: Map<string, TicketEntry>;
+  ticketDirMap: Map<string, string>;
+  watchers: Set<Deno.FsWatcher>;
+  deps: HudWatcherDeps;
+  scheduleRefresh: () => void;
+}): Promise<void> {
+  const { stateDir, ticketMap, ticketDirMap, watchers, deps, scheduleRefresh } =
+    opts;
+  const currentIds = await listTickets(stateDir);
+  const currentIdSet = new Set(currentIds);
+
+  for (const id of currentIds) {
+    if (!ticketMap.has(id)) {
+      const ticketDir = join(stateDir, id);
+      ticketMap.set(id, await loadTicketEntry(stateDir, id, deps));
+      ticketDirMap.set(ticketDir, id);
+      const watcher = Deno.watchFs(ticketDir, { recursive: true });
+      watchers.add(watcher);
+      (async () => {
+        for await (const event of watcher) {
+          if (event.paths.length > 0) {
+            await handleTicketWatcherEvent({
+              stateDir,
+              eventPath: event.paths[0],
+              ticketMap,
+              ticketDirMap,
+              deps,
+              scheduleRefresh,
+            });
+          }
+        }
+      })();
+    }
+  }
+
+  for (const id of [...ticketMap.keys()]) {
+    if (!currentIdSet.has(id)) {
+      ticketMap.delete(id);
+      ticketDirMap.delete(join(stateDir, id));
+    }
+  }
+
+  scheduleRefresh();
+}
+
+async function buildStatusFromMap(
+  ticketMap: Map<string, TicketEntry>,
+  config: { tick: { concurrency: number } },
+): Promise<{ header: string; statusLines: string[] }> {
+  const tickets: TicketState[] = [];
+  const brokenRows: string[] = [];
+  let running = 0;
+
+  for (const entry of ticketMap.values()) {
+    if (entry.ok) {
+      tickets.push(entry.ticket);
+      if (entry.ticket.status === "running" && entry.alive) running++;
+    } else {
+      brokenRows.push(formatBrokenRow(entry.id, entry.error));
+    }
+  }
+
+  tickets.sort(compareTickets);
+  const visible = tickets.filter((t) => !shouldHideTicket(t.phase, t.status));
+
+  const statusLines = [
+    ...formatStatusHeader().split("\n"),
+    ...visible.map((t) => {
+      const e = ticketMap.get(t.id);
+      const tokens = e?.ok ? e.tokens : null;
+      return formatStatusRow(
+        t.id,
+        t.phase,
+        t.status,
+        t.approvals,
+        formatTokens(tokens),
+        t.shortTitle ?? t.title,
+      );
+    }),
+    ...brokenRows,
+  ];
+
+  const enabled = await isLaunchdEnabled();
+  let progress: string | undefined;
+  try {
+    const raw = await readTextFile(join(urrasDir(), "tick-progress.json"));
+    const data = JSON.parse(raw) as { label?: string };
+    if (data.label) progress = data.label;
+  } catch {
+    // missing or unparseable
+  }
+
+  return {
+    header: formatHudHeader(
+      enabled,
+      running,
+      config.tick.concurrency,
+      progress,
+    ),
+    statusLines,
+  };
+}
+
 export const hud: Command = {
   name: "hud",
   description: "live status display",
@@ -364,7 +459,7 @@ export const hud: Command = {
       const savedStatusOffset = statusPane.scrollOffset;
 
       const [{ header, statusLines }, logLines] = await Promise.all([
-        readState(stateDir, config),
+        buildStatusFromMap(ticketMap, config),
         readTickLog(tickLogPath),
       ]);
 
@@ -383,6 +478,15 @@ export const hud: Command = {
 
       tui.requestRender(true);
     }
+
+    const ticketMap = new Map<string, TicketEntry>();
+    const ticketDirMap = new Map<string, string>();
+    const ticketWatchers = new Set<Deno.FsWatcher>();
+    const hudDeps: HudWatcherDeps = {
+      readTicket,
+      readTicketTokens,
+      isPhaseAlive,
+    };
 
     commandEditor.onSubmit = async (value: string) => {
       if (commandRunning) return;
@@ -432,6 +536,15 @@ export const hud: Command = {
       setTimeout(() => refresh(), 3000);
     };
 
+    const initialIds = await listTickets(stateDir);
+    await Promise.all(
+      initialIds.map(async (id) => {
+        const entry = await loadTicketEntry(stateDir, id, hudDeps);
+        ticketMap.set(id, entry);
+        ticketDirMap.set(join(stateDir, id), id);
+      }),
+    );
+
     await refresh();
     logPane.scrollToEnd();
 
@@ -444,14 +557,40 @@ export const hud: Command = {
       }, 200);
     }
 
-    const watchState = Deno.watchFs(stateDir, { recursive: true });
-    const watchLog = await openLogWatch(parentDir);
+    for (const id of initialIds) {
+      const watcher = Deno.watchFs(join(stateDir, id), { recursive: true });
+      ticketWatchers.add(watcher);
+      (async () => {
+        for await (const event of watcher) {
+          if (event.paths.length > 0) {
+            await handleTicketWatcherEvent({
+              stateDir,
+              eventPath: event.paths[0],
+              ticketMap,
+              ticketDirMap,
+              deps: hudDeps,
+              scheduleRefresh,
+            });
+          }
+        }
+      })();
+    }
 
+    const watchRoot = Deno.watchFs(stateDir);
     (async () => {
-      for await (const _event of watchState) {
-        scheduleRefresh();
+      for await (const _event of watchRoot) {
+        await handleRootWatcherEvent({
+          stateDir,
+          ticketMap,
+          ticketDirMap,
+          watchers: ticketWatchers,
+          deps: hudDeps,
+          scheduleRefresh,
+        });
       }
     })();
+
+    const watchLog = await openLogWatch(parentDir);
 
     (async () => {
       for await (const _event of watchLog) {

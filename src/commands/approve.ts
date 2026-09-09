@@ -30,7 +30,9 @@ export async function performApprove(
     commitFn = commitTicket,
     readTicketFn = readTicketWithPatch,
   }: {
+    // deno-lint-ignore no-fn-suffix/no-fn-suffix
     commitFn?: typeof commitTicket;
+    // deno-lint-ignore no-fn-suffix/no-fn-suffix
     readTicketFn?: typeof readTicketWithPatch;
   } = {},
 ): Promise<void> {
@@ -51,9 +53,13 @@ export async function performApproveCeremony(
   extensionsDir: string,
   name: string,
   deps: {
+    // deno-lint-ignore no-fn-suffix/no-fn-suffix
     readApprovalsFn?: () => Promise<ApprovalRecord>;
+    // deno-lint-ignore no-fn-suffix/no-fn-suffix
     writeApprovalsFn?: (record: ApprovalRecord) => Promise<void>;
+    // deno-lint-ignore no-fn-suffix/no-fn-suffix
     hashFn?: (ceremonyDir: string) => Promise<string>;
+    // deno-lint-ignore no-fn-suffix/no-fn-suffix
     manifestFn?: (ceremonyDir: string) => Promise<CeremonyManifestEntry[]>;
   } = {},
 ): Promise<{ hash: string; lines: string[] }> {
