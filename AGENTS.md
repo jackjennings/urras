@@ -352,9 +352,9 @@ defeat that per-test `HOME` isolation.
 and `event`. Events: `tick-start`, `tick-end`, `tick-already-running`,
 `stale-lock`, `lock-failed`, `tick-failed`, `update-skipped`, `update-failed`,
 `repo-renamed`, `repo-identity-collision`, `repo-identity-reconcile-failed`,
-`repo-identity-unavailable`, `repo-org-unmapped`, `pricing-fetch-failed`.
-`appendTickLog` (`src/tick.ts`) writes it directly; it is not `appendTicketLog`
-(`src/state/store.ts`).
+`repo-identity-unavailable`, `repo-org-unmapped`, `pricing-fetch-failed`,
+`org-renamed`, `org-identity-reconcile-failed`. `appendTickLog` (`src/tick.ts`)
+writes it directly; it is not `appendTicketLog` (`src/state/store.ts`).
 
 | Event                            | Trigger                                                                                                                                                        |
 | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -364,6 +364,8 @@ and `event`. Events: `tick-start`, `tick-end`, `tick-already-running`,
 | `repo-identity-unavailable`      | `repos.json` could not be parsed; capture skipped for this tick                                                                                                |
 | `repo-org-unmapped`              | Org after a transfer is absent from `[github.orgs]`                                                                                                            |
 | `pricing-fetch-failed`           | `refreshAnthropicPricingIfStale` failed to refresh the pricing cache; `reason` is `network-error`, `http-error`, `response-read-error`, or `cache-write-error` |
+| `org-renamed`                    | `currentLogin` changed for a confirmed org identity entry                                                                                                      |
+| `org-identity-reconcile-failed`  | Network error, null response, or write failure on an org reconciler API call                                                                                   |
 
 The plist from `plistContent()` must **not** include `StandardOutPath` or
 `StandardErrorPath` pointing to `tick.ndjson` — the tick process owns its own
