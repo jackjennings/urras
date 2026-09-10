@@ -1354,3 +1354,64 @@ Deno.test("loadConfig: [ollama] with non-string url throws", async () => {
   );
   await Deno.remove(dir, { recursive: true });
 });
+
+Deno.test("loadConfig: absent [learnings] section leaves config.learnings undefined", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `[github]\nrepos = []\n[state]\ndir = "~/tmp"\n[tick]\nconcurrency = 1\n`,
+  );
+  const cfg = await loadConfig(join(dir, "config.toml"));
+  assertEquals(cfg.learnings, undefined);
+  await Deno.remove(dir, { recursive: true });
+});
+
+Deno.test("loadConfig: [learnings] with repos parses correctly", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `[github]\nrepos = []\n[state]\ndir = "~/tmp"\n[tick]\nconcurrency = 1\n[learnings]\nrepos = ["jackjennings/urras"]\n`,
+  );
+  const cfg = await loadConfig(join(dir, "config.toml"));
+  assertEquals(cfg.learnings, { repos: ["jackjennings/urras"] });
+  await Deno.remove(dir, { recursive: true });
+});
+
+Deno.test("loadConfig: [learnings] with empty repos array parses correctly", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `[github]\nrepos = []\n[state]\ndir = "~/tmp"\n[tick]\nconcurrency = 1\n[learnings]\nrepos = []\n`,
+  );
+  const cfg = await loadConfig(join(dir, "config.toml"));
+  assertEquals(cfg.learnings, { repos: [] });
+  await Deno.remove(dir, { recursive: true });
+});
+
+Deno.test("loadConfig: [learnings] with non-array repos throws", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `[github]\nrepos = []\n[state]\ndir = "~/tmp"\n[tick]\nconcurrency = 1\n[learnings]\nrepos = "jackjennings/urras"\n`,
+  );
+  await assertRejects(
+    () => loadConfig(join(dir, "config.toml")),
+    Error,
+    "config.toml: [learnings].repos must be an array of strings",
+  );
+  await Deno.remove(dir, { recursive: true });
+});
+
+Deno.test("loadConfig: [learnings] with non-string repo entry throws", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `[github]\nrepos = []\n[state]\ndir = "~/tmp"\n[tick]\nconcurrency = 1\n[learnings]\nrepos = [42]\n`,
+  );
+  await assertRejects(
+    () => loadConfig(join(dir, "config.toml")),
+    Error,
+    "config.toml: [learnings].repos must be an array of strings",
+  );
+  await Deno.remove(dir, { recursive: true });
+});

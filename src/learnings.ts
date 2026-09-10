@@ -6,7 +6,11 @@ export interface LearningDeps {
   listLearnings(): Promise<Array<{ learning: LearningState; intent: string }>>;
   writeLearning(learning: LearningState, intent: string): Promise<void>;
   prState(url: string): Promise<PRState>;
-  applyToRepo(learning: LearningState, intent: string): Promise<string>;
+  applyToRepo(
+    learning: LearningState,
+    intent: string,
+  ): Promise<{ url: string; title: string }>;
+  allowedRepos: string[];
   log?(entry: object): Promise<void>;
 }
 
@@ -33,12 +37,11 @@ export async function processLearnings(deps: LearningDeps): Promise<void> {
       let state: PRState;
       try {
         state = await deps.prState(pr.url);
-      } catch (e) {
+      } catch {
         await deps.log?.({
-          event: "error",
-          context: "processLearnings",
+          event: "learning-processing-failed",
           id: entry.learning.id,
-          message: e instanceof Error ? e.message : String(e),
+          reason: "pr-state-check-failed",
         });
         continue;
       }
@@ -65,13 +68,17 @@ export async function processLearnings(deps: LearningDeps): Promise<void> {
   );
   for (const entry of entries) {
     if (entry.learning.status !== "pending") continue;
+    if (!deps.allowedRepos.includes(entry.learning.repo)) continue;
     if (inFlight.has(entry.learning.targetFile)) continue;
     inFlight.add(entry.learning.targetFile);
     try {
-      const url = await deps.applyToRepo(entry.learning, entry.intent);
+      const { url, title } = await deps.applyToRepo(
+        entry.learning,
+        entry.intent,
+      );
       const pr: PrEntry = {
         url,
-        title: entry.learning.prTitle,
+        title,
         dependsOn: [],
         merged: false,
       };
@@ -85,10 +92,9 @@ export async function processLearnings(deps: LearningDeps): Promise<void> {
       );
     } catch (e) {
       await deps.log?.({
-        event: "error",
-        context: "processLearnings",
+        event: "learning-processing-failed",
         id: entry.learning.id,
-        message: e instanceof Error ? e.message : String(e),
+        reason: e instanceof Error ? e.message : "unknown",
       });
       await deps.writeLearning(
         { ...entry.learning, status: "needs-attention" },

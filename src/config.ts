@@ -197,6 +197,21 @@ export async function loadConfig(path?: string): Promise<Config> {
     }
   }
 
+  const learningsRaw = parsed.learnings as Record<string, unknown> | undefined;
+  let learnings: Config["learnings"];
+  if (learningsRaw !== undefined) {
+    const reposRaw = learningsRaw.repos;
+    if (
+      !Array.isArray(reposRaw) ||
+      !(reposRaw as unknown[]).every((r) => typeof r === "string")
+    ) {
+      throw new Error(
+        "config.toml: [learnings].repos must be an array of strings",
+      );
+    }
+    learnings = { repos: reposRaw as string[] };
+  }
+
   const extensionsRaw = parsed.extensions as
     | Record<string, unknown>
     | undefined;
@@ -229,6 +244,7 @@ export async function loadConfig(path?: string): Promise<Config> {
     jira,
     todoTxt,
     ollama,
+    learnings,
     phases: phasesDefaults !== undefined
       ? { defaults: phasesDefaults }
       : undefined,

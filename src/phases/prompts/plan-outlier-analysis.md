@@ -58,8 +58,6 @@ Follow these steps:
    ticketId: "<ticket ID from context>"
    repo: jackjennings/lazyboy
    targetFile: "<repo-relative path of the prompt file the instruction belongs in, e.g. src/phases/prompts/plan.md>"
-   prTitle: "Improve plan prompt to prevent <short label for wasteful pattern> observed in <ticketId>"
-   prBody: "<body text citing the triggering ticket ID, the turns/criterionCount ratio, and the root cause>"
    ---
 
    <natural-language description of the instruction to add and why, from step 5>

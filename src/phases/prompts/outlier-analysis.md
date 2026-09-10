@@ -59,8 +59,6 @@ Follow these steps:
    ticketId: "<ticket ID from context>"
    repo: jackjennings/lazyboy
    targetFile: "<repo-relative path of the prompt file the instruction belongs in, e.g. src/phases/prompts/implementation.md>"
-   prTitle: "Improve prompt to prevent <short label for inefficient pattern> observed in <ticketId>"
-   prBody: "<body text citing the triggering ticket ID, the turns/task_count ratio, and the root cause>"
    ---
 
    <natural-language description of the instruction to add and why, from step 5>
