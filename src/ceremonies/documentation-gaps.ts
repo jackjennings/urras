@@ -19,7 +19,6 @@ export interface DocumentationGapsCeremonyDeps {
   notify?: (title: string, message: string) => Promise<void>;
 }
 
-
 function extractOpenQuestions(content: string): string | null {
   const lines = content.split("\n");
   const headingIdx = lines.findIndex((l) => l === "## Open Questions");

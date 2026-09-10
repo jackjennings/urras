@@ -41,7 +41,6 @@ export async function judgePrinciples(
   return null;
 }
 
-
 const FILTER_SCHEMA = {
   type: "object",
   properties: {

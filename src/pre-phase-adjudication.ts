@@ -17,7 +17,6 @@ const VALID_THINKING_LEVELS = new Set([
   "max",
 ]);
 
-
 const JSON_SCHEMA = {
   type: "object",
   properties: {
