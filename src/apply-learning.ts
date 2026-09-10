@@ -1,12 +1,6 @@
 import type { CommandRunner } from "./apfel.ts";
 import { ClaudeLanguageModel } from "./models/claude.ts";
-
-const SYSTEM_PROMPT =
-  `You are integrating a single learning into an existing Markdown document (a coding-agent prompt).
-
-You are given the current document and a description of what should be added or clarified. Merge the learning into the document at the most appropriate location: extend the relevant section, or add a new instruction where similar instructions already live. Preserve everything else verbatim — do not rewrite unrelated prose, reorder sections, or drop content. If the learning is already expressed in the document, return it unchanged.
-
-Return the complete updated document wrapped in <updated-file> and </updated-file> tags, with no other commentary.`;
+import { renderPrompt } from "./filesystem.ts";
 
 function extractDocument(text: string): string | null {
   const trimmed = text.trim();
@@ -28,7 +22,9 @@ export async function applyLearning(
     `## Learning to integrate\n\n${intent}\n\n## Current document\n\n${currentContent}`;
   const model = new ClaudeLanguageModel(run, { model: "claude-sonnet-4-6" });
   const text = await model.generateText({
-    systemPrompt: SYSTEM_PROMPT,
+    systemPrompt: await renderPrompt(
+      new URL("./apply-learning.prompt.hbs", import.meta.url),
+    ),
     prompt: userMessage,
   });
   return text != null ? extractDocument(text) : null;

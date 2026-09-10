@@ -3,9 +3,7 @@ import { ApfelLanguageModel } from "./models/apfel.ts";
 import { ClaudeLanguageModel } from "./models/claude.ts";
 import { FallbackLanguageModel } from "./models/fallback.ts";
 import { OllamaLanguageModel } from "./models/ollama.ts";
-
-const SYSTEM_PROMPT =
-  "You are evaluating whether an upstream change to a software ticket is substantive. A substantive change adds, removes, or modifies scope, requirements, acceptance criteria, or constraints. A non-substantive change only fixes typos, improves wording, or reformats without changing meaning. Reply with substantive true if the change is substantive, false otherwise.";
+import { renderPrompt } from "./filesystem.ts";
 
 const SCHEMA = {
   type: "object",
@@ -29,10 +27,14 @@ export async function judgeUpstreamEdit(
     ...(ollamaModels ?? []),
     new ClaudeLanguageModel(run, { model: "claude-haiku-4-5" }),
   ]);
-  const prompt =
-    `Old title: ${oldTitle}\nNew title: ${newTitle}\n\nOld body:\n${oldBody}\n\nNew body:\n${newBody}`;
+  const prompt = await renderPrompt(
+    new URL("./judge-upstream-edit-user.prompt.hbs", import.meta.url),
+    { oldTitle, newTitle, oldBody, newBody },
+  );
   const result = await model.generateObject<{ substantive: boolean }>({
-    systemPrompt: SYSTEM_PROMPT,
+    systemPrompt: await renderPrompt(
+      new URL("./judge-upstream-edit.prompt.hbs", import.meta.url),
+    ),
     prompt,
     schema: SCHEMA,
     maxTokens: 64,

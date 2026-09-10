@@ -3,9 +3,7 @@ import { ARTIFACT_DESCRIPTORS, type ArtifactType } from "./state/types.ts";
 import { ApfelLanguageModel } from "./models/apfel.ts";
 import { ClaudeLanguageModel } from "./models/claude.ts";
 import { FallbackLanguageModel } from "./models/fallback.ts";
-
-const EXTRACT_ARTIFACTS_SYSTEM_PROMPT =
-  'You are extracting the artifact types from an intake output written by an AI coding agent. The valid artifact types are: code (software changes via pull request), document (a Notion document, RFC, or proposal — no code changes), work (a non-code task with no pull requests). Return the artifacts array based on what the intake output specifies. If the intake output does not mention artifact types, return ["code"] as the default.';
+import { renderPrompt } from "./filesystem.ts";
 
 const ARTIFACT_SCHEMA = {
   type: "object",
@@ -32,7 +30,9 @@ export async function extractIntakeArtifacts(
     new ClaudeLanguageModel(run, { model: "claude-haiku-4-5" }),
   ]);
   const result = await model.generateObject<{ artifacts: ArtifactType[] }>({
-    systemPrompt: EXTRACT_ARTIFACTS_SYSTEM_PROMPT,
+    systemPrompt: await renderPrompt(
+      new URL("./extract-artifacts.prompt.hbs", import.meta.url),
+    ),
     prompt: content,
     schema: ARTIFACT_SCHEMA,
     maxTokens: 64,
