@@ -1636,6 +1636,81 @@ Deno.test("executePhase: does not write .session sidecar when no session ID in o
   }
 });
 
+Deno.test("executePhase: writes .prompt sidecar with full prompt text", async () => {
+  const ticketDir = await Deno.makeTempDir();
+  const homeDir = await Deno.makeTempDir();
+  try {
+    await Deno.writeTextFile(join(ticketDir, "meta.md"), "---\n---\n");
+    const outputFile = "20260101T120000-intake.md";
+    const agent: CodeAgent = {
+      runPhase: () => Promise.resolve({ stdout: "", stderr: "", code: 0 }),
+    };
+    await executePhase(
+      {
+        ticketDir,
+        stateDir: ticketDir,
+        outputFile,
+        phase: "intake",
+        scopeDirs: [],
+        prompt: "the base prompt",
+        worktrees: {},
+        homeDir,
+        provider: "anthropic",
+        model: "claude-sonnet-4-6",
+        thinking: "off",
+        agentType: "pi",
+      },
+      agent,
+    );
+    const sidecar = await Deno.readTextFile(
+      join(ticketDir, outputFile.replace(/\.md$/, ".prompt")),
+    );
+    assertStringIncludes(sidecar, "the base prompt");
+    assertStringIncludes(sidecar, ticketDir);
+  } finally {
+    await Deno.remove(ticketDir, { recursive: true });
+    await Deno.remove(homeDir, { recursive: true });
+  }
+});
+
+Deno.test("executePhase: .prompt sidecar write failure does not suppress returned exit code", async () => {
+  const ticketDir = await Deno.makeTempDir();
+  const homeDir = await Deno.makeTempDir();
+  const outputFile = "20260101T120000-intake.md";
+  const sidecarPath = join(ticketDir, outputFile.replace(/\.md$/, ".prompt"));
+  try {
+    await Deno.writeTextFile(join(ticketDir, "meta.md"), "---\n---\n");
+    // pre-create the sidecar as read-only so the write inside executePhase fails
+    await Deno.writeTextFile(sidecarPath, "old");
+    await Deno.chmod(sidecarPath, 0o444);
+    const agent: CodeAgent = {
+      runPhase: () => Promise.resolve({ stdout: "", stderr: "", code: 3 }),
+    };
+    const returnedCode = await executePhase(
+      {
+        ticketDir,
+        stateDir: ticketDir,
+        outputFile,
+        phase: "intake",
+        scopeDirs: [],
+        prompt: "p",
+        worktrees: {},
+        homeDir,
+        provider: "anthropic",
+        model: "claude-sonnet-4-6",
+        thinking: "off",
+        agentType: "pi",
+      },
+      agent,
+    );
+    assertEquals(returnedCode, 3);
+  } finally {
+    await Deno.chmod(sidecarPath, 0o644).catch(() => {});
+    await Deno.remove(ticketDir, { recursive: true });
+    await Deno.remove(homeDir, { recursive: true });
+  }
+});
+
 // ── extractUsageAndText ──────────────────────────────────────────────────────
 
 const singleTurnNdjson = [
