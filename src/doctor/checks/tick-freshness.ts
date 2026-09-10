@@ -80,14 +80,16 @@ export function tickFreshnessCheck(deps: TickFreshnessDeps): Check {
         details.push("tick-failed in last 3 log entries");
       }
 
-      const staleLocks = entries.filter((e) => e.event === "stale-lock");
-      for (const lock of staleLocks) {
-        const ageSeconds = now -
-          Math.floor(Temporal.Instant.from(lock.ts).epochMilliseconds / 1000);
-        if (ageSeconds > 600) {
+      const lastStaleLockIndex = entries.findLastIndex(
+        (e) => e.event === "stale-lock",
+      );
+      if (lastStaleLockIndex !== -1) {
+        const resolvedAfter = entries.slice(lastStaleLockIndex + 1).some(
+          (e) => e.event === "tick-start" || e.event === "tick-end",
+        );
+        if (!resolvedAfter) {
           status = worstStatus(status, "fail");
-          details.push(`stale lock entry is ${ageSeconds}s old`);
-          break;
+          details.push("stale lock entry is unresolved");
         }
       }
 

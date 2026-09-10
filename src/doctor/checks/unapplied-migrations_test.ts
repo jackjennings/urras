@@ -19,7 +19,7 @@ function makeDeps(
 
 Deno.test("unappliedMigrationsCheck: all migrations applied → pass", async () => {
   const result = await unappliedMigrationsCheck(
-    makeDeps(["123-foo.ts"], "123-foo\n"),
+    makeDeps(["123-foo.ts"], "123-foo.ts\n"),
   ).run();
   assertEquals(result.status, "pass");
 });

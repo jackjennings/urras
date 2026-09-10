@@ -67,3 +67,15 @@ Deno.test("tickFreshnessCheck: stale-lock entry older than 600s → fail", async
   assertEquals(result.status, "fail");
   assertStringIncludes(result.detail, "stale lock");
 });
+
+Deno.test(
+  "tickFreshnessCheck: stale-lock followed by tick-start → pass",
+  async () => {
+    const log = makeLog([
+      { ts: ts(700), event: "stale-lock" },
+      { ts: ts(100), event: "tick-start" },
+    ]);
+    const result = await tickFreshnessCheck(makeDeps(log)).run();
+    assertEquals(result.status, "pass");
+  },
+);
