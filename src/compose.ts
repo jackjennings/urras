@@ -93,10 +93,7 @@ import { appendTickLog } from "./logger.ts";
 import { makeCandidateSelector } from "./candidate-selection.ts";
 import { resolvePhaseModel } from "./phases/model.ts";
 import { adjudicatePhaseModel } from "./pre-phase-adjudication.ts";
-import {
-  captureCommandRunner,
-  defaultCommandRunner,
-} from "./apfel.ts";
+import { captureCommandRunner, defaultCommandRunner } from "./apfel.ts";
 import { generateShortTitle } from "./short-title.ts";
 import { makeDesktopNotifier, makeNotify } from "./notify.ts";
 import { PidFileLock } from "./lock.ts";
@@ -450,7 +447,9 @@ export function composeTickDeps(
   const shortTitleModel = new FallbackLanguageModel([
     ...ollamaModels,
     new ApfelLanguageModel(captureCommandRunner()),
-    new ClaudeLanguageModel(captureCommandRunner(), { model: "claude-haiku-4-5" }),
+    new ClaudeLanguageModel(captureCommandRunner(), {
+      model: "claude-haiku-4-5",
+    }),
   ]);
 
   const tickActions = [
