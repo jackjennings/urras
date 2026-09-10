@@ -1,87 +1,77 @@
 import {
-  assertArrayIncludes,
   assertEquals,
   assertFalse,
   assertLess,
-  assertNotEquals,
   assertStringIncludes,
 } from "@std/assert";
-import type { CommandRunner } from "./apfel.ts";
+import type { LanguageModel, LanguageModelRequest } from "./models/types.ts";
 import { generateShortTitle } from "./short-title.ts";
 
-Deno.test("generateShortTitle: returns trimmed stdout on exit code 0", async () => {
-  const run: CommandRunner = (_args) =>
-    Promise.resolve({ code: 0, stdout: " short title \n" });
-  const result = await generateShortTitle(
-    run,
-    "A long full title for an issue",
+function makeModel(
+  result: string | null,
+): LanguageModel & { lastRequest: LanguageModelRequest | null } {
+  const stub = {
+    name: "stub",
+    lastRequest: null as LanguageModelRequest | null,
+    generateText(req: LanguageModelRequest): Promise<string | null> {
+      stub.lastRequest = req;
+      return Promise.resolve(result);
+    },
+    generateObject<T>(
+      _req: LanguageModelRequest & { schema: object },
+    ): Promise<T | null> {
+      return Promise.resolve(null);
+    },
+  };
+  return stub;
+}
+
+Deno.test("generateShortTitle: returns string from model", async () => {
+  const model = makeModel("Short Title");
+  assertEquals(
+    await generateShortTitle(model, "A long full title for an issue"),
+    "Short Title",
   );
-  assertEquals(result, "short title");
 });
 
-Deno.test("generateShortTitle: returns null on non-zero exit code", async () => {
-  const run: CommandRunner = (_args) =>
-    Promise.resolve({ code: 1, stdout: "ignored" });
-  assertEquals(await generateShortTitle(run, "Title"), null);
-});
-
-Deno.test("generateShortTitle: returns null on empty stdout", async () => {
-  const run: CommandRunner = (_args) =>
-    Promise.resolve({ code: 0, stdout: "   " });
-  assertEquals(await generateShortTitle(run, "Title"), null);
-});
-
-Deno.test("generateShortTitle: returns null when runner throws", async () => {
-  const run: CommandRunner = (_args) => Promise.reject(new Error("fail"));
-  assertEquals(await generateShortTitle(run, "Title"), null);
+Deno.test("generateShortTitle: returns null when model returns null", async () => {
+  const model = makeModel(null);
+  assertEquals(await generateShortTitle(model, "Title"), null);
 });
 
 Deno.test(
-  "generateShortTitle: passes --quiet --max-tokens 40 -s and title to apfel",
+  "generateShortTitle: passes title as prompt when no context",
   async () => {
-    let capturedArgs: string[] = [];
-    const run: CommandRunner = (args) => {
-      capturedArgs = args;
-      return Promise.resolve({ code: 0, stdout: "Short" });
-    };
-    await generateShortTitle(run, "Add hud subcommand for live agent status");
-    assertEquals(capturedArgs[0], "apfel");
-    assertArrayIncludes(capturedArgs, ["--quiet"]);
-    const maxTokensIdx = capturedArgs.indexOf("--max-tokens");
-    assertNotEquals(maxTokensIdx, -1);
-    assertEquals(capturedArgs[maxTokensIdx + 1], "40");
-    assertArrayIncludes(capturedArgs, ["-s"]);
+    const model = makeModel("Short");
+    await generateShortTitle(model, "Add hud subcommand for live agent status");
     assertEquals(
-      capturedArgs[capturedArgs.length - 1],
+      model.lastRequest?.prompt,
       "Add hud subcommand for live agent status",
     );
   },
 );
 
 Deno.test(
-  "generateShortTitle: includes context in the user prompt when provided",
+  "generateShortTitle: includes context in the prompt when provided",
   async () => {
-    let userPrompt = "";
-    const run: CommandRunner = (args) => {
-      userPrompt = args[args.length - 1];
-      return Promise.resolve({ code: 0, stdout: "Short" });
-    };
-    await generateShortTitle(run, "Fix flaky login test", "Details here.");
-    assertStringIncludes(userPrompt, "Fix flaky login test");
-    assertStringIncludes(userPrompt, "Details here.");
+    const model = makeModel("Short");
+    await generateShortTitle(model, "Fix flaky login test", "Details here.");
+    assertStringIncludes(
+      model.lastRequest?.prompt ?? "",
+      "Fix flaky login test",
+    );
+    assertStringIncludes(model.lastRequest?.prompt ?? "", "Details here.");
   },
 );
 
 Deno.test(
   "generateShortTitle: truncates oversized context",
   async () => {
-    let userPrompt = "";
-    const run: CommandRunner = (args) => {
-      userPrompt = args[args.length - 1];
-      return Promise.resolve({ code: 0, stdout: "Short" });
-    };
-    await generateShortTitle(run, "Title", "x".repeat(50000));
-    assertLess(userPrompt.length, 50000);
-    assertFalse(userPrompt.includes("x".repeat(20000)));
+    const model = makeModel("Short");
+    await generateShortTitle(model, "Title", "x".repeat(50000));
+    assertLess((model.lastRequest?.prompt ?? "").length, 50000);
+    assertFalse(
+      (model.lastRequest?.prompt ?? "").includes("x".repeat(20000)),
+    );
   },
 );
