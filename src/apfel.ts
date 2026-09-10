@@ -9,6 +9,13 @@ export async function checkApfelAvailable(
   return code === 0;
 }
 
+export async function checkTuicrAvailable(
+  run: CommandRunner,
+): Promise<boolean> {
+  const { code } = await run(["which", "tuicr"]);
+  return code === 0;
+}
+
 export function defaultCommandRunner(): CommandRunner {
   return async (args) => {
     const out = await new Deno.Command(args[0], {
