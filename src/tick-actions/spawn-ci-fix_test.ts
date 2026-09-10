@@ -57,6 +57,7 @@ function makeDeps(overrides: Partial<SpawnCIFixDeps> = {}): SpawnCIFixDeps {
       model: "claude-sonnet-4-6",
       thinking: "high",
     }),
+    canonicalSlugFor: (slug) => slug,
     ...overrides,
   };
 }
@@ -339,6 +340,40 @@ Deno.test(
     assertEquals(logged[0].reason, "worktree-pr-repo-mismatch");
     assertEquals(logged[0].worktreeKey, "org/wrong-repo");
     assertEquals(logged[0].repo, "org/correct-repo");
+  },
+);
+
+Deno.test(
+  "spawnCIFixAction: aliased worktreeKey and repo slug do not park",
+  async () => {
+    const spawnSpy = spy(() => Promise.resolve());
+    const result = await spawnCIFixAction(
+      makeDeps({
+        getPRChecks: () => Promise.resolve(FAILURE_RESULT),
+        spawn: spawnSpy,
+        canonicalSlugFor: () => "jackjennings/lazyboy",
+      }),
+    ).run(
+      makeTicket({
+        ...BASE,
+        worktrees: {
+          "jackjennings/lazyboy": {
+            path: "/wt/lazyboy",
+            branch: "github/jackjennings/lazyboy/671",
+          },
+        },
+        prs: [{
+          url: "https://github.com/jackjennings/urras/pull/665",
+          title: "feat",
+          dependsOn: [],
+          merged: false,
+          worktreeKey: "jackjennings/lazyboy",
+        }],
+      }),
+      "/state",
+    );
+    assertSpyCalls(spawnSpy, 1);
+    assertFalse(result?.status === "needs-attention");
   },
 );
 

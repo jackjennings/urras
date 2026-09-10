@@ -46,6 +46,7 @@ export interface SpawnCIFixDeps {
   resolveModelConfig: (
     ticket: TicketState,
   ) => { model: string; thinking: string };
+  canonicalSlugFor: (slug: string) => string;
 }
 
 export function spawnCIFixAction(deps: SpawnCIFixDeps): TickAction {
@@ -117,7 +118,10 @@ export function spawnCIFixAction(deps: SpawnCIFixDeps): TickAction {
           return parked;
         }
 
-        if (pr.worktreeKey && pr.worktreeKey !== repo) {
+        if (
+          pr.worktreeKey &&
+          deps.canonicalSlugFor(pr.worktreeKey) !== deps.canonicalSlugFor(repo)
+        ) {
           await deps.appendLog(stateDir, ticket.id, {
             event: "needs-attention",
             reason: "worktree-pr-repo-mismatch",
