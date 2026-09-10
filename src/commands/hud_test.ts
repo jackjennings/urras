@@ -264,8 +264,8 @@ Deno.test("isBlockedCommand: returns true for tail", () => {
   assert(isBlockedCommand("tail"));
 });
 
-Deno.test("isBlockedCommand: returns true for review", () => {
-  assert(isBlockedCommand("review"));
+Deno.test("isBlockedCommand: returns false for review", () => {
+  assertFalse(isBlockedCommand("review"));
 });
 
 Deno.test("isBlockedCommand: returns false for approve", () => {

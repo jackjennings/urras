@@ -9,6 +9,7 @@ import {
   type EditorTheme,
   isKeyRelease,
   matchesKey,
+  type OverlayHandle,
   ProcessTerminal,
   TUI,
 } from "@earendil-works/pi-tui";
@@ -29,6 +30,7 @@ import type { TicketState } from "../state/types.ts";
 import { ScrollPane } from "../ui/scroll-pane.ts";
 import type { Command } from "./types.ts";
 import { mkdir, open, readTextFile } from "../filesystem.ts";
+import { findLatestPhaseOutput, ReviewSession } from "../review.ts";
 
 export type TicketEntry =
   | { ok: true; ticket: TicketState; tokens: number | null; alive: boolean }
@@ -40,10 +42,33 @@ export interface HudWatcherDeps {
   isPhaseAlive: (ticketDir: string) => boolean;
 }
 
-const BLOCKED_COMMANDS = new Set(["hud", "shell", "tail", "review"]);
+const BLOCKED_COMMANDS = new Set(["hud", "shell", "tail"]);
 
 export function isBlockedCommand(name: string): boolean {
   return BLOCKED_COMMANDS.has(name);
+}
+
+export async function checkReviewPreconditions(
+  id: string,
+  stateDir: string,
+  { readTicketFn = readTicket }: {
+    // deno-lint-ignore no-fn-suffix/no-fn-suffix
+    readTicketFn?: typeof readTicket;
+  } = {},
+): Promise<string | null> {
+  if (!id) return "Usage: review <ticket-id>";
+  const ticket = await readTicketFn(stateDir, id);
+  if (ticket.status === "running") return `ticket ${id} is currently running`;
+  if (ticket.status === "done") return `ticket ${id} is done`;
+  const ticketDir = join(stateDir, id);
+  const found = await findLatestPhaseOutput(ticketDir);
+  const expectedPhaseNames = ticket.phase === "merge"
+    ? ["merge", "implementation"]
+    : [ticket.phase];
+  if (!found || !expectedPhaseNames.includes(found.phaseName)) {
+    return `No output for phase "${ticket.phase}" on ticket ${id}`;
+  }
+  return null;
 }
 
 export function parseCommand(
@@ -443,6 +468,7 @@ export const hud: Command = {
     };
 
     let commandRunning = false;
+    let reviewSessionActive = false;
 
     tui.addChild(headerComponent);
     tui.addChild(statusPane);
@@ -493,6 +519,36 @@ export const hud: Command = {
       const parsed = parseCommand(value);
       if (!parsed) return;
       const { name, args } = parsed;
+      if (name === "review") {
+        if (reviewSessionActive) return;
+        const id = args[0] ?? "";
+        const error = await checkReviewPreconditions(id, stateDir);
+        if (error !== null) {
+          headerLine = error;
+          tui.requestRender(true);
+          return;
+        }
+        reviewSessionActive = true;
+        commandEditor.setText("");
+        const handleRef: { value: OverlayHandle | null } = { value: null };
+        const session = await ReviewSession.create({
+          id,
+          stateDir,
+          ticketDir: join(stateDir, id),
+          tui,
+          close: () => {
+            handleRef.value?.hide();
+            reviewSessionActive = false;
+            tui.setFocus(commandEditor);
+            scheduleRefresh();
+          },
+        });
+        const reviewHandle = tui.showOverlay(session, { width: "100%" });
+        handleRef.value = reviewHandle;
+        reviewHandle.focus();
+        tui.requestRender(true);
+        return;
+      }
       if (isBlockedCommand(name)) {
         headerLine = `Blocked: ${name}`;
         tui.requestRender(true);

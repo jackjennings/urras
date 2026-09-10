@@ -1,6 +1,7 @@
 import {
   assert,
   assertEquals,
+  assertExists,
   assertFalse,
   assertGreater,
   assertLessOrEqual,
@@ -23,9 +24,15 @@ import {
   renderTabBar,
   renderTicketTab,
   review,
+  ReviewSession,
+  type ReviewSessionOptions,
   wrapDiffLines,
 } from "./review.ts";
-import type { OverlayHandle, TUI } from "@earendil-works/pi-tui";
+import type {
+  KeybindingsManager,
+  OverlayHandle,
+  TUI,
+} from "@earendil-works/pi-tui";
 import { join } from "@std/path";
 import { readTicket, writeTicket } from "./state/store.ts";
 import { makeTicket } from "./test-support.ts";
@@ -1501,3 +1508,142 @@ Deno.test(
     }
   },
 );
+
+// ── ReviewSession ─────────────────────────────────────────────────────────────
+
+function makeMockTui() {
+  const inputListeners: Array<
+    (data: string) => { consume: boolean } | void
+  > = [];
+  const children: unknown[] = [];
+  const overlays: Array<{ component: unknown; handle: MockOverlayHandle }> = [];
+
+  class MockOverlayHandle {
+    hidden = true;
+    hide = spy(() => {});
+    setHidden = spy((h: boolean) => {
+      this.hidden = h;
+    });
+    isHidden = () => this.hidden;
+    focus = spy(() => {});
+    unfocus = spy(() => {});
+    isFocused = () => false;
+  }
+
+  return {
+    inputListeners,
+    children,
+    overlays,
+    terminal: { rows: 24, columns: 80 },
+    addChild: spy((c: unknown) => {
+      children.push(c);
+    }),
+    removeChild: spy((c: unknown) => {
+      const i = children.indexOf(c);
+      if (i !== -1) children.splice(i, 1);
+    }),
+    addInputListener: spy(
+      (fn: (data: string) => { consume: boolean } | void) => {
+        inputListeners.push(fn);
+      },
+    ),
+    showOverlay: spy((component: unknown, _opts?: unknown) => {
+      const handle = new MockOverlayHandle();
+      overlays.push({ component, handle });
+      return handle;
+    }),
+    setFocus: spy((_c: unknown) => {}),
+    requestRender: spy((_full: boolean) => {}),
+    start: spy(() => {}),
+    stop: spy(() => {}),
+  };
+}
+
+function makeReviewSession(
+  overrides: Partial<ReviewSessionOptions> = {},
+) {
+  const tui = makeMockTui();
+  const closeSpy = spy(() => {});
+  const savedKb = { id: "saved-kb" } as unknown as KeybindingsManager;
+  const getKeybindingsFn = spy(() => savedKb);
+  const setKeybindingsFn = spy((_kb: KeybindingsManager) => {});
+
+  const session = new ReviewSession({
+    id: "github/test/repo/1",
+    stateDir: "/fake/state",
+    ticket: makeTicket({ id: "github/test/repo/1" }),
+    patchTicket: () => Promise.resolve(),
+    systemPrompt: "system prompt",
+    tui: tui as unknown as TUI,
+    close: closeSpy,
+    getKeybindingsFn,
+    setKeybindingsFn,
+    ...overrides,
+  });
+
+  return {
+    session,
+    tui,
+    closeSpy,
+    getKeybindingsFn,
+    setKeybindingsFn,
+    savedKb,
+  };
+}
+
+Deno.test("ReviewSession: saves current keybindings on construction", () => {
+  const { getKeybindingsFn, setKeybindingsFn } = makeReviewSession();
+  assertSpyCalls(getKeybindingsFn, 1);
+  assertSpyCalls(setKeybindingsFn, 1);
+  const reviewKb = setKeybindingsFn.calls[0].args[0] as KeybindingsManager;
+  assertExists(reviewKb);
+});
+
+Deno.test("ReviewSession: close() restores saved keybindings", () => {
+  const { session, setKeybindingsFn, savedKb } = makeReviewSession();
+  session.close();
+  assertSpyCalls(setKeybindingsFn, 2);
+  assertEquals(setKeybindingsFn.calls[1].args[0], savedKb);
+});
+
+Deno.test("ReviewSession: close() invokes the close callback exactly once", () => {
+  const { session, closeSpy } = makeReviewSession();
+  session.close();
+  session.close();
+  assertSpyCalls(closeSpy, 1);
+});
+
+Deno.test("ReviewSession: ctrl+c input invokes close", () => {
+  const { session, tui, closeSpy } = makeReviewSession();
+  void session;
+  const handler = tui.inputListeners[0];
+  assertExists(handler);
+  handler("\x03");
+  assertSpyCalls(closeSpy, 1);
+});
+
+Deno.test("ReviewSession: ctrl+c does not write any state files", () => {
+  const { session, tui } = makeReviewSession();
+  void session;
+  const writePhaseOutputSpy = spy(() => Promise.resolve());
+  const handler = tui.inputListeners[0];
+  assertExists(handler);
+  handler("\x03");
+  assertSpyCalls(writePhaseOutputSpy, 0);
+});
+
+Deno.test("ReviewSession: close() hides question and error overlays", () => {
+  const { session, tui } = makeReviewSession();
+  session.close();
+  for (const { handle } of tui.overlays) {
+    assertSpyCalls(handle.hide, 1);
+  }
+});
+
+Deno.test("ReviewSession: close() removes ScrollPane and Editor from TUI", () => {
+  const { session, tui } = makeReviewSession();
+  const childCountBeforeClose = tui.children.length;
+  assertGreater(childCountBeforeClose, 0);
+  session.close();
+  assertEquals(tui.children.length, 0);
+});

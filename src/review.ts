@@ -16,6 +16,7 @@ import {
   type Component,
   Editor,
   type Focusable,
+  getKeybindings,
   isKeyRelease,
   KeybindingsManager,
   Markdown,
@@ -510,6 +511,474 @@ export function renderTicketTab(ticket: TicketState): string {
   return lines.join("\n");
 }
 
+type TabContent = {
+  getLines: (width: number) => string[];
+  onInvalidate: (() => void) | undefined;
+  headings: { level: number; title: string; sourceLine: number }[];
+  totalSourceLines: number;
+};
+
+export interface ReviewSessionOptions {
+  id: string;
+  stateDir: string;
+  ticket: TicketState;
+  patchTicket: (patch: Partial<TicketState>) => Promise<void>;
+  systemPrompt: string;
+  allTabs?: Array<{ phaseName: string }>;
+  allTabContents?: TabContent[];
+  tui: TUI;
+  close: () => void;
+  // deno-lint-ignore no-fn-suffix/no-fn-suffix
+  readTicketFn?: typeof readTicketWithPatch;
+  // deno-lint-ignore no-fn-suffix/no-fn-suffix
+  commitFn?: typeof commitTicket;
+  fetch?: typeof fetch;
+  // deno-lint-ignore no-fn-suffix/no-fn-suffix
+  getKeybindingsFn?: () => KeybindingsManager;
+  // deno-lint-ignore no-fn-suffix/no-fn-suffix
+  setKeybindingsFn?: (kb: KeybindingsManager) => void;
+}
+
+export interface ReviewSessionCreateOptions {
+  id: string;
+  stateDir: string;
+  ticketDir: string;
+  ticket?: TicketState;
+  patchTicket?: (patch: Partial<TicketState>) => Promise<void>;
+  tui: TUI;
+  close: () => void;
+  // deno-lint-ignore no-fn-suffix/no-fn-suffix
+  readTicketFn?: typeof readTicketWithPatch;
+  // deno-lint-ignore no-fn-suffix/no-fn-suffix
+  commitFn?: typeof commitTicket;
+  fetch?: typeof fetch;
+  // deno-lint-ignore no-fn-suffix/no-fn-suffix
+  getKeybindingsFn?: () => KeybindingsManager;
+  // deno-lint-ignore no-fn-suffix/no-fn-suffix
+  setKeybindingsFn?: (kb: KeybindingsManager) => void;
+}
+
+export class ReviewSession implements Component, Focusable {
+  private _focused = false;
+  private closed = false;
+  private readonly savedKb: KeybindingsManager;
+  private readonly scrollPane: ScrollPane;
+  private readonly editor: Editor;
+  private readonly questionHandle: OverlayHandle;
+  private readonly errorHandle: OverlayHandle;
+  private readonly questionOverlay: QuestionOverlay;
+  private readonly errorOverlay: ErrorOverlay;
+  private readonly allTabs: Array<{ phaseName: string }>;
+  private readonly allTabContents: TabContent[];
+  private activeTabIndex: number;
+  private editorVisible: boolean;
+  private headings: { level: number; title: string; sourceLine: number }[];
+  private totalSourceLines: number;
+  private currentOnInvalidate: (() => void) | undefined;
+  private focusedElement: "content" | "editor" = "content";
+  private readonly id: string;
+  private readonly stateDir: string;
+  private readonly ticket: TicketState;
+  private readonly patchTicket: (patch: Partial<TicketState>) => Promise<void>;
+  private readonly tui: TUI;
+  private readonly closeFn: () => void;
+  private readonly readTicketFn: typeof readTicketWithPatch;
+  private readonly commitFn: typeof commitTicket;
+  private readonly fetcher: typeof fetch;
+  private readonly setKeybindingsFn: (kb: KeybindingsManager) => void;
+
+  constructor({
+    id,
+    stateDir,
+    ticket,
+    patchTicket,
+    systemPrompt,
+    allTabs: allTabsOpt,
+    allTabContents: allTabContentsOpt,
+    tui,
+    close,
+    readTicketFn = readTicketWithPatch,
+    commitFn = commitTicket,
+    fetch: fetcher = fetch,
+    getKeybindingsFn = getKeybindings,
+    setKeybindingsFn = setKeybindings,
+  }: ReviewSessionOptions) {
+    this.id = id;
+    this.stateDir = stateDir;
+    this.ticket = ticket;
+    this.patchTicket = patchTicket;
+    this.tui = tui;
+    this.closeFn = close;
+    this.readTicketFn = readTicketFn;
+    this.commitFn = commitFn;
+    this.fetcher = fetcher;
+    this.setKeybindingsFn = setKeybindingsFn;
+
+    const ticketContent = renderTicketTab(ticket);
+    const ticketMd = new Markdown(ticketContent, 1, 0, markdownTheme);
+    const defaultTicketTabContent: TabContent = {
+      getLines: (w) => ticketMd.render(w),
+      onInvalidate: () => ticketMd.invalidate(),
+      headings: [],
+      totalSourceLines: 0,
+    };
+
+    this.allTabs = allTabsOpt ?? [{ phaseName: "ticket" }];
+    this.allTabContents = allTabContentsOpt ?? [defaultTicketTabContent];
+    this.activeTabIndex = this.allTabs.length - 1;
+    this.editorVisible = this.activeTabIndex === this.allTabs.length - 1;
+    this.headings = this.allTabContents[this.activeTabIndex].headings;
+    this.totalSourceLines =
+      this.allTabContents[this.activeTabIndex].totalSourceLines;
+    this.currentOnInvalidate =
+      this.allTabContents[this.activeTabIndex].onInvalidate;
+
+    this.savedKb = getKeybindingsFn();
+    const kb = new KeybindingsManager({
+      ...TUI_KEYBINDINGS,
+      "tui.input.submit": {
+        defaultKeys: ["shift+enter"],
+        description: "Submit input",
+      },
+      "tui.input.newLine": {
+        defaultKeys: ["enter", "ctrl+j"],
+        description: "Insert newline",
+      },
+    });
+    setKeybindingsFn(kb);
+
+    this.editor = new Editor(tui, {
+      borderColor: (s) => this.focusedElement === "editor" ? s : gray(s),
+      selectList: {
+        selectedPrefix: (s) => s,
+        selectedText: (s) => s,
+        description: (s) => s,
+        scrollInfo: (s) => s,
+        noMatch: (s) => s,
+      },
+    });
+
+    this.scrollPane = new ScrollPane({
+      getLines: this.allTabContents[this.activeTabIndex].getLines,
+      tui,
+      getTitle: () => renderTabBar(this.allTabs, this.activeTabIndex),
+      getHeight: () =>
+        this.editorVisible
+          ? Math.max(
+            1,
+            tui.terminal.rows -
+              this.editor.render(tui.terminal.columns).length - 1,
+          )
+          : tui.terminal.rows - 1,
+      onInvalidate: () => this.currentOnInvalidate?.(),
+      pinnedSidebar: (w, scrollState) =>
+        renderTocLines(
+          this.headings,
+          w,
+          computeVisibleHeadingIndices({
+            headings: this.headings,
+            totalSourceLines: this.totalSourceLines,
+            ...scrollState,
+          }),
+        ),
+      pinnedSidebarWidth: (w) =>
+        this.headings.length === 0 || w < 100 ? 0 : Math.floor(w / 3),
+    });
+
+    tui.addChild(this.scrollPane);
+    if (this.editorVisible) tui.addChild(this.editor);
+    tui.setFocus(this.scrollPane);
+
+    this.questionOverlay = new QuestionOverlay(systemPrompt, fetcher, tui);
+    this.questionHandle = tui.showOverlay(this.questionOverlay, {
+      width: "80%",
+      minWidth: 60,
+      maxHeight: "80%",
+      margin: 1,
+    });
+    this.questionHandle.setHidden(true);
+    this.questionOverlay.setHandle(this.questionHandle, () => {
+      tui.setFocus(
+        this.focusedElement === "content" ? this.scrollPane : this.editor,
+      );
+      tui.requestRender(true);
+    });
+
+    this.errorOverlay = new ErrorOverlay(tui);
+    this.errorHandle = tui.showOverlay(this.errorOverlay, {
+      width: "80%",
+      minWidth: 60,
+      maxHeight: "80%",
+      margin: 1,
+    });
+    this.errorHandle.setHidden(true);
+    this.errorOverlay.setHandle(this.errorHandle, () => {
+      tui.setFocus(this.editor);
+      tui.requestRender(true);
+    });
+
+    this.editor.onSubmit = this.handleSubmit;
+
+    tui.addInputListener((data) => {
+      if (isKeyRelease(data)) {
+        return { consume: true };
+      }
+      if (matchesKey(data, "ctrl+c")) {
+        this.close();
+        return;
+      }
+      if (matchesKey(data, "alt+shift+/")) {
+        if (this.questionHandle.isHidden()) {
+          this.questionHandle.setHidden(false);
+          this.questionHandle.focus();
+        }
+        return { consume: true };
+      }
+      if (
+        matchesKey(data, "left") &&
+        this.focusedElement === "content" &&
+        this.activeTabIndex > 0
+      ) {
+        this.activeTabIndex--;
+        this.applyTabSwitch();
+        tui.requestRender(true);
+        return { consume: true };
+      }
+      if (
+        matchesKey(data, "right") &&
+        this.focusedElement === "content" &&
+        this.activeTabIndex < this.allTabs.length - 1
+      ) {
+        this.activeTabIndex++;
+        this.applyTabSwitch();
+        tui.requestRender(true);
+        return { consume: true };
+      }
+      if (matchesKey(data, "tab")) {
+        if (this.editorVisible) {
+          if (this.focusedElement === "content") {
+            this.focusedElement = "editor";
+            tui.setFocus(this.editor);
+          } else {
+            this.focusedElement = "content";
+            tui.setFocus(this.scrollPane);
+          }
+          tui.requestRender(true);
+        }
+        return { consume: true };
+      }
+      if (matchesKey(data, "shift+enter")) {
+        const text = this.editor.getExpandedText();
+        if (text.trim()) {
+          void this.handleSubmit(text);
+        }
+        return { consume: true };
+      }
+    });
+  }
+
+  get focused(): boolean {
+    return this._focused;
+  }
+
+  set focused(value: boolean) {
+    this._focused = value;
+    this.scrollPane.focused = value;
+  }
+
+  invalidate(): void {
+    this.scrollPane.invalidate();
+    if (this.editorVisible) this.editor.invalidate();
+  }
+
+  render(width: number): string[] {
+    const lines: string[] = [renderTabBar(this.allTabs, this.activeTabIndex)];
+    lines.push(...this.scrollPane.render(width));
+    if (this.editorVisible) lines.push(...this.editor.render(width));
+    return lines;
+  }
+
+  handleInput(data: string): void {
+    if (this.scrollPane.handleInput) this.scrollPane.handleInput(data);
+  }
+
+  private applyTabSwitch(): void {
+    const tabContent = this.allTabContents[this.activeTabIndex];
+    this.scrollPane.setContent(tabContent.getLines);
+    this.headings = tabContent.headings;
+    this.totalSourceLines = tabContent.totalSourceLines;
+    this.currentOnInvalidate = tabContent.onInvalidate;
+    this.editorVisible = this.activeTabIndex === this.allTabs.length - 1;
+    if (this.editorVisible) {
+      this.tui.addChild(this.editor);
+    } else {
+      this.tui.removeChild(this.editor);
+    }
+  }
+
+  close(): void {
+    if (this.closed) return;
+    this.closed = true;
+    this.questionHandle.hide();
+    this.errorHandle.hide();
+    this.tui.removeChild(this.scrollPane);
+    if (this.editorVisible) this.tui.removeChild(this.editor);
+    this.setKeybindingsFn(this.savedKb);
+    this.closeFn();
+  }
+
+  private handleSubmit = async (text: string): Promise<void> => {
+    if (!text.trim()) return;
+    const now = Temporal.Now.zonedDateTimeISO("UTC");
+    let isApproval: boolean;
+    try {
+      isApproval = await classifyApproval(text);
+    } catch (e) {
+      this.errorOverlay.setMessage(
+        e instanceof Error ? e.message : String(e),
+      );
+      this.errorHandle.setHidden(false);
+      this.errorHandle.focus();
+      return;
+    }
+    if (isApproval) {
+      await applyApproval(this.stateDir, this.id, now, {
+        readTicketFn: this.readTicketFn,
+        commitFn: this.commitFn,
+      });
+      this.close();
+      return;
+    }
+    const timestamp = formatTimestamp(now);
+    const feedbackFile = `${timestamp}-${this.ticket.phase}-feedback.md`;
+    await writePhaseOutput(this.stateDir, this.id, feedbackFile, text);
+    await this.patchTicket({
+      status: "revising",
+      updated: now.toInstant().toString(),
+    });
+    await this.commitFn(this.stateDir, this.id, `review: ${this.id}`);
+    this.close();
+  };
+
+  static async create(
+    opts: ReviewSessionCreateOptions,
+  ): Promise<ReviewSession> {
+    const {
+      id,
+      stateDir,
+      ticketDir,
+      tui,
+      close,
+      readTicketFn = readTicketWithPatch,
+      commitFn = commitTicket,
+      fetch: fetcher = fetch,
+      getKeybindingsFn = getKeybindings,
+      setKeybindingsFn = setKeybindings,
+    } = opts;
+
+    let ticket: TicketState;
+    let patchTicket: (patch: Partial<TicketState>) => Promise<void>;
+
+    if (opts.ticket !== undefined && opts.patchTicket !== undefined) {
+      ticket = opts.ticket;
+      patchTicket = opts.patchTicket;
+    } else {
+      const result = await readTicketFn(stateDir, id);
+      ticket = result.ticket;
+      patchTicket = result.patchTicket;
+    }
+
+    const tabs = await findAllPhaseOutputs(ticketDir);
+    const tabContents: TabContent[] = [];
+
+    for (let i = 0; i < tabs.length; i++) {
+      const tab = tabs[i];
+      const isLatest = i === tabs.length - 1;
+      const rawContent = await readPhaseOutput(stateDir, id, tab.filename);
+      if (isLatest && tab.previousFilename !== null) {
+        const previousContent = await readPhaseOutput(
+          stateDir,
+          id,
+          tab.previousFilename,
+        );
+        const diffResult = renderDiff(previousContent, rawContent);
+        tabContents.push({
+          getLines: (w) => wrapDiffLines(diffResult, w),
+          onInvalidate: undefined,
+          headings: [],
+          totalSourceLines: 0,
+        });
+      } else {
+        const md = new Markdown(rawContent, 1, 0, markdownTheme);
+        tabContents.push({
+          getLines: (w) => md.render(w),
+          onInvalidate: () => md.invalidate(),
+          headings: extractHeadings(rawContent),
+          totalSourceLines: rawContent.split("\n").length,
+        });
+      }
+    }
+
+    const tabRejections = await Promise.all(
+      tabs.map((tab) =>
+        findLatestSelfApprove(
+          ticketDir,
+          tab.phaseName,
+          tab.filename.slice(0, 15),
+        )
+      ),
+    );
+
+    for (let i = 0; i < tabs.length; i++) {
+      const selfApprove = tabRejections[i];
+      if (selfApprove !== null) {
+        const originalGetLines = tabContents[i].getLines;
+        const phaseName = tabs[i].phaseName;
+        const fullText = selfApprove.fullText;
+        tabContents[i] = {
+          ...tabContents[i],
+          getLines: (width) => [
+            ...rejectionBannerLines(phaseName, fullText, width),
+            "",
+            ...originalGetLines(width),
+          ],
+        };
+      }
+    }
+
+    const ticketContent = renderTicketTab(ticket);
+    const ticketMd = new Markdown(ticketContent, 1, 0, markdownTheme);
+    const ticketTabContent: TabContent = {
+      getLines: (w) => ticketMd.render(w),
+      onInvalidate: () => ticketMd.invalidate(),
+      headings: [],
+      totalSourceLines: 0,
+    };
+    const allTabs = [{ phaseName: "ticket" }, ...tabs];
+    const allTabContents = [ticketTabContent, ...tabContents];
+
+    const { contextFiles } = await buildContextFiles({ ticketDir, stateDir });
+    const systemPrompt = await buildQuestionSystemPrompt(contextFiles);
+
+    return new ReviewSession({
+      id,
+      stateDir,
+      ticket,
+      patchTicket,
+      systemPrompt,
+      allTabs,
+      allTabContents,
+      tui,
+      close,
+      readTicketFn,
+      commitFn,
+      fetch: fetcher,
+      getKeybindingsFn,
+      setKeybindingsFn,
+    });
+  }
+}
+
 export async function review(
   id: string,
   {
@@ -583,282 +1052,30 @@ export async function review(
     Deno.exit(0);
   }
 
-  const tabs = await findAllPhaseOutputs(ticketDir);
-
-  type TabContent = {
-    getLines: (width: number) => string[];
-    onInvalidate: (() => void) | undefined;
-    headings: { level: number; title: string; sourceLine: number }[];
-    totalSourceLines: number;
-  };
-
-  const tabContents: TabContent[] = [];
-  for (let i = 0; i < tabs.length; i++) {
-    const tab = tabs[i];
-    const isLatest = i === tabs.length - 1;
-    const rawContent = await readPhaseOutput(stateDir, id, tab.filename);
-    if (isLatest && tab.previousFilename !== null) {
-      const previousContent = await readPhaseOutput(
-        stateDir,
-        id,
-        tab.previousFilename,
-      );
-      const diffResult = renderDiff(previousContent, rawContent);
-      tabContents.push({
-        getLines: (w) => wrapDiffLines(diffResult, w),
-        onInvalidate: undefined,
-        headings: [],
-        totalSourceLines: 0,
-      });
-    } else {
-      const md = new Markdown(rawContent, 1, 0, markdownTheme);
-      tabContents.push({
-        getLines: (w) => md.render(w),
-        onInvalidate: () => md.invalidate(),
-        headings: extractHeadings(rawContent),
-        totalSourceLines: rawContent.split("\n").length,
-      });
-    }
-  }
-
-  const tabRejections = await Promise.all(
-    tabs.map((tab) =>
-      findLatestSelfApprove(
-        ticketDir,
-        tab.phaseName,
-        tab.filename.slice(0, 15),
-      )
-    ),
-  );
-
-  for (let i = 0; i < tabs.length; i++) {
-    const selfApprove = tabRejections[i];
-    if (selfApprove !== null) {
-      const originalGetLines = tabContents[i].getLines;
-      const phaseName = tabs[i].phaseName;
-      const fullText = selfApprove.fullText;
-      tabContents[i] = {
-        ...tabContents[i],
-        getLines: (width) => [
-          ...rejectionBannerLines(phaseName, fullText, width),
-          "",
-          ...originalGetLines(width),
-        ],
-      };
-    }
-  }
-
-  const ticketContent = renderTicketTab(ticket);
-  const ticketMd = new Markdown(ticketContent, 1, 0, markdownTheme);
-  const ticketTabContent: TabContent = {
-    getLines: (w) => ticketMd.render(w),
-    onInvalidate: () => ticketMd.invalidate(),
-    headings: [],
-    totalSourceLines: 0,
-  };
-  const allTabs = [{ phaseName: "ticket" }, ...tabs];
-  const allTabContents = [ticketTabContent, ...tabContents];
-
-  let activeTabIndex = allTabs.length - 1;
-  let editorVisible = true;
-  let headings = allTabContents[activeTabIndex].headings;
-  let totalSourceLines = allTabContents[activeTabIndex].totalSourceLines;
-  let currentOnInvalidate = allTabContents[activeTabIndex].onInvalidate;
-
-  const kb = new KeybindingsManager({
-    ...TUI_KEYBINDINGS,
-    "tui.input.submit": {
-      defaultKeys: ["shift+enter"],
-      description: "Submit input",
-    },
-    "tui.input.newLine": {
-      defaultKeys: ["enter", "ctrl+j"],
-      description: "Insert newline",
-    },
-  });
-  setKeybindings(kb);
-
   const terminal = new ProcessTerminal();
   const tui = new TUI(terminal);
-  let focused: "content" | "editor" = "content";
 
-  const editor = new Editor(tui, {
-    borderColor: (s) => focused === "editor" ? s : gray(s),
-    selectList: {
-      selectedPrefix: (s) => s,
-      selectedText: (s) => s,
-      description: (s) => s,
-      scrollInfo: (s) => s,
-      noMatch: (s) => s,
-    },
-  });
-
-  const contentPane = new ScrollPane({
-    getLines: allTabContents[activeTabIndex].getLines,
+  const handlerRef: { sigterm?: () => void } = {};
+  const session = await ReviewSession.create({
+    id,
+    stateDir,
+    ticketDir,
+    ticket,
+    patchTicket,
     tui,
-    getTitle: () => renderTabBar(allTabs, activeTabIndex),
-    getHeight: () =>
-      editorVisible
-        ? Math.max(
-          1,
-          tui.terminal.rows - editor.render(tui.terminal.columns).length - 1,
-        )
-        : tui.terminal.rows - 1,
-    onInvalidate: () => currentOnInvalidate?.(),
-    pinnedSidebar: (w, scrollState) =>
-      renderTocLines(
-        headings,
-        w,
-        computeVisibleHeadingIndices({
-          headings,
-          totalSourceLines,
-          ...scrollState,
-        }),
-      ),
-    pinnedSidebarWidth: (w) =>
-      headings.length === 0 || w < 100 ? 0 : Math.floor(w / 3),
-  });
-
-  tui.addChild(contentPane);
-  tui.addChild(editor);
-  tui.setFocus(contentPane);
-
-  function applyTabSwitch(): void {
-    const tabContent = allTabContents[activeTabIndex];
-    contentPane.setContent(tabContent.getLines);
-    headings = tabContent.headings;
-    totalSourceLines = tabContent.totalSourceLines;
-    currentOnInvalidate = tabContent.onInvalidate;
-    editorVisible = activeTabIndex === allTabs.length - 1;
-    if (editorVisible) {
-      tui.addChild(editor);
-    } else {
-      tui.removeChild(editor);
-    }
-  }
-
-  const { contextFiles } = await buildContextFiles({ ticketDir, stateDir });
-  const systemPrompt = await buildQuestionSystemPrompt(contextFiles);
-  const overlay = new QuestionOverlay(systemPrompt, fetch, tui);
-  const overlayHandle = tui.showOverlay(overlay, {
-    width: "80%",
-    minWidth: 60,
-    maxHeight: "80%",
-    margin: 1,
-  });
-  overlayHandle.setHidden(true);
-  overlay.setHandle(overlayHandle, () => {
-    tui.setFocus(focused === "content" ? contentPane : editor);
-    tui.requestRender(true);
-  });
-
-  const errorOverlay = new ErrorOverlay(tui);
-  const errorOverlayHandle = tui.showOverlay(errorOverlay, {
-    width: "80%",
-    minWidth: 60,
-    maxHeight: "80%",
-    margin: 1,
-  });
-  errorOverlayHandle.setHidden(true);
-  errorOverlay.setHandle(errorOverlayHandle, () => {
-    tui.setFocus(editor);
-    tui.requestRender(true);
-  });
-
-  const sigtermHandler = () => {
-    tui.stop();
-    Deno.exit(0);
-  };
-  Deno.addSignalListener("SIGTERM", sigtermHandler);
-
-  async function handleSubmit(text: string): Promise<void> {
-    if (!text.trim()) return;
-    const now = Temporal.Now.zonedDateTimeISO("UTC");
-    let isApproval: boolean;
-    try {
-      isApproval = await classifyApproval(text);
-    } catch (e) {
-      errorOverlay.setMessage(e instanceof Error ? e.message : String(e));
-      errorOverlayHandle.setHidden(false);
-      errorOverlayHandle.focus();
-      return;
-    }
-    if (isApproval) {
-      await applyApproval(stateDir, id, now, { readTicketFn, commitFn });
-      Deno.removeSignalListener("SIGTERM", sigtermHandler);
+    close() {
+      if (handlerRef.sigterm) {
+        Deno.removeSignalListener("SIGTERM", handlerRef.sigterm);
+      }
       tui.stop();
       Deno.exit(0);
-    }
-    const timestamp = formatTimestamp(now);
-    const feedbackFile = `${timestamp}-${ticket.phase}-feedback.md`;
-    await writePhaseOutput(stateDir, id, feedbackFile, text);
-    await patchTicket({
-      status: "revising",
-      updated: now.toInstant().toString(),
-    });
-    await commitFn(stateDir, id, `review: ${id}`);
-    Deno.removeSignalListener("SIGTERM", sigtermHandler);
-    tui.stop();
-    Deno.exit(0);
-  }
-
-  editor.onSubmit = handleSubmit;
-
-  tui.addInputListener((data) => {
-    if (isKeyRelease(data)) {
-      return { consume: true };
-    }
-    if (matchesKey(data, "ctrl+c")) {
-      Deno.removeSignalListener("SIGTERM", sigtermHandler);
-      tui.stop();
-      Deno.exit(0);
-    }
-    if (matchesKey(data, "alt+shift+/")) {
-      if (overlayHandle.isHidden()) {
-        overlayHandle.setHidden(false);
-        overlayHandle.focus();
-      }
-      return { consume: true };
-    }
-    if (
-      matchesKey(data, "left") && focused === "content" && activeTabIndex > 0
-    ) {
-      activeTabIndex--;
-      applyTabSwitch();
-      tui.requestRender(true);
-      return { consume: true };
-    }
-    if (
-      matchesKey(data, "right") &&
-      focused === "content" &&
-      activeTabIndex < allTabs.length - 1
-    ) {
-      activeTabIndex++;
-      applyTabSwitch();
-      tui.requestRender(true);
-      return { consume: true };
-    }
-    if (matchesKey(data, "tab")) {
-      if (editorVisible) {
-        if (focused === "content") {
-          focused = "editor";
-          tui.setFocus(editor);
-        } else {
-          focused = "content";
-          tui.setFocus(contentPane);
-        }
-        tui.requestRender(true);
-      }
-      return { consume: true };
-    }
-    if (matchesKey(data, "shift+enter")) {
-      const text = editor.getExpandedText();
-      if (text.trim()) {
-        handleSubmit(text);
-      }
-      return { consume: true };
-    }
+    },
+    readTicketFn,
+    commitFn,
   });
 
+  handlerRef.sigterm = () => session.close();
+  Deno.addSignalListener("SIGTERM", handlerRef.sigterm);
+  tui.showOverlay(session, { width: "100%" });
   tui.start();
 }
