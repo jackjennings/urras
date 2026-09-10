@@ -1796,6 +1796,7 @@ Deno.test(
         providerPickedUp: true,
         outputRetries: 1,
         resumeRetries: 2,
+        transientRetries: 3,
         phaseSessionIds: { spec: "abc-123", implementation: undefined },
         notifiedNeedsAttention: true,
         created: "2026-01-01T00:00:00Z",
