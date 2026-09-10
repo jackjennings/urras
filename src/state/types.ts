@@ -127,6 +127,7 @@ export interface TicketState {
   outputRetries?: number;
   resumeRetries?: number;
   scopeRetries?: number;
+  transientRetries?: number;
   phaseSessionIds?: Partial<Record<string, string>>;
   notifiedNeedsAttention?: boolean;
   created: string;

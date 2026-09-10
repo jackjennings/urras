@@ -1848,6 +1848,7 @@ Deno.test(
         outputRetries: 1,
         resumeRetries: 2,
         scopeRetries: 3,
+        transientRetries: 4,
         phaseSessionIds: { spec: "abc-123", implementation: undefined },
         notifiedNeedsAttention: true,
         created: "2026-01-01T00:00:00Z",

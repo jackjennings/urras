@@ -220,6 +220,10 @@ const FIELDS: { [K in keyof TicketState]-?: Field<K> } = {
     write: (t) => t.scopeRetries,
     read: (d) => d.scopeRetries as number | undefined,
   },
+  transientRetries: {
+    write: (t) => t.transientRetries,
+    read: (d) => d.transientRetries as number | undefined,
+  },
   phaseSessionIds: {
     write: (t) => {
       if (t.phaseSessionIds === undefined) return undefined;
