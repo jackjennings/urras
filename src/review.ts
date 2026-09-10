@@ -52,7 +52,7 @@ import {
   extractHeadings,
   renderTocLines,
 } from "./ui/toc.ts";
-import { readDir, readTextFile } from "./filesystem.ts";
+import { readDir, readTextFile, renderPrompt } from "./filesystem.ts";
 
 const markdownTheme: MarkdownTheme = {
   heading: (s) => cyan(s),
@@ -230,8 +230,9 @@ export async function classifyApproval(
     { verdict: "APPROVE" | "FEEDBACK" }
   >(
     {
-      systemPrompt:
-        "The user is reviewing an AI-generated work product. Reply with exactly the word APPROVE if the user's message clearly expresses approval or acceptance (e.g. 'approved', 'looks good', 'good to go', 'lgtm', 'ship it'). Reply with exactly the word FEEDBACK for anything else, including questions, suggestions, corrections, ambiguous text, or anything unclear.",
+      systemPrompt: await renderPrompt(
+        new URL("./review-approval.prompt.hbs", import.meta.url),
+      ),
       prompt: text,
       maxTokens: 5,
       schema: {
@@ -283,9 +284,10 @@ export async function buildQuestionSystemPrompt(
   contextFiles: string[],
   readFile: (path: string | URL) => Promise<string> = readTextFile,
 ): Promise<string> {
-  const parts: string[] = [
-    "You are a helpful assistant answering questions about a ticket's phase output. The following are the ticket files:",
-  ];
+  const preamble = await renderPrompt(
+    new URL("./review-question.prompt.hbs", import.meta.url),
+  );
+  const parts: string[] = [preamble];
   for (const contextFile of contextFiles) {
     const path = contextFile.startsWith("@")
       ? contextFile.slice(1)
