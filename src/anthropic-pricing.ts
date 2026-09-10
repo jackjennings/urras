@@ -201,12 +201,11 @@ export function calculateAnthropicCost(
 export interface RefreshAnthropicPricingDeps {
   homeDir: string;
   fetcher: typeof fetch;
-  // deno-lint-ignore no-fn-suffix/no-fn-suffix
-  logFn: typeof appendTickLog;
+  log: typeof appendTickLog;
 }
 
 export async function refreshAnthropicPricingIfStale(
-  { homeDir, fetcher, logFn }: RefreshAnthropicPricingDeps,
+  { homeDir, fetcher, log }: RefreshAnthropicPricingDeps,
 ): Promise<void> {
   const cachePath = join(homeDir, ".urras", "anthropic-pricing.json");
 
@@ -227,7 +226,7 @@ export async function refreshAnthropicPricingIfStale(
       "https://platform.claude.com/docs/en/about-claude/pricing.md",
     );
   } catch (e) {
-    await logFn({
+    await log({
       event: "pricing-fetch-failed",
       reason: "network-error",
       error: e instanceof Error ? e.message : String(e),
@@ -236,7 +235,7 @@ export async function refreshAnthropicPricingIfStale(
   }
 
   if (!response.ok) {
-    await logFn({
+    await log({
       event: "pricing-fetch-failed",
       reason: "http-error",
       status: response.status,
@@ -248,7 +247,7 @@ export async function refreshAnthropicPricingIfStale(
   try {
     text = await response.text();
   } catch (e) {
-    await logFn({
+    await log({
       event: "pricing-fetch-failed",
       reason: "response-read-error",
       error: e instanceof Error ? e.message : String(e),
@@ -266,7 +265,7 @@ export async function refreshAnthropicPricingIfStale(
   try {
     await writeTextFile(cachePath, JSON.stringify(cache));
   } catch (e) {
-    await logFn({
+    await log({
       event: "pricing-fetch-failed",
       reason: "cache-write-error",
       error: e instanceof Error ? e.message : String(e),

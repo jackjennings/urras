@@ -17,9 +17,9 @@ Deno.test(
     const ticket = makeTicket({ phase: "enrichment", status: "waiting" });
     const stateDir = await Deno.makeTempDir();
     await writeTicket(stateDir, ticket);
-    const commitFn = spy(() => Promise.resolve());
+    const commit = spy(() => Promise.resolve());
     try {
-      await performApprove(stateDir, ticket.id, { commitFn });
+      await performApprove(stateDir, ticket.id, { commit });
       const meta = await Deno.readTextFile(
         join(stateDir, ticket.id, "meta.md"),
       );
@@ -35,9 +35,9 @@ Deno.test("performApprove: does not write approved key", async () => {
   const ticket = makeTicket({ phase: "intake", status: "waiting" });
   const stateDir = await Deno.makeTempDir();
   await writeTicket(stateDir, ticket);
-  const commitFn = spy(() => Promise.resolve());
+  const commit = spy(() => Promise.resolve());
   try {
-    await performApprove(stateDir, ticket.id, { commitFn });
+    await performApprove(stateDir, ticket.id, { commit });
     const meta = await Deno.readTextFile(
       join(stateDir, ticket.id, "meta.md"),
     );
@@ -59,9 +59,9 @@ Deno.test("performApprove: accumulates multiple approvals", async () => {
   });
   const stateDir = await Deno.makeTempDir();
   await writeTicket(stateDir, ticket);
-  const commitFn = spy(() => Promise.resolve());
+  const commit = spy(() => Promise.resolve());
   try {
-    await performApprove(stateDir, ticket.id, { commitFn });
+    await performApprove(stateDir, ticket.id, { commit });
     const meta = await Deno.readTextFile(
       join(stateDir, ticket.id, "meta.md"),
     );
@@ -78,11 +78,11 @@ Deno.test(
     const ticket = makeTicket({ phase: "plan", status: "waiting" });
     const stateDir = await Deno.makeTempDir();
     await writeTicket(stateDir, ticket);
-    const commitFn = spy(() => Promise.resolve());
+    const commit = spy(() => Promise.resolve());
     try {
-      await performApprove(stateDir, ticket.id, { commitFn });
-      assertSpyCalls(commitFn, 1);
-      assertEquals(commitFn.calls[0].args, [
+      await performApprove(stateDir, ticket.id, { commit });
+      assertSpyCalls(commit, 1);
+      assertEquals(commit.calls[0].args, [
         stateDir,
         ticket.id,
         `approve: ${ticket.id}`,
@@ -109,12 +109,12 @@ Deno.test("performApproveCeremony: writes the hash and timestamp", async () => {
   try {
     let written: ApprovalRecord = {};
     await performApproveCeremony(stateDir, extensionsDir, "digest", {
-      readApprovalsFn: () => Promise.resolve({}),
-      writeApprovalsFn: (record) => {
+      readApprovals: () => Promise.resolve({}),
+      writeApprovals: (record) => {
         written = record;
         return Promise.resolve();
       },
-      hashFn: () => Promise.resolve("sha256:deadbeef"),
+      hash: () => Promise.resolve("sha256:deadbeef"),
     });
     assertEquals(written.digest.hash, "sha256:deadbeef");
     assertEquals(typeof written.digest.approvedAt, "string");
@@ -129,12 +129,12 @@ Deno.test("performApproveCeremony: preserves other entries", async () => {
   try {
     let written: ApprovalRecord = {};
     await performApproveCeremony(stateDir, extensionsDir, "digest", {
-      readApprovalsFn: () => Promise.resolve({ other: { hash: "sha256:1" } }),
-      writeApprovalsFn: (record) => {
+      readApprovals: () => Promise.resolve({ other: { hash: "sha256:1" } }),
+      writeApprovals: (record) => {
         written = record;
         return Promise.resolve();
       },
-      hashFn: () => Promise.resolve("sha256:2"),
+      hash: () => Promise.resolve("sha256:2"),
     });
     assertEquals(written.other.hash, "sha256:1");
   } finally {
@@ -151,9 +151,9 @@ Deno.test("performApproveCeremony: rejects an unknown ceremony", async () => {
     await assertRejects(
       () =>
         performApproveCeremony(stateDir, extensionsDir, "missing", {
-          readApprovalsFn: () => Promise.resolve({}),
-          writeApprovalsFn,
-          hashFn: () => Promise.resolve("sha256:x"),
+          readApprovals: () => Promise.resolve({}),
+          writeApprovals: writeApprovalsFn,
+          hash: () => Promise.resolve("sha256:x"),
         }),
       Error,
       "missing",
@@ -170,9 +170,9 @@ Deno.test("performApproveCeremony: rejects a built-in ceremony", async () => {
     await assertRejects(
       () =>
         performApproveCeremony(stateDir, extensionsDir, "documentation-gaps", {
-          readApprovalsFn: () => Promise.resolve({}),
-          writeApprovalsFn: () => Promise.resolve(),
-          hashFn: () => Promise.resolve("sha256:x"),
+          readApprovals: () => Promise.resolve({}),
+          writeApprovals: () => Promise.resolve(),
+          hash: () => Promise.resolve("sha256:x"),
         }),
       Error,
       "built-in",
@@ -192,9 +192,9 @@ Deno.test(
       await assertRejects(
         () =>
           performApproveCeremony(stateDir, extensionsDir, "", {
-            readApprovalsFn: () => Promise.resolve({}),
-            writeApprovalsFn,
-            hashFn: () => Promise.resolve("sha256:x"),
+            readApprovals: () => Promise.resolve({}),
+            writeApprovals: writeApprovalsFn,
+            hash: () => Promise.resolve("sha256:x"),
           }),
         Error,
         "empty",
@@ -214,9 +214,9 @@ Deno.test("performApproveCeremony: rejects a name containing /", async () => {
     await assertRejects(
       () =>
         performApproveCeremony(stateDir, extensionsDir, "foo/bar", {
-          readApprovalsFn: () => Promise.resolve({}),
-          writeApprovalsFn,
-          hashFn: () => Promise.resolve("sha256:x"),
+          readApprovals: () => Promise.resolve({}),
+          writeApprovals: writeApprovalsFn,
+          hash: () => Promise.resolve("sha256:x"),
         }),
       Error,
       "Invalid ceremony name",
@@ -235,9 +235,9 @@ Deno.test("performApproveCeremony: rejects a name containing ..", async () => {
     await assertRejects(
       () =>
         performApproveCeremony(stateDir, extensionsDir, "..", {
-          readApprovalsFn: () => Promise.resolve({}),
-          writeApprovalsFn,
-          hashFn: () => Promise.resolve("sha256:x"),
+          readApprovals: () => Promise.resolve({}),
+          writeApprovals: writeApprovalsFn,
+          hash: () => Promise.resolve("sha256:x"),
         }),
       Error,
       "Invalid ceremony name",
@@ -256,15 +256,15 @@ Deno.test(
     try {
       let written: ApprovalRecord = {};
       await performApproveCeremony(stateDir, extensionsDir, "digest", {
-        readApprovalsFn: () =>
+        readApprovals: () =>
           Promise.resolve({
             digest: { hash: "sha256:old", lastWarnedWindow: "2026-08-01" },
           }),
-        writeApprovalsFn: (record) => {
+        writeApprovals: (record) => {
           written = record;
           return Promise.resolve();
         },
-        hashFn: () => Promise.resolve("sha256:new"),
+        hash: () => Promise.resolve("sha256:new"),
       });
       assertEquals(written.digest.hash, "sha256:new");
       assertEquals(typeof written.digest.approvedAt, "string");
@@ -283,9 +283,9 @@ Deno.test('performApproveCeremony: rejects the name "."', async () => {
     await assertRejects(
       () =>
         performApproveCeremony(stateDir, extensionsDir, ".", {
-          readApprovalsFn: () => Promise.resolve({}),
-          writeApprovalsFn,
-          hashFn: () => Promise.resolve("sha256:x"),
+          readApprovals: () => Promise.resolve({}),
+          writeApprovals: writeApprovalsFn,
+          hash: () => Promise.resolve("sha256:x"),
         }),
       Error,
       "Invalid ceremony name",
@@ -308,9 +308,9 @@ Deno.test("performApproveCeremony: rejects a name with a quote", async () => {
           extensionsDir,
           'x" & (do shell script "id") & "y',
           {
-            readApprovalsFn: () => Promise.resolve({}),
-            writeApprovalsFn,
-            hashFn: () => Promise.resolve("sha256:x"),
+            readApprovals: () => Promise.resolve({}),
+            writeApprovals: writeApprovalsFn,
+            hash: () => Promise.resolve("sha256:x"),
           },
         ),
       Error,
@@ -334,9 +334,9 @@ Deno.test("performApproveCeremony: rejects a directory that can never run", asyn
     await assertRejects(
       () =>
         performApproveCeremony(stateDir, extensionsDir, "empty", {
-          readApprovalsFn: () => Promise.resolve({}),
-          writeApprovalsFn,
-          hashFn: () => Promise.resolve("sha256:x"),
+          readApprovals: () => Promise.resolve({}),
+          writeApprovals: writeApprovalsFn,
+          hash: () => Promise.resolve("sha256:x"),
         }),
       Error,
       "can never run",
@@ -357,9 +357,9 @@ Deno.test("performApproveCeremony: accepts a directory with only an index.ts", a
     await Deno.writeTextFile(join(dir, "index.ts"), "export default () => {};");
     const writeApprovalsFn = spy(() => Promise.resolve());
     await performApproveCeremony(stateDir, extensionsDir, "coded", {
-      readApprovalsFn: () => Promise.resolve({}),
-      writeApprovalsFn,
-      hashFn: () => Promise.resolve("sha256:x"),
+      readApprovals: () => Promise.resolve({}),
+      writeApprovals: writeApprovalsFn,
+      hash: () => Promise.resolve("sha256:x"),
     });
     assertSpyCalls(writeApprovalsFn, 1);
   } finally {
@@ -376,9 +376,9 @@ Deno.test("performApproveCeremony: returns the recorded hash and hashed paths", 
       extensionsDir,
       "digest",
       {
-        readApprovalsFn: () => Promise.resolve({}),
-        writeApprovalsFn: () => Promise.resolve(),
-        hashFn: () => Promise.resolve("sha256:deadbeef"),
+        readApprovals: () => Promise.resolve({}),
+        writeApprovals: () => Promise.resolve(),
+        hash: () => Promise.resolve("sha256:deadbeef"),
       },
     );
     assertEquals(result.hash, "sha256:deadbeef");
@@ -399,10 +399,10 @@ Deno.test(
       await assertRejects(
         () =>
           performApproveCeremony(stateDir, extensionsDir, "my-ceremony", {
-            readApprovalsFn: () => Promise.resolve({}),
-            writeApprovalsFn,
-            hashFn: () => Promise.resolve("sha256:x"),
-            manifestFn: () =>
+            readApprovals: () => Promise.resolve({}),
+            writeApprovals: writeApprovalsFn,
+            hash: () => Promise.resolve("sha256:x"),
+            manifest: () =>
               Promise.resolve([
                 { path: "index.ts", detail: "abc123" },
                 { path: "lib", detail: "-> /tmp/out <unsupported>" },

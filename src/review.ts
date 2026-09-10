@@ -254,16 +254,14 @@ export async function applyApproval(
   id: string,
   now: Temporal.ZonedDateTime,
   {
-    readTicketFn = readTicketWithPatch,
-    commitFn = commitTicket,
+    readTicket = readTicketWithPatch,
+    commit = commitTicket,
   }: {
-    // deno-lint-ignore no-fn-suffix/no-fn-suffix
-    readTicketFn?: typeof readTicketWithPatch;
-    // deno-lint-ignore no-fn-suffix/no-fn-suffix
-    commitFn?: typeof commitTicket;
+    readTicket?: typeof readTicketWithPatch;
+    commit?: typeof commitTicket;
   } = {},
 ): Promise<void> {
-  const { ticket, patchTicket } = await readTicketFn(stateDir, id);
+  const { ticket, patchTicket } = await readTicket(stateDir, id);
   const nowStr = now.toInstant().toString();
   await patchTicket({
     approvals: [
@@ -272,7 +270,7 @@ export async function applyApproval(
     ],
     updated: nowStr,
   });
-  await commitFn(stateDir, id, `approve: ${id}`);
+  await commit(stateDir, id, `approve: ${id}`);
 }
 
 export function formatTimestamp(now: Temporal.ZonedDateTime): string {
@@ -528,15 +526,11 @@ export interface ReviewSessionOptions {
   allTabContents?: TabContent[];
   tui: TUI;
   close: () => void;
-  // deno-lint-ignore no-fn-suffix/no-fn-suffix
-  readTicketFn?: typeof readTicketWithPatch;
-  // deno-lint-ignore no-fn-suffix/no-fn-suffix
-  commitFn?: typeof commitTicket;
+  readTicket?: typeof readTicketWithPatch;
+  commit?: typeof commitTicket;
   fetch?: typeof fetch;
-  // deno-lint-ignore no-fn-suffix/no-fn-suffix
-  getKeybindingsFn?: () => KeybindingsManager;
-  // deno-lint-ignore no-fn-suffix/no-fn-suffix
-  setKeybindingsFn?: (kb: KeybindingsManager) => void;
+  getKeybindings?: () => KeybindingsManager;
+  setKeybindings?: (kb: KeybindingsManager) => void;
 }
 
 export interface ReviewSessionCreateOptions {
@@ -547,15 +541,11 @@ export interface ReviewSessionCreateOptions {
   patchTicket?: (patch: Partial<TicketState>) => Promise<void>;
   tui: TUI;
   close: () => void;
-  // deno-lint-ignore no-fn-suffix/no-fn-suffix
-  readTicketFn?: typeof readTicketWithPatch;
-  // deno-lint-ignore no-fn-suffix/no-fn-suffix
-  commitFn?: typeof commitTicket;
+  readTicket?: typeof readTicketWithPatch;
+  commit?: typeof commitTicket;
   fetch?: typeof fetch;
-  // deno-lint-ignore no-fn-suffix/no-fn-suffix
-  getKeybindingsFn?: () => KeybindingsManager;
-  // deno-lint-ignore no-fn-suffix/no-fn-suffix
-  setKeybindingsFn?: (kb: KeybindingsManager) => void;
+  getKeybindings?: () => KeybindingsManager;
+  setKeybindings?: (kb: KeybindingsManager) => void;
 }
 
 export class ReviewSession implements Component, Focusable {
@@ -581,11 +571,11 @@ export class ReviewSession implements Component, Focusable {
   private readonly ticket: TicketState;
   private readonly patchTicket: (patch: Partial<TicketState>) => Promise<void>;
   private readonly tui: TUI;
-  private readonly closeFn: () => void;
-  private readonly readTicketFn: typeof readTicketWithPatch;
-  private readonly commitFn: typeof commitTicket;
+  private readonly onClose: () => void;
+  private readonly readTicket: typeof readTicketWithPatch;
+  private readonly commit: typeof commitTicket;
   private readonly fetcher: typeof fetch;
-  private readonly setKeybindingsFn: (kb: KeybindingsManager) => void;
+  private readonly setKeybindings: (kb: KeybindingsManager) => void;
 
   constructor({
     id,
@@ -597,22 +587,22 @@ export class ReviewSession implements Component, Focusable {
     allTabContents: allTabContentsOpt,
     tui,
     close,
-    readTicketFn = readTicketWithPatch,
-    commitFn = commitTicket,
+    readTicket = readTicketWithPatch,
+    commit = commitTicket,
     fetch: fetcher = fetch,
-    getKeybindingsFn = getKeybindings,
-    setKeybindingsFn = setKeybindings,
+    getKeybindings: getKeybindingsArg = getKeybindings,
+    setKeybindings: setKeybindingsArg = setKeybindings,
   }: ReviewSessionOptions) {
     this.id = id;
     this.stateDir = stateDir;
     this.ticket = ticket;
     this.patchTicket = patchTicket;
     this.tui = tui;
-    this.closeFn = close;
-    this.readTicketFn = readTicketFn;
-    this.commitFn = commitFn;
+    this.onClose = close;
+    this.readTicket = readTicket;
+    this.commit = commit;
     this.fetcher = fetcher;
-    this.setKeybindingsFn = setKeybindingsFn;
+    this.setKeybindings = setKeybindingsArg;
 
     const ticketContent = renderTicketTab(ticket);
     const ticketMd = new Markdown(ticketContent, 1, 0, markdownTheme);
@@ -633,7 +623,7 @@ export class ReviewSession implements Component, Focusable {
     this.currentOnInvalidate =
       this.allTabContents[this.activeTabIndex].onInvalidate;
 
-    this.savedKb = getKeybindingsFn();
+    this.savedKb = getKeybindingsArg();
     const kb = new KeybindingsManager({
       ...TUI_KEYBINDINGS,
       "tui.input.submit": {
@@ -645,7 +635,7 @@ export class ReviewSession implements Component, Focusable {
         description: "Insert newline",
       },
     });
-    setKeybindingsFn(kb);
+    setKeybindingsArg(kb);
 
     this.editor = new Editor(tui, {
       borderColor: (s) => this.focusedElement === "editor" ? s : gray(s),
@@ -823,8 +813,8 @@ export class ReviewSession implements Component, Focusable {
     this.errorHandle.hide();
     this.tui.removeChild(this.scrollPane);
     if (this.editorVisible) this.tui.removeChild(this.editor);
-    this.setKeybindingsFn(this.savedKb);
-    this.closeFn();
+    this.setKeybindings(this.savedKb);
+    this.onClose();
   }
 
   private handleSubmit = async (text: string): Promise<void> => {
@@ -843,8 +833,8 @@ export class ReviewSession implements Component, Focusable {
     }
     if (isApproval) {
       await applyApproval(this.stateDir, this.id, now, {
-        readTicketFn: this.readTicketFn,
-        commitFn: this.commitFn,
+        readTicket: this.readTicket,
+        commit: this.commit,
       });
       this.close();
       return;
@@ -856,7 +846,7 @@ export class ReviewSession implements Component, Focusable {
       status: "revising",
       updated: now.toInstant().toString(),
     });
-    await this.commitFn(this.stateDir, this.id, `review: ${this.id}`);
+    await this.commit(this.stateDir, this.id, `review: ${this.id}`);
     this.close();
   };
 
@@ -869,11 +859,11 @@ export class ReviewSession implements Component, Focusable {
       ticketDir,
       tui,
       close,
-      readTicketFn = readTicketWithPatch,
-      commitFn = commitTicket,
+      readTicket = readTicketWithPatch,
+      commit = commitTicket,
       fetch: fetcher = fetch,
-      getKeybindingsFn = getKeybindings,
-      setKeybindingsFn = setKeybindings,
+      getKeybindings: getKeybindingsArg = getKeybindings,
+      setKeybindings: setKeybindingsArg = setKeybindings,
     } = opts;
 
     let ticket: TicketState;
@@ -883,7 +873,7 @@ export class ReviewSession implements Component, Focusable {
       ticket = opts.ticket;
       patchTicket = opts.patchTicket;
     } else {
-      const result = await readTicketFn(stateDir, id);
+      const result = await readTicket(stateDir, id);
       ticket = result.ticket;
       patchTicket = result.patchTicket;
     }
@@ -970,11 +960,11 @@ export class ReviewSession implements Component, Focusable {
       allTabContents,
       tui,
       close,
-      readTicketFn,
-      commitFn,
+      readTicket,
+      commit,
       fetch: fetcher,
-      getKeybindingsFn,
-      setKeybindingsFn,
+      getKeybindings: getKeybindingsArg,
+      setKeybindings: setKeybindingsArg,
     });
   }
 }
@@ -985,23 +975,21 @@ export async function review(
     isTerminal = () => Deno.stdin.isTerminal(),
     readStdin = () => new Response(Deno.stdin.readable).text(),
     stateDir: stateDirOverride,
-    readTicketFn = readTicketWithPatch,
-    commitFn = commitTicket,
+    readTicket = readTicketWithPatch,
+    commit = commitTicket,
   }: {
     isTerminal?: () => boolean;
     readStdin?: () => Promise<string>;
     stateDir?: string;
-    // deno-lint-ignore no-fn-suffix/no-fn-suffix
-    readTicketFn?: typeof readTicketWithPatch;
-    // deno-lint-ignore no-fn-suffix/no-fn-suffix
-    commitFn?: typeof commitTicket;
+    readTicket?: typeof readTicketWithPatch;
+    commit?: typeof commitTicket;
   } = {},
 ): Promise<void> {
   const stateDir = stateDirOverride ??
     expandHome((await loadConfig()).state.dir);
   const ticketDir = join(stateDir, id);
 
-  const { ticket, patchTicket } = await readTicketFn(stateDir, id);
+  const { ticket, patchTicket } = await readTicket(stateDir, id);
 
   if (ticket.status === "running") {
     console.error(`ticket ${id} is currently running`);
@@ -1048,7 +1036,7 @@ export async function review(
       status: "revising",
       updated: now.toInstant().toString(),
     });
-    await commitFn(stateDir, id, `review: ${id}`);
+    await commit(stateDir, id, `review: ${id}`);
     Deno.exit(0);
   }
 
@@ -1070,8 +1058,8 @@ export async function review(
       tui.stop();
       Deno.exit(0);
     },
-    readTicketFn,
-    commitFn,
+    readTicket,
+    commit,
   });
 
   handlerRef.sigterm = () => session.close();

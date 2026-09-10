@@ -52,9 +52,9 @@ Deno.test(
     const ticket = makeTicket({ phase: "spec", status: "needs-attention" });
     const stateDir = await Deno.makeTempDir();
     await writeTicket(stateDir, ticket);
-    const commitFn = spy(() => Promise.resolve());
+    const commit = spy(() => Promise.resolve());
     try {
-      await performRetry(stateDir, ticket.id, { commitFn });
+      await performRetry(stateDir, ticket.id, { commit });
       const meta = await Deno.readTextFile(
         join(stateDir, ticket.id, "meta.md"),
       );
@@ -73,9 +73,9 @@ Deno.test(
     const ticket = makeTicket({ phase: "intake", status: "needs-attention" });
     const stateDir = await Deno.makeTempDir();
     await writeTicket(stateDir, ticket);
-    const commitFn = spy(() => Promise.resolve());
+    const commit = spy(() => Promise.resolve());
     try {
-      await performRetry(stateDir, ticket.id, { commitFn });
+      await performRetry(stateDir, ticket.id, { commit });
       const meta = await Deno.readTextFile(
         join(stateDir, ticket.id, "meta.md"),
       );
@@ -104,9 +104,9 @@ Deno.test(
     });
     const stateDir = await Deno.makeTempDir();
     await writeTicket(stateDir, ticket);
-    const commitFn = spy(() => Promise.resolve());
+    const commit = spy(() => Promise.resolve());
     try {
-      await performRetry(stateDir, ticket.id, { commitFn });
+      await performRetry(stateDir, ticket.id, { commit });
       const meta = await Deno.readTextFile(
         join(stateDir, ticket.id, "meta.md"),
       );
@@ -124,9 +124,9 @@ Deno.test(
     const ticket = makeTicket({ phase: "plan", status: "needs-attention" });
     const stateDir = await Deno.makeTempDir();
     await writeTicket(stateDir, ticket);
-    const commitFn = spy(() => Promise.resolve());
+    const commit = spy(() => Promise.resolve());
     try {
-      await performRetry(stateDir, ticket.id, { commitFn });
+      await performRetry(stateDir, ticket.id, { commit });
       const log = await Deno.readTextFile(
         join(stateDir, ticket.id, "log.ndjson"),
       );
@@ -147,9 +147,9 @@ Deno.test(
     const ticket = makeTicket({ phase: "intake", status: "needs-attention" });
     const stateDir = await Deno.makeTempDir();
     await writeTicket(stateDir, ticket);
-    const commitFn = spy(() => Promise.resolve());
+    const commit = spy(() => Promise.resolve());
     try {
-      await performRetry(stateDir, ticket.id, { commitFn });
+      await performRetry(stateDir, ticket.id, { commit });
       const log = await Deno.readTextFile(
         join(stateDir, ticket.id, "log.ndjson"),
       );
@@ -173,11 +173,11 @@ Deno.test(
     });
     const stateDir = await Deno.makeTempDir();
     await writeTicket(stateDir, ticket);
-    const commitFn = spy(() => Promise.resolve());
+    const commit = spy(() => Promise.resolve());
     try {
-      await performRetry(stateDir, ticket.id, { commitFn });
-      assertSpyCalls(commitFn, 1);
-      assertEquals(commitFn.calls[0].args, [
+      await performRetry(stateDir, ticket.id, { commit });
+      assertSpyCalls(commit, 1);
+      assertEquals(commit.calls[0].args, [
         stateDir,
         ticket.id,
         `retry: ${ticket.id}`,
