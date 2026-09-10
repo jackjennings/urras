@@ -76,3 +76,17 @@ Deno.test(
     assertEquals(result.status, "pass");
   },
 );
+
+Deno.test(
+  "hostDependenciesCheck: tuicr missing, all required present → warn with tuicr in detail",
+  async () => {
+    const result = await hostDependenciesCheck({
+      runCommand: (args) =>
+        args[1] === "tuicr"
+          ? Promise.resolve({ code: 1, stdout: "" })
+          : Promise.resolve({ code: 0, stdout: "/usr/bin/x\n" }),
+    }).run();
+    assertEquals(result.status, "warn");
+    assertStringIncludes(result.detail, "tuicr");
+  },
+);

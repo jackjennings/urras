@@ -8,7 +8,7 @@ const REQUIRED_BINARIES = [
   "git-worktreeinclude",
 ];
 
-const OPTIONAL_BINARIES = ["git-absorb"];
+const OPTIONAL_BINARIES = ["git-absorb", "tuicr"];
 
 export interface HostDependenciesDeps {
   runCommand: CommandRunner;
