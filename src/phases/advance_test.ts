@@ -1494,6 +1494,184 @@ Deno.test(
 );
 
 Deno.test(
+  "advancePhase: non-zero exit with transient stderr queues retry, sets transientRetries: 1",
+  async () => {
+    const ticket = makeTicket({ phase: "intake", status: "running" });
+    const writtenTickets: TicketState[] = [];
+    const logs: object[] = [];
+    await advancePhase(
+      ticket,
+      "/state",
+      makeTickDeps({
+        writeTicket: (_dir, t) => {
+          writtenTickets.push(t);
+          return Promise.resolve();
+        },
+        appendLog: (_dir, _id, entry) => {
+          logs.push(entry);
+          return Promise.resolve();
+        },
+        resolveModelConfig: () => ({ model: "m", thinking: "off" }),
+        readPhaseExitCode: () => Promise.resolve(1),
+        readPhaseStderr: () =>
+          Promise.resolve("Error: HTTP 429 Too Many Requests"),
+      }),
+    );
+    const final = writtenTickets[writtenTickets.length - 1];
+    assertEquals(final.status, "waiting");
+    assertEquals(final.transientRetries, 1);
+    const retryLog = logs.find(
+      (e) => (e as Record<string, unknown>).event === "transient-retry",
+    );
+    assertExists(retryLog);
+    assertEquals((retryLog as Record<string, unknown>).phase, "intake");
+    assertEquals((retryLog as Record<string, unknown>).attempt, 1);
+    assertEquals((retryLog as Record<string, unknown>).exitCode, 1);
+  },
+);
+
+Deno.test(
+  "advancePhase: non-zero exit with transient stderr and transientRetries:2 increments to 3",
+  async () => {
+    const ticket = makeTicket({
+      phase: "intake",
+      status: "running",
+      transientRetries: 2,
+    });
+    const writtenTickets: TicketState[] = [];
+    await advancePhase(
+      ticket,
+      "/state",
+      makeTickDeps({
+        writeTicket: (_dir, t) => {
+          writtenTickets.push(t);
+          return Promise.resolve();
+        },
+        resolveModelConfig: () => ({ model: "m", thinking: "off" }),
+        readPhaseExitCode: () => Promise.resolve(1),
+        readPhaseStderr: () =>
+          Promise.resolve("overloaded_error: model overloaded"),
+      }),
+    );
+    const final = writtenTickets[writtenTickets.length - 1];
+    assertEquals(final.status, "waiting");
+    assertEquals(final.transientRetries, 3);
+  },
+);
+
+Deno.test(
+  "advancePhase: non-zero exit with transient stderr but budget exhausted falls through to park",
+  async () => {
+    const ticket = makeTicket({
+      phase: "intake",
+      status: "running",
+      transientRetries: 3,
+    });
+    const writtenTickets: TicketState[] = [];
+    const logs: object[] = [];
+    await advancePhase(
+      ticket,
+      "/state",
+      makeTickDeps({
+        writeTicket: (_dir, t) => {
+          writtenTickets.push(t);
+          return Promise.resolve();
+        },
+        appendLog: (_dir, _id, entry) => {
+          logs.push(entry);
+          return Promise.resolve();
+        },
+        resolveModelConfig: () => ({ model: "m", thinking: "off" }),
+        readPhaseExitCode: () => Promise.resolve(1),
+        readPhaseStderr: () =>
+          Promise.resolve("rate_limit_error: too many requests"),
+      }),
+    );
+    const final = writtenTickets[writtenTickets.length - 1];
+    assertEquals(final.status, "needs-attention");
+    assertFalse(
+      logs.some(
+        (e) => (e as Record<string, unknown>).event === "transient-retry",
+      ),
+    );
+    assert(
+      logs.some(
+        (e) =>
+          (e as Record<string, unknown>).event === "phase-output-invalid" &&
+          (e as Record<string, unknown>).reason === "non-zero-exit",
+      ),
+    );
+  },
+);
+
+Deno.test(
+  "advancePhase: non-zero exit with non-transient stderr uses existing behavior",
+  async () => {
+    const ticket = makeTicket({ phase: "intake", status: "running" });
+    const writtenTickets: TicketState[] = [];
+    const logs: object[] = [];
+    await advancePhase(
+      ticket,
+      "/state",
+      makeTickDeps({
+        writeTicket: (_dir, t) => {
+          writtenTickets.push(t);
+          return Promise.resolve();
+        },
+        appendLog: (_dir, _id, entry) => {
+          logs.push(entry);
+          return Promise.resolve();
+        },
+        resolveModelConfig: () => ({ model: "m", thinking: "off" }),
+        readPhaseExitCode: () => Promise.resolve(1),
+        readPhaseStderr: () =>
+          Promise.resolve("syntax error: unexpected token"),
+      }),
+    );
+    const final = writtenTickets[writtenTickets.length - 1];
+    assertEquals(final.status, "needs-attention");
+    assertFalse(
+      logs.some(
+        (e) => (e as Record<string, unknown>).event === "transient-retry",
+      ),
+    );
+  },
+);
+
+Deno.test(
+  "advancePhase: non-zero exit with null stderr uses existing behavior",
+  async () => {
+    const ticket = makeTicket({ phase: "intake", status: "running" });
+    const writtenTickets: TicketState[] = [];
+    const logs: object[] = [];
+    await advancePhase(
+      ticket,
+      "/state",
+      makeTickDeps({
+        writeTicket: (_dir, t) => {
+          writtenTickets.push(t);
+          return Promise.resolve();
+        },
+        appendLog: (_dir, _id, entry) => {
+          logs.push(entry);
+          return Promise.resolve();
+        },
+        resolveModelConfig: () => ({ model: "m", thinking: "off" }),
+        readPhaseExitCode: () => Promise.resolve(1),
+        readPhaseStderr: () => Promise.resolve(null),
+      }),
+    );
+    const final = writtenTickets[writtenTickets.length - 1];
+    assertEquals(final.status, "needs-attention");
+    assertFalse(
+      logs.some(
+        (e) => (e as Record<string, unknown>).event === "transient-retry",
+      ),
+    );
+  },
+);
+
+Deno.test(
   "advancePhase: implementation approved advancing to merge clears resumeRetries",
   async () => {
     const ticket = makeTicket({

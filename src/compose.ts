@@ -1370,6 +1370,30 @@ export function composeTickDeps(
         );
         return parseInt(content, 10);
       },
+      readPhaseStderr: async (ticketDir, phase) => {
+        const pattern = new RegExp(
+          `^\\d{8}T\\d{6}-${phase}\\.md\\.stderr$`,
+        );
+        const matches: string[] = [];
+        try {
+          for await (const entry of readDir(ticketDir)) {
+            if (entry.isFile && pattern.test(entry.name)) {
+              matches.push(entry.name);
+            }
+          }
+        } catch {
+          // dir missing
+        }
+        if (matches.length === 0) return null;
+        matches.sort();
+        try {
+          return await readTextFile(
+            join(ticketDir, matches[matches.length - 1]),
+          );
+        } catch {
+          return null;
+        }
+      },
       markPRsReady: async (prUrls: string[]) => {
         for (const url of prUrls) {
           const parsed = parsePrUrl(url);

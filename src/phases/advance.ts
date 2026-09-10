@@ -28,6 +28,12 @@ import type {
 
 const DEFAULT_MAX_PROMPT_TOKENS = 5_000;
 
+function isTransientFailure(stderr: string | null): boolean {
+  if (stderr === null) return false;
+  return /429|529|overloaded_error|rate_limit_error|ECONNRESET|ETIMEDOUT|connection reset|network timeout/i
+    .test(stderr);
+}
+
 export interface TickDeps {
   spawn: (opts: {
     phase: ActivePhase;
@@ -76,6 +82,10 @@ export interface TickDeps {
     ticketDir: string,
     phase: string,
   ) => Promise<number | null>;
+  readPhaseStderr: (
+    ticketDir: string,
+    phase: string,
+  ) => Promise<string | null>;
   readPhaseSessionId: (
     ticketDir: string,
     phase: string,
@@ -301,6 +311,7 @@ export async function advancePhase(
       const waitingTicket: TicketState = {
         ...ticket,
         outputRetries: undefined,
+        transientRetries: undefined,
         status: "waiting",
         updated: now,
         phaseSessionIds,
@@ -375,6 +386,25 @@ export async function advancePhase(
         return;
       }
       if (exitCode !== 0) {
+        const stderr = await deps.readPhaseStderr(
+          join(stateDir, ticket.id),
+          ticket.phase,
+        );
+        if (isTransientFailure(stderr) && (ticket.transientRetries ?? 0) < 3) {
+          const newRetries = (ticket.transientRetries ?? 0) + 1;
+          await deps.writeTicket(stateDir, {
+            ...waitingTicket,
+            transientRetries: newRetries,
+            updated: now,
+          });
+          await deps.appendLog(stateDir, ticket.id, {
+            event: "transient-retry",
+            phase: ticket.phase,
+            attempt: newRetries,
+            exitCode,
+          });
+          return;
+        }
         const staleSessionId =
           ticket.phase === "implementation" || ticket.phase === "merge"
             ? waitingTicket.phaseSessionIds?.["implementation"]
