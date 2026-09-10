@@ -287,7 +287,7 @@ export class GitHubProvider implements Provider {
       },
     });
     if (!res.ok) return null;
-    const issue = (await res.json()) as GitHubIssue;
+    const issue = (await res.json()) as { title: string; body: string | null };
     return { title: issue.title, body: issue.body ?? "" };
   }
 
