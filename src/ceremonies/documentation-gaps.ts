@@ -2,7 +2,13 @@ import { join } from "@std/path";
 import { compactTimestamp } from "../timestamp.ts";
 import type { Ceremony } from "./types.ts";
 import type { CommandRunner } from "../apfel.ts";
-import { mkdir, readDir, readTextFile, writeTextFile } from "../filesystem.ts";
+import {
+  mkdir,
+  readDir,
+  readTextFile,
+  renderPrompt,
+  writeTextFile,
+} from "../filesystem.ts";
 import { ClaudeLanguageModel } from "../models/claude.ts";
 
 export interface DocumentationGapsCeremonyDeps {
@@ -13,33 +19,6 @@ export interface DocumentationGapsCeremonyDeps {
   notify?: (title: string, message: string) => Promise<void>;
 }
 
-const SYSTEM_PROMPT =
-  `You are a documentation-gap analyst for a software project.
-
-Cluster the provided Open Questions semantically — questions that ask the same thing in different words belong in one cluster. For each cluster:
-- Count how many times it appears across tickets
-- Select up to 3 representative verbatim quotes
-- Identify which file in the doc corpus the answer should land in (AGENTS.md, a specific phase prompt file, or "unknown")
-
-Drop any cluster whose answer is already directly present in the doc corpus. Coverage is binary: a cluster is covered only if the corpus directly answers it, not merely mentions the topic.
-
-Drop any cluster whose theme semantically matches a heading from the Previously Reported Gaps list.
-
-Return surviving clusters ranked by occurrence count descending, in the exact output format specified in the user message.
-
-If no clusters survive filtering, return exactly: NO_GAPS`;
-
-const OUTPUT_FORMAT_TEMPLATE = `# Documentation Gap Report
-
-_N clusters across M tickets_
-
-## {Cluster Theme}
-
-**Occurrences:** N
-**Suggested doc target:** {filename}
-
-> {representative quote 1}
-> {representative quote 2}`;
 
 function extractOpenQuestions(content: string): string | null {
   const lines = content.split("\n");
@@ -138,16 +117,22 @@ async function callLlm(
   const priorBlock = priorHeadings.length > 0
     ? priorHeadings.map((h) => `- ${h}`).join("\n")
     : "None.";
+  const outputFormat = await renderPrompt(
+    new URL("./documentation-gaps-output-format.prompt.hbs", import.meta.url),
+  );
   const userMessage = [
     `## Questions\n${questionsBlock}`,
     `## Documentation Corpus\n${corpus}`,
     `## Previously Reported Gaps\n${priorBlock}`,
-    `## Required Output Format\n\`\`\`\n${OUTPUT_FORMAT_TEMPLATE}\n\`\`\`\nwhere \`N clusters across M tickets\` are computed from the surviving clusters.`,
+    `## Required Output Format\n\`\`\`\n${outputFormat}\n\`\`\`\nwhere \`N clusters across M tickets\` are computed from the surviving clusters.`,
   ].join("\n\n");
 
   const model = new ClaudeLanguageModel(run, { model: "claude-sonnet-4-6" });
+  const systemPrompt = await renderPrompt(
+    new URL("./documentation-gaps.prompt.hbs", import.meta.url),
+  );
   const text = await model.generateText({
-    systemPrompt: SYSTEM_PROMPT,
+    systemPrompt,
     prompt: userMessage,
   });
   if (text == null) {
