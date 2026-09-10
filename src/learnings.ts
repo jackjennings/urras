@@ -10,6 +10,7 @@ export interface LearningDeps {
     learning: LearningState,
     intent: string,
   ): Promise<{ url: string; title: string }>;
+  allowedRepos: string[];
   log?(entry: object): Promise<void>;
 }
 
@@ -67,6 +68,7 @@ export async function processLearnings(deps: LearningDeps): Promise<void> {
   );
   for (const entry of entries) {
     if (entry.learning.status !== "pending") continue;
+    if (!deps.allowedRepos.includes(entry.learning.repo)) continue;
     if (inFlight.has(entry.learning.targetFile)) continue;
     inFlight.add(entry.learning.targetFile);
     try {

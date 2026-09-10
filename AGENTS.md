@@ -479,6 +479,18 @@ is closed unmerged. If a proposal can't even be opened, that failure is surfaced
 rather than hidden, and it is not retried automatically — it's left for a person
 to look at.
 
+`[learnings] repos` in `config.toml` is the allowlist of slugs the pipeline may
+open pull requests against (`Config.learnings?.repos`, `src/state/types.ts`). A
+pending learning whose `repo` is absent from the list is left `pending`
+indefinitely — no worktree is created, no attempt is logged — rather than parked
+`needs-attention`, since being out of scope is not a failure. Absent
+`[learnings]` entirely defaults to an empty allowlist (`processLearnings`'s
+`allowedRepos`, wired in `composeTickDeps`), so the pipeline is inert until a
+repo is explicitly listed. The check in `processLearnings` (`src/learnings.ts`)
+runs before the per-target-file in-flight guard, so a disallowed learning never
+occupies that file's dispatch slot and cannot block an allowed learning
+targeting the same file.
+
 ## Failure handling
 
 The default response to a failure is decided by where it happens, not per-caller

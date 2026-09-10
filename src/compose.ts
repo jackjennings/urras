@@ -1556,6 +1556,7 @@ export function composeTickDeps(
           writeLearning(stateDir, learning, intent),
         prState: (url) => githubProvider.prState(url),
         log: appendTickLog,
+        allowedRepos: config.learnings?.repos ?? [],
         applyToRepo: (learning, intent) =>
           applyLearningToRepo(learning, intent, {
             roots: config.codebase.roots.map(expandHome),

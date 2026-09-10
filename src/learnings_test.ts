@@ -78,6 +78,7 @@ function makeDeps(
         url: "https://github.com/jackjennings/lazyboy/pull/9",
         title: "docs: apply learning to src/phases/prompts/implementation.md",
       }),
+    allowedRepos: ["jackjennings/lazyboy"],
     ...overrides,
   };
   return { deps, written };
@@ -185,6 +186,45 @@ Deno.test("processLearnings: logs pr-state-check-failed when prState throws", as
     id: "20260729T050000",
     reason: "pr-state-check-failed",
   });
+});
+
+Deno.test("processLearnings: skips a pending learning whose repo is not allowed", async () => {
+  const applyToRepo = spy((_l: LearningState, _i: string) =>
+    Promise.resolve({
+      url: "https://github.com/jackjennings/lazyboy/pull/9",
+      title: "docs: apply learning to src/phases/prompts/implementation.md",
+    })
+  );
+  const { deps, written } = makeDeps(
+    [{ learning: learning(), intent: "Enumerate call sites." }],
+    { applyToRepo, allowedRepos: [] },
+  );
+  await processLearnings(deps);
+  assertSpyCalls(applyToRepo, 0);
+  assertEquals(written.length, 0);
+});
+
+Deno.test("processLearnings: a disallowed repo does not block an allowed learning targeting the same file", async () => {
+  const applyToRepo = spy((_l: LearningState, _i: string) =>
+    Promise.resolve({
+      url: "https://github.com/jackjennings/lazyboy/pull/9",
+      title: "docs: apply learning to src/phases/prompts/implementation.md",
+    })
+  );
+  const { deps, written } = makeDeps([
+    {
+      learning: learning({ id: "disallowed", repo: "acme/widgets" }),
+      intent: "one",
+    },
+    {
+      learning: learning({ id: "allowed", repo: "jackjennings/urras" }),
+      intent: "two",
+    },
+  ], { applyToRepo, allowedRepos: ["jackjennings/urras"] });
+  await processLearnings(deps);
+  assertSpyCalls(applyToRepo, 1);
+  assertEquals(written.length, 1);
+  assertEquals(written[0].learning.id, "allowed");
 });
 
 Deno.test("processLearnings: applies a pending learning once the same-file PR has merged this run", async () => {
