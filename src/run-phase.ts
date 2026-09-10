@@ -14,6 +14,7 @@ import {
   readDir,
   readTextFile,
   remove,
+  renderPrompt,
   stat,
   writeTextFile,
 } from "./filesystem.ts";
@@ -637,10 +638,13 @@ export async function executePhase(
             critiqueText,
           );
           rerunResult = await agent.runPhase({
-            prompt: opts.prompt +
-              pathContext +
-              "\n\n---\n\nCritique findings requiring revision:\n\n" +
-              critiqueText,
+            prompt: await renderPrompt(
+              new URL(
+                "./phases/critique-rerun-user.prompt.hbs",
+                import.meta.url,
+              ),
+              { basePrompt: opts.prompt, pathContext, critiqueText },
+            ),
             contextFiles,
             cwd,
             env,
