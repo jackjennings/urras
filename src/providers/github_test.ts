@@ -21,20 +21,29 @@ Deno.test("fetchNew filters out known IDs", async () => {
     http: new HttpClient((_url, _init) =>
       Promise.resolve(
         new Response(
-          JSON.stringify([
-            {
-              number: 1,
-              title: "One",
-              body: "desc",
-              html_url: "https://github.com/jackjennings/lazyboy/issues/1",
+          JSON.stringify({
+            data: {
+              repository: {
+                issues: {
+                  nodes: [
+                    {
+                      number: 1,
+                      title: "One",
+                      body: "desc",
+                      url: "https://github.com/jackjennings/lazyboy/issues/1",
+                    },
+                    {
+                      number: 2,
+                      title: "Two",
+                      body: "desc2",
+                      url: "https://github.com/jackjennings/lazyboy/issues/2",
+                    },
+                  ],
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                },
+              },
             },
-            {
-              number: 2,
-              title: "Two",
-              body: "desc2",
-              html_url: "https://github.com/jackjennings/lazyboy/issues/2",
-            },
-          ]),
+          }),
           { status: 200 },
         ),
       )
@@ -56,14 +65,23 @@ Deno.test("fetchNew does not re-create an issue tracked under its legacy gh-<n> 
     http: new HttpClient((_url, _init) =>
       Promise.resolve(
         new Response(
-          JSON.stringify([
-            {
-              number: 18,
-              title: "Retry subcommand",
-              body: "desc",
-              html_url: "https://github.com/jackjennings/lazyboy/issues/18",
+          JSON.stringify({
+            data: {
+              repository: {
+                issues: {
+                  nodes: [
+                    {
+                      number: 18,
+                      title: "Retry subcommand",
+                      body: "desc",
+                      url: "https://github.com/jackjennings/lazyboy/issues/18",
+                    },
+                  ],
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                },
+              },
             },
-          ]),
+          }),
           { status: 200 },
         ),
       )
@@ -80,14 +98,23 @@ Deno.test("fetchNew returns all when knownIds is empty", async () => {
     http: new HttpClient((_url, _init) =>
       Promise.resolve(
         new Response(
-          JSON.stringify([
-            {
-              number: 1,
-              title: "One",
-              body: "desc",
-              html_url: "https://github.com/jackjennings/lazyboy/issues/1",
+          JSON.stringify({
+            data: {
+              repository: {
+                issues: {
+                  nodes: [
+                    {
+                      number: 1,
+                      title: "One",
+                      body: "desc",
+                      url: "https://github.com/jackjennings/lazyboy/issues/1",
+                    },
+                  ],
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                },
+              },
             },
-          ]),
+          }),
           { status: 200 },
         ),
       )
@@ -98,37 +125,139 @@ Deno.test("fetchNew returns all when knownIds is empty", async () => {
   assertEquals(items[0].id, "github/jackjennings/lazyboy/1");
 });
 
-Deno.test("fetchNew passes slug-resolved token and login to http.get", async () => {
-  const receivedArgs: Array<{ url: string; token: string }> = [];
+Deno.test(
+  "fetchNew passes slug-resolved token and login via GraphQL POST",
+  async () => {
+    const receivedArgs: Array<{ url: string; token: string; login: string }> =
+      [];
+    const provider = new GitHubProvider({
+      repos: ["jackjennings/lazyboy", "workorg/app"],
+      accountResolver: (slug) => {
+        if (slug === "jackjennings/lazyboy") {
+          return { token: "tok_personal", login: "jack" };
+        }
+        if (slug === "workorg/app") {
+          return { token: "tok_work", login: "work-user" };
+        }
+        return { token: "tok_default", login: "default" };
+      },
+      http: new HttpClient((url, init) => {
+        const authHeader =
+          (init?.headers as Record<string, string>)?.["Authorization"] ?? "";
+        const body = JSON.parse(init?.body as string ?? "{}");
+        receivedArgs.push({
+          url: url as string,
+          token: authHeader.replace("Bearer ", ""),
+          login: body.variables?.login ?? "",
+        });
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: {
+                repository: {
+                  issues: {
+                    nodes: [],
+                    pageInfo: { hasNextPage: false, endCursor: null },
+                  },
+                },
+              },
+            }),
+            { status: 200 },
+          ),
+        );
+      }),
+    });
+    await provider.fetchNew(new Set());
+    assertEquals(receivedArgs.length, 2);
+    assertEquals(receivedArgs[0].token, "tok_personal");
+    assertEquals(receivedArgs[0].url, "https://api.github.com/graphql");
+    assertEquals(receivedArgs[0].login, "jack");
+    assertEquals(receivedArgs[1].token, "tok_work");
+    assertEquals(receivedArgs[1].login, "work-user");
+  },
+);
+
+Deno.test(
+  "fetchNew: POSTs to GraphQL endpoint for each org/repo entry",
+  async () => {
+    const calledUrls: string[] = [];
+    const provider = new GitHubProvider({
+      repos: ["jackjennings/lazyboy"],
+      accountResolver: fixedResolver("fake", "jackjennings"),
+      http: new HttpClient((url) => {
+        calledUrls.push(url as string);
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: {
+                repository: {
+                  issues: {
+                    nodes: [],
+                    pageInfo: { hasNextPage: false, endCursor: null },
+                  },
+                },
+              },
+            }),
+            { status: 200 },
+          ),
+        );
+      }),
+    });
+    await provider.fetchNew(new Set());
+    assertEquals(calledUrls.length, 1);
+    assertEquals(calledUrls[0], "https://api.github.com/graphql");
+  },
+);
+
+Deno.test("fetchNew: skips null repository result without throwing", async () => {
   const provider = new GitHubProvider({
-    repos: ["jackjennings/lazyboy", "workorg/app"],
-    accountResolver: (slug) => {
-      if (slug === "jackjennings/lazyboy") {
-        return { token: "tok_personal", login: "jack" };
-      }
-      if (slug === "workorg/app") {
-        return { token: "tok_work", login: "work-user" };
-      }
-      return { token: "tok_default", login: "default" };
-    },
-    http: new HttpClient((url, init) => {
-      const authHeader =
-        (init?.headers as Record<string, string>)?.["Authorization"] ?? "";
-      receivedArgs.push({
-        url: url as string,
-        token: authHeader.replace("Bearer ", ""),
-      });
-      return Promise.resolve(
-        new Response(JSON.stringify([]), { status: 200 }),
-      );
-    }),
+    repos: ["jackjennings/lazyboy"],
+    accountResolver: fixedResolver("fake", "jackjennings"),
+    http: new HttpClient(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({ data: { repository: null } }),
+          { status: 200 },
+        ),
+      )
+    ),
   });
-  await provider.fetchNew(new Set());
-  assertEquals(receivedArgs.length, 2);
-  assertEquals(receivedArgs[0].token, "tok_personal");
-  assertStringIncludes(receivedArgs[0].url, "assignee=jack");
-  assertEquals(receivedArgs[1].token, "tok_work");
-  assertStringIncludes(receivedArgs[1].url, "assignee=work-user");
+  const items = await provider.fetchNew(new Set());
+  assertEquals(items.length, 0);
+});
+
+Deno.test("fetchNew: maps GraphQL issue url field to WorkItem.url", async () => {
+  const provider = new GitHubProvider({
+    repos: ["jackjennings/lazyboy"],
+    accountResolver: fixedResolver("fake", "jackjennings"),
+    http: new HttpClient(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            data: {
+              repository: {
+                issues: {
+                  nodes: [{
+                    number: 1,
+                    title: "T",
+                    body: "B",
+                    url: "https://github.com/jackjennings/lazyboy/issues/1",
+                  }],
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                },
+              },
+            },
+          }),
+          { status: 200 },
+        ),
+      )
+    ),
+  });
+  const items = await provider.fetchNew(new Set());
+  assertEquals(
+    items[0].url,
+    "https://github.com/jackjennings/lazyboy/issues/1",
+  );
 });
 
 const POISONED_URL =
@@ -534,17 +663,30 @@ Deno.test("GitHubProvider.clone: propagates _clone error", async () => {
 Deno.test(
   "GitHubProvider.fetchNew: builds id from canonical, requests current",
   async () => {
-    const requested: string[] = [];
-    const http = new HttpClient((url) => {
-      requested.push(url as string);
+    const capturedBodies: Array<{ owner: string; name: string }> = [];
+    const http = new HttpClient((_url, init) => {
+      const body = JSON.parse((init as RequestInit)?.body as string ?? "{}");
+      capturedBodies.push({
+        owner: body.variables?.owner ?? "",
+        name: body.variables?.name ?? "",
+      });
       return Promise.resolve(
         new Response(
-          JSON.stringify([{
-            number: 1,
-            title: "T",
-            body: "B",
-            html_url: "https://github.com/org/new/issues/1",
-          }]),
+          JSON.stringify({
+            data: {
+              repository: {
+                issues: {
+                  nodes: [{
+                    number: 1,
+                    title: "T",
+                    body: "B",
+                    url: "https://github.com/org/new/issues/1",
+                  }],
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                },
+              },
+            },
+          }),
           { status: 200 },
         ),
       );
@@ -561,8 +703,8 @@ Deno.test(
     const items = await provider.fetchNew(new Set());
     assertEquals(items.length, 1);
     assertEquals(items[0].id, "github/org/old/1");
-    assert(requested.some((u) => u.includes("/repos/org/new/issues")));
-    assertFalse(requested.some((u) => u.includes("/repos/org/old/issues")));
+    assert(capturedBodies.some((b) => b.owner === "org" && b.name === "new"));
+    assertFalse(capturedBodies.some((b) => b.name === "old"));
   },
 );
 
@@ -574,16 +716,28 @@ Deno.test(
       accountResolver: () => ({ token: "t", login: "user" }),
       resolveRepo: (slug) =>
         slug === "blocked/repo" ? null : { canonical: slug, current: slug },
-      http: new HttpClient((url) => {
-        if ((url as string).includes("fine/repo")) {
+      http: new HttpClient((_url, init) => {
+        const body = JSON.parse((init as RequestInit)?.body as string ?? "{}");
+        const owner = body.variables?.owner ?? "";
+        const name = body.variables?.name ?? "";
+        if (owner === "fine" && name === "repo") {
           return Promise.resolve(
             new Response(
-              JSON.stringify([{
-                number: 2,
-                title: "T",
-                body: "B",
-                html_url: "https://github.com/fine/repo/issues/2",
-              }]),
+              JSON.stringify({
+                data: {
+                  repository: {
+                    issues: {
+                      nodes: [{
+                        number: 2,
+                        title: "T",
+                        body: "B",
+                        url: "https://github.com/fine/repo/issues/2",
+                      }],
+                      pageInfo: { hasNextPage: false, endCursor: null },
+                    },
+                  },
+                },
+              }),
               { status: 200 },
             ),
           );

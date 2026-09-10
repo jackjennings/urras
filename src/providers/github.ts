@@ -6,6 +6,7 @@ import {
   slugOf,
   ticketIdFor,
 } from "./github/identity.ts";
+import { githubGraphQL } from "./github/graphql.ts";
 
 type AccountResolver = (slug: string) => { token: string; login: string };
 
@@ -23,12 +24,15 @@ type CloneFn = (
   token: string,
 ) => Promise<void>;
 
-interface GitHubIssue {
-  number: number;
-  title: string;
-  body: string;
-  html_url: string;
-}
+const REPO_ISSUES_QUERY =
+  `query($owner: String!, $name: String!, $login: String!, $after: String) {
+    repository(owner: $owner, name: $name) {
+      issues(states: [OPEN], filterBy: { assignee: $login }, first: 100, after: $after) {
+        nodes { number title body url }
+        pageInfo { hasNextPage endCursor }
+      }
+    }
+  }`;
 
 const GITHUB_STATUS_HINTS: Record<number, string> = {
   401:
@@ -298,26 +302,30 @@ export class GitHubProvider implements Provider {
         continue;
       }
       const { token, login } = this.accountResolver(resolved.canonical);
-      const url =
-        `https://api.github.com/repos/${resolved.current}/issues?assignee=${login}&state=open&per_page=50`;
-      const res = await this.http.get(url, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/vnd.github+json",
-        },
-      });
-      if (!res.ok) {
-        throw new Error(
-          formatGitHubApiError(
-            res.status,
-            url,
-            await res.text().catch(() => ""),
-          ),
+      const [owner, name] = resolved.current.split("/");
+      const gqlData = await githubGraphQL(this.http, token, REPO_ISSUES_QUERY, {
+        owner,
+        name,
+        login,
+        after: null,
+      }) as {
+        repository: {
+          issues: {
+            nodes: Array<
+              { number: number; title: string; body: string; url: string }
+            >;
+            pageInfo: { hasNextPage: boolean; endCursor: string | null };
+          };
+        } | null;
+      };
+      if (gqlData.repository === null) {
+        console.log(
+          `GitHubProvider.fetchNew: ${resolved.current} is not accessible, skipping`,
         );
+        continue;
       }
-      const issues = (await res.json()) as GitHubIssue[];
       const [canonicalOrg, canonicalRepo] = resolved.canonical.split("/");
-      for (const issue of issues) {
+      for (const issue of gqlData.repository.issues.nodes) {
         const id = ticketIdFor({
           org: canonicalOrg,
           repo: canonicalRepo,
@@ -337,7 +345,7 @@ export class GitHubProvider implements Provider {
             provider: "github",
             title: issue.title,
             description: issue.body ?? "",
-            url: issue.html_url,
+            url: issue.url,
           });
         }
       }
