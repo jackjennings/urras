@@ -1,4 +1,5 @@
 import type { LanguageModel } from "./models/types.ts";
+import { renderPrompt } from "./filesystem.ts";
 
 const VALID_MODEL_IDS = new Set([
   "claude-sonnet-4-6",
@@ -16,16 +17,6 @@ const VALID_THINKING_LEVELS = new Set([
   "max",
 ]);
 
-const SYSTEM_PROMPT =
-  `You are selecting the model and thinking level for an implementation phase agent. ` +
-  `Given the implementation prompt below, return a JSON object with exactly two fields: "model" and "thinking".\n\n` +
-  `Valid model values: "claude-sonnet-4-6", "claude-opus-4-5", "claude-opus-4-6"\n` +
-  `Valid thinking values: "off", "minimal", "low", "medium", "high", "xhigh", "max"\n\n` +
-  `Guidelines:\n` +
-  `- Use "claude-sonnet-4-6" by default. Use "claude-opus-4-6" only for the most demanding tasks.\n` +
-  `- Use "high" or "xhigh" for complex multi-file refactors, subtle correctness reasoning, or coordination of many interdependent changes.\n` +
-  `- Use "off" or "minimal" for straightforward, well-scoped changes.\n\n` +
-  `Respond with only the JSON object and no surrounding prose.`;
 
 const JSON_SCHEMA = {
   type: "object",
@@ -41,10 +32,17 @@ export async function adjudicatePhaseModel(
   model: LanguageModel,
 ): Promise<{ model: string; thinking: string } | null> {
   try {
+    const systemPrompt = await renderPrompt(
+      new URL("./pre-phase-adjudication.prompt.hbs", import.meta.url),
+      {
+        validModels: [...VALID_MODEL_IDS],
+        validThinkingLevels: [...VALID_THINKING_LEVELS],
+      },
+    );
     const result = await model.generateObject<
       { model: string; thinking: string }
     >({
-      systemPrompt: SYSTEM_PROMPT,
+      systemPrompt,
       prompt,
       schema: JSON_SCHEMA,
       maxTokens: 64,

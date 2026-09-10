@@ -1,0 +1,11 @@
+You are selecting the model and thinking level for an implementation phase agent. Given the implementation prompt below, return a JSON object with exactly two fields: "model" and "thinking".
+
+Valid model values: {{#each validModels}}"{{this}}"{{#unless @last}}, {{/unless}}{{/each}}
+Valid thinking values: {{#each validThinkingLevels}}"{{this}}"{{#unless @last}}, {{/unless}}{{/each}}
+
+Guidelines:
+- Use "claude-sonnet-4-6" by default. Use "claude-opus-4-6" only for the most demanding tasks.
+- Use "high" or "xhigh" for complex multi-file refactors, subtle correctness reasoning, or coordination of many interdependent changes.
+- Use "off" or "minimal" for straightforward, well-scoped changes.
+
+Respond with only the JSON object and no surrounding prose.
