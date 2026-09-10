@@ -789,6 +789,7 @@ export function composeTickDeps(
           appendLog: appendTicketLog,
           resolveModelConfig: (ticket) =>
             resolvePhaseModel(config, "ci-fix", ticket),
+          canonicalSlugFor: (slug) => canonicalSlugFor(persistedTable, slug),
           writeContextFile: async (ticketDir, runKey, content) => {
             const timestamp = compactTimestamp(
               Temporal.Now.zonedDateTimeISO("UTC"),
