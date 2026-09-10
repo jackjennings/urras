@@ -1647,3 +1647,292 @@ Deno.test("ReviewSession: close() removes ScrollPane and Editor from TUI", () =>
   session.close();
   assertEquals(tui.children.length, 0);
 });
+
+// ── r hotkey (tuicr) ──────────────────────────────────────────────────────────
+
+function makeTuicrSession(overrides: Partial<ReviewSessionOptions> = {}) {
+  return makeReviewSession({
+    ticket: makeTicket({
+      id: "github/test/repo/1",
+      prs: [
+        {
+          url: "https://github.com/org/repo/pull/42",
+          title: "My PR",
+          dependsOn: [],
+          merged: false,
+          worktreeKey: "org/repo",
+        },
+      ],
+      worktrees: {
+        "org/repo": { path: "/path/to/worktree", branch: "main" },
+      },
+    }),
+    checkTuicr: () => Promise.resolve(true),
+    spawnTuicr: () => Promise.resolve(),
+    ...overrides,
+  });
+}
+
+Deno.test(
+  "ReviewSession: r with no PRs shows error overlay",
+  () => {
+    const { tui } = makeReviewSession({
+      ticket: makeTicket({ id: "github/test/repo/1" }),
+    });
+    const handler = tui.inputListeners[0];
+    handler("r");
+    const errorHandle = tui.overlays[1].handle;
+    assertFalse(errorHandle.setHidden.calls.every((c) => c.args[0] === true));
+  },
+);
+
+Deno.test(
+  "ReviewSession: r with no PRs shows 'No PRs associated with this ticket.'",
+  () => {
+    const { tui, session } = makeReviewSession({
+      ticket: makeTicket({ id: "github/test/repo/1" }),
+    });
+    void session;
+    const handler = tui.inputListeners[0];
+    handler("r");
+    const errorOverlay = tui.overlays[1].component as ErrorOverlay;
+    const lines = errorOverlay.render(80);
+    assertStringIncludes(
+      lines.join(" "),
+      "No PRs associated with this ticket.",
+    );
+  },
+);
+
+Deno.test(
+  "ReviewSession: r with PRs but no eligible worktrees shows 'No local worktree available for PR review.'",
+  () => {
+    const { tui, session } = makeReviewSession({
+      ticket: makeTicket({
+        id: "github/test/repo/1",
+        prs: [
+          {
+            url: "https://github.com/org/repo/pull/42",
+            title: "My PR",
+            dependsOn: [],
+            merged: false,
+          },
+        ],
+        worktrees: {},
+      }),
+    });
+    void session;
+    const handler = tui.inputListeners[0];
+    handler("r");
+    const errorOverlay = tui.overlays[1].component as ErrorOverlay;
+    const lines = errorOverlay.render(80);
+    assertStringIncludes(
+      lines.join(" "),
+      "No local worktree available for PR review.",
+    );
+  },
+);
+
+Deno.test(
+  "ReviewSession: r with eligible PR and tuicr unavailable shows PATH error",
+  async () => {
+    const { tui, session } = makeTuicrSession({
+      checkTuicr: () => Promise.resolve(false),
+    });
+    void session;
+    const handler = tui.inputListeners[0];
+    handler("r");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const errorOverlay = tui.overlays[1].component as ErrorOverlay;
+    const lines = errorOverlay.render(80);
+    assertStringIncludes(
+      lines.join(" "),
+      "tuicr not found on PATH. Install from tuicr.dev.",
+    );
+  },
+);
+
+Deno.test(
+  "ReviewSession: r with one eligible PR and tuicr available calls spawnTuicr with worktreePath and PR number",
+  async () => {
+    const spawnSpy = spy((_path: string, _num: number) => Promise.resolve());
+    const { tui, session } = makeTuicrSession({
+      spawnTuicr: spawnSpy,
+    });
+    void session;
+    const handler = tui.inputListeners[0];
+    handler("r");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assertSpyCalls(spawnSpy, 1);
+    assertEquals(spawnSpy.calls[0].args[0], "/path/to/worktree");
+    assertEquals(spawnSpy.calls[0].args[1], 42);
+  },
+);
+
+Deno.test(
+  "ReviewSession: r with one eligible PR and tuicr available does not show error overlay",
+  async () => {
+    const { tui, session } = makeTuicrSession();
+    void session;
+    const handler = tui.inputListeners[0];
+    handler("r");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const errorHandle = tui.overlays[1].handle;
+    assertFalse(errorHandle.setHidden.calls.some((c) => c.args[0] === false));
+  },
+);
+
+Deno.test(
+  "ReviewSession: r with multiple eligible PRs and tuicr available shows SelectList overlay",
+  async () => {
+    const { tui, session } = makeReviewSession({
+      ticket: makeTicket({
+        id: "github/test/repo/1",
+        prs: [
+          {
+            url: "https://github.com/org/repo/pull/1",
+            title: "PR One",
+            dependsOn: [],
+            merged: false,
+            worktreeKey: "org/repo-a",
+          },
+          {
+            url: "https://github.com/org/repo/pull/2",
+            title: "PR Two",
+            dependsOn: [],
+            merged: false,
+            worktreeKey: "org/repo-b",
+          },
+        ],
+        worktrees: {
+          "org/repo-a": { path: "/path/a", branch: "main" },
+          "org/repo-b": { path: "/path/b", branch: "main" },
+        },
+      }),
+      checkTuicr: () => Promise.resolve(true),
+      spawnTuicr: () => Promise.resolve(),
+    });
+    void session;
+    const overlayCountBefore = tui.overlays.length;
+    const handler = tui.inputListeners[0];
+    handler("r");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assertGreater(tui.overlays.length, overlayCountBefore);
+  },
+);
+
+Deno.test(
+  "ReviewSession: r with multiple eligible PRs → onSelect triggers spawnTuicr with correct args",
+  async () => {
+    const spawnSpy = spy((_path: string, _num: number) => Promise.resolve());
+    const { tui, session } = makeReviewSession({
+      ticket: makeTicket({
+        id: "github/test/repo/1",
+        prs: [
+          {
+            url: "https://github.com/org/repo/pull/7",
+            title: "PR Seven",
+            dependsOn: [],
+            merged: false,
+            worktreeKey: "org/repo-a",
+          },
+          {
+            url: "https://github.com/org/repo/pull/8",
+            title: "PR Eight",
+            dependsOn: [],
+            merged: false,
+            worktreeKey: "org/repo-b",
+          },
+        ],
+        worktrees: {
+          "org/repo-a": { path: "/path/a", branch: "main" },
+          "org/repo-b": { path: "/path/b", branch: "main" },
+        },
+      }),
+      checkTuicr: () => Promise.resolve(true),
+      spawnTuicr: spawnSpy,
+    });
+    void session;
+    const overlaysBefore = tui.overlays.length;
+    const handler = tui.inputListeners[0];
+    handler("r");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const { component: picker } = tui.overlays[overlaysBefore];
+    const selectList = picker as {
+      onSelect?: (item: { value: string; label: string }) => void;
+    };
+    await selectList.onSelect?.({
+      value: "https://github.com/org/repo/pull/8",
+      label: "PR Eight",
+    });
+    assertSpyCalls(spawnSpy, 1);
+    assertEquals(spawnSpy.calls[0].args[0], "/path/b");
+    assertEquals(spawnSpy.calls[0].args[1], 8);
+  },
+);
+
+Deno.test(
+  "ReviewSession: r with multiple eligible PRs → onCancel does not call spawnTuicr",
+  async () => {
+    const spawnSpy = spy((_path: string, _num: number) => Promise.resolve());
+    const { tui, session } = makeReviewSession({
+      ticket: makeTicket({
+        id: "github/test/repo/1",
+        prs: [
+          {
+            url: "https://github.com/org/repo/pull/1",
+            title: "PR One",
+            dependsOn: [],
+            merged: false,
+            worktreeKey: "org/repo-a",
+          },
+          {
+            url: "https://github.com/org/repo/pull/2",
+            title: "PR Two",
+            dependsOn: [],
+            merged: false,
+            worktreeKey: "org/repo-b",
+          },
+        ],
+        worktrees: {
+          "org/repo-a": { path: "/path/a", branch: "main" },
+          "org/repo-b": { path: "/path/b", branch: "main" },
+        },
+      }),
+      checkTuicr: () => Promise.resolve(true),
+      spawnTuicr: spawnSpy,
+    });
+    void session;
+    const overlaysBefore = tui.overlays.length;
+    const handler = tui.inputListeners[0];
+    handler("r");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const { component: picker } = tui.overlays[overlaysBefore];
+    const selectList = picker as { onCancel?: () => void };
+    selectList.onCancel?.();
+    assertSpyCalls(spawnSpy, 0);
+  },
+);
+
+Deno.test(
+  "ReviewSession: r with editor focused → input not consumed",
+  () => {
+    const { tui } = makeReviewSession();
+    const handler = tui.inputListeners[0];
+    handler("\t"); // switch focus to editor
+    const result = handler("r");
+    assertEquals(result, undefined);
+  },
+);
+
+Deno.test(
+  "ReviewSession: r with content focused → input consumed",
+  () => {
+    const { tui } = makeReviewSession({
+      ticket: makeTicket({ id: "github/test/repo/1" }),
+    });
+    const handler = tui.inputListeners[0];
+    const result = handler("r");
+    assertEquals(result, { consume: true });
+  },
+);

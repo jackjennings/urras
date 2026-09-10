@@ -24,13 +24,20 @@ import {
   matchesKey,
   type OverlayHandle,
   ProcessTerminal,
+  type SelectItem,
+  SelectList,
   setKeybindings,
   TUI,
   TUI_KEYBINDINGS,
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import { expandHome, loadConfig } from "./config.ts";
-import { captureCommandRunner } from "./apfel.ts";
+import {
+  captureCommandRunner,
+  checkTuicrAvailable,
+  defaultCommandRunner,
+} from "./apfel.ts";
+import { parsePrUrl } from "./providers/github/identity.ts";
 import { ApfelLanguageModel } from "./models/apfel.ts";
 import { ClaudeLanguageModel } from "./models/claude.ts";
 import { FallbackLanguageModel } from "./models/fallback.ts";
@@ -533,6 +540,8 @@ export interface ReviewSessionOptions {
   fetch?: typeof fetch;
   getKeybindings?: () => KeybindingsManager;
   setKeybindings?: (kb: KeybindingsManager) => void;
+  checkTuicr?: () => Promise<boolean>;
+  spawnTuicr?: (worktreePath: string, prNumber: number) => Promise<void>;
 }
 
 export interface ReviewSessionCreateOptions {
@@ -578,6 +587,11 @@ export class ReviewSession implements Component, Focusable {
   private readonly commit: typeof commitTicket;
   private readonly fetcher: typeof fetch;
   private readonly setKeybindings: (kb: KeybindingsManager) => void;
+  private readonly checkTuicr: () => Promise<boolean>;
+  private readonly spawnTuicr: (
+    worktreePath: string,
+    prNumber: number,
+  ) => Promise<void>;
 
   constructor({
     id,
@@ -594,6 +608,8 @@ export class ReviewSession implements Component, Focusable {
     fetch: fetcher = fetch,
     getKeybindings: getKeybindingsArg = getKeybindings,
     setKeybindings: setKeybindingsArg = setKeybindings,
+    checkTuicr: checkTuicrArg,
+    spawnTuicr: spawnTuicrArg,
   }: ReviewSessionOptions) {
     this.id = id;
     this.stateDir = stateDir;
@@ -711,6 +727,22 @@ export class ReviewSession implements Component, Focusable {
 
     this.editor.onSubmit = this.handleSubmit;
 
+    this.checkTuicr = checkTuicrArg ??
+      (() => checkTuicrAvailable(defaultCommandRunner()));
+    this.spawnTuicr = spawnTuicrArg ??
+      (async (worktreePath: string, prNumber: number): Promise<void> => {
+        tui.stop();
+        const child = new Deno.Command("tuicr", {
+          args: ["pr", String(prNumber)],
+          cwd: worktreePath,
+          stdin: "inherit",
+          stdout: "inherit",
+          stderr: "inherit",
+        }).spawn();
+        await child.status;
+        tui.start();
+      });
+
     tui.addInputListener((data) => {
       if (isKeyRelease(data)) {
         return { consume: true };
@@ -764,6 +796,90 @@ export class ReviewSession implements Component, Focusable {
         if (text.trim()) {
           void this.handleSubmit(text);
         }
+        return { consume: true };
+      }
+      if (matchesKey(data, "r") && this.focusedElement === "content") {
+        (async () => {
+          const prs = this.ticket.prs;
+          if (!prs || prs.length === 0) {
+            this.errorOverlay.setMessage(
+              "No PRs associated with this ticket.",
+            );
+            this.errorHandle.setHidden(false);
+            this.errorHandle.focus();
+            tui.requestRender(true);
+            return;
+          }
+
+          const eligiblePrs = prs.filter(
+            (pr) => pr.worktreeKey && this.ticket.worktrees[pr.worktreeKey],
+          );
+
+          if (eligiblePrs.length === 0) {
+            this.errorOverlay.setMessage(
+              "No local worktree available for PR review.",
+            );
+            this.errorHandle.setHidden(false);
+            this.errorHandle.focus();
+            tui.requestRender(true);
+            return;
+          }
+
+          const available = await this.checkTuicr();
+          if (!available) {
+            this.errorOverlay.setMessage(
+              "tuicr not found on PATH. Install from tuicr.dev.",
+            );
+            this.errorHandle.setHidden(false);
+            this.errorHandle.focus();
+            tui.requestRender(true);
+            return;
+          }
+
+          if (eligiblePrs.length === 1) {
+            const pr = eligiblePrs[0];
+            const worktreePath = this.ticket.worktrees[pr.worktreeKey!].path;
+            const parsed = parsePrUrl(pr.url);
+            if (!parsed) return;
+            await this.spawnTuicr(worktreePath, parsed.number);
+          } else {
+            const items: SelectItem[] = eligiblePrs.map((pr) => ({
+              value: pr.url,
+              label: pr.title,
+            }));
+            const picker = new SelectList(items, 10, {
+              selectedPrefix: (s) => s,
+              selectedText: (s) => s,
+              description: (s) => s,
+              scrollInfo: (s) => s,
+              noMatch: (s) => s,
+            });
+            const pickerHandle = tui.showOverlay(picker, {
+              width: "80%",
+              minWidth: 60,
+              maxHeight: "80%",
+              margin: 1,
+            });
+            pickerHandle.focus();
+
+            picker.onSelect = async (item) => {
+              pickerHandle.setHidden(true);
+              tui.setFocus(this.scrollPane);
+              const pr = eligiblePrs.find((p) => p.url === item.value);
+              if (!pr) return;
+              const worktreePath = this.ticket.worktrees[pr.worktreeKey!].path;
+              const parsed = parsePrUrl(pr.url);
+              if (!parsed) return;
+              await this.spawnTuicr(worktreePath, parsed.number);
+            };
+
+            picker.onCancel = () => {
+              pickerHandle.setHidden(true);
+              tui.setFocus(this.scrollPane);
+              tui.requestRender(true);
+            };
+          }
+        })();
         return { consume: true };
       }
     });
