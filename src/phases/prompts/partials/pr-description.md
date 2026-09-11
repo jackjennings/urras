@@ -25,3 +25,13 @@ When a template section calls for a screenshot or recording, produce it rather
 than describing it — see the capture instructions below. For any other artifact
 you cannot produce, such as a link to a deployed environment, write a single
 line stating it does not apply.
+
+Scale the description's length to the size of the change, not to the template. A
+small, self-contained diff needs only a matter-of-fact paragraph or two covering
+the impetus and why the change is being made — the code itself is faster for a
+reviewer to read than a paragraph restating it, so do not pad the description
+with implementation detail the diff already shows. A large or multi-part change
+needs proportionally more justification: more of the throughline connecting each
+piece, and more explicit notable decisions, because the reviewer cannot hold the
+whole diff in mind at once and depends on the description to see why each piece
+is required.
