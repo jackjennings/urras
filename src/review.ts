@@ -32,11 +32,8 @@ import {
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import { expandHome, loadConfig } from "./config.ts";
-import {
-  captureCommandRunner,
-  checkTuicrAvailable,
-  defaultCommandRunner,
-} from "./apfel.ts";
+import { captureCommandRunner, defaultCommandRunner } from "./apfel.ts";
+import { checkTuicrAvailable } from "./tuicr.ts";
 import { parsePrUrl } from "./providers/github/identity.ts";
 import { ApfelLanguageModel } from "./models/apfel.ts";
 import { ClaudeLanguageModel } from "./models/claude.ts";
