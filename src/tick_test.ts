@@ -1229,6 +1229,94 @@ Deno.test(
 );
 
 Deno.test(
+  "TickService: processLearnings called after reconcileRepoIdentities",
+  async () => {
+    const order: string[] = [];
+    const deps = makeTickServiceDeps({
+      reconcileRepoIdentities: () => {
+        order.push("reconcile");
+        return Promise.resolve();
+      },
+      processLearnings: () => {
+        order.push("learnings");
+        return Promise.resolve();
+      },
+    });
+    await new TickService(deps).run();
+    assert(order.indexOf("reconcile") < order.indexOf("learnings"));
+  },
+);
+
+Deno.test(
+  "TickService: normalizes aliased scope slugs before migrations run",
+  async () => {
+    const ticket = makeTicket({ scope: ["old/repo"] });
+    const migratedTickets: TicketState[][] = [];
+    const deps = makeTickServiceDeps({
+      listTickets: () => Promise.resolve([ticket.id]),
+      readTicket: () => Promise.resolve(ticket),
+      canonicalSlugFor: (slug) => slug === "old/repo" ? "new/repo" : slug,
+      runMigrations: (_dir, tickets) => {
+        migratedTickets.push([...tickets]);
+        return Promise.resolve(tickets);
+      },
+    });
+    await new TickService(deps).run();
+    assertEquals(migratedTickets[0][0].scope, ["new/repo"]);
+  },
+);
+
+Deno.test(
+  "TickService: normalizes aliased worktrees keys before migrations run",
+  async () => {
+    const ticket = makeTicket({
+      worktrees: { "old/repo": { path: "/tmp/wt", branch: "b" } },
+    });
+    const migratedTickets: TicketState[][] = [];
+    const deps = makeTickServiceDeps({
+      listTickets: () => Promise.resolve([ticket.id]),
+      readTicket: () => Promise.resolve(ticket),
+      canonicalSlugFor: (slug) => slug === "old/repo" ? "new/repo" : slug,
+      runMigrations: (_dir, tickets) => {
+        migratedTickets.push([...tickets]);
+        return Promise.resolve(tickets);
+      },
+    });
+    await new TickService(deps).run();
+    const wt = migratedTickets[0][0].worktrees;
+    assertEquals(Object.keys(wt), ["new/repo"]);
+    assertEquals(wt["new/repo"].path, "/tmp/wt");
+  },
+);
+
+Deno.test(
+  "TickService: normalizes aliased prs worktreeKey before migrations run",
+  async () => {
+    const ticket = makeTicket({
+      prs: [{
+        url: "https://github.com/o/r/pull/1",
+        title: "PR",
+        dependsOn: [],
+        merged: false,
+        worktreeKey: "old/repo",
+      }],
+    });
+    const migratedTickets: TicketState[][] = [];
+    const deps = makeTickServiceDeps({
+      listTickets: () => Promise.resolve([ticket.id]),
+      readTicket: () => Promise.resolve(ticket),
+      canonicalSlugFor: (slug) => slug === "old/repo" ? "new/repo" : slug,
+      runMigrations: (_dir, tickets) => {
+        migratedTickets.push([...tickets]);
+        return Promise.resolve(tickets);
+      },
+    });
+    await new TickService(deps).run();
+    assertEquals(migratedTickets[0][0].prs?.[0].worktreeKey, "new/repo");
+  },
+);
+
+Deno.test(
   "TickService: emits agents-md-too-large when file token count exceeds threshold",
   async () => {
     const dir = await Deno.makeTempDir();

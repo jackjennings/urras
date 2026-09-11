@@ -79,6 +79,7 @@ function makeDeps(
         title: "docs: apply learning to src/phases/prompts/implementation.md",
       }),
     allowedRepos: ["jackjennings/lazyboy"],
+    canonicalSlugFor: (slug) => slug,
     ...overrides,
   };
   return { deps, written };
@@ -225,6 +226,27 @@ Deno.test("processLearnings: a disallowed repo does not block an allowed learnin
   assertSpyCalls(applyToRepo, 1);
   assertEquals(written.length, 1);
   assertEquals(written[0].learning.id, "allowed");
+});
+
+Deno.test("processLearnings: normalizes aliased repo slug before allowedRepos check", async () => {
+  const applyToRepo = spy((_l: LearningState, _i: string) =>
+    Promise.resolve({
+      url: "https://github.com/jackjennings/lazyboy/pull/9",
+      title: "docs: apply learning to src/phases/prompts/implementation.md",
+    })
+  );
+  const { deps, written } = makeDeps(
+    [{ learning: learning({ repo: "old/repo" }), intent: "x" }],
+    {
+      applyToRepo,
+      allowedRepos: ["new/repo"],
+      canonicalSlugFor: (slug) => slug === "old/repo" ? "new/repo" : slug,
+    },
+  );
+  await processLearnings(deps);
+  assertSpyCalls(applyToRepo, 1);
+  assertEquals(written.length, 1);
+  assertEquals(written[0].learning.status, "waiting");
 });
 
 Deno.test("processLearnings: applies a pending learning once the same-file PR has merged this run", async () => {

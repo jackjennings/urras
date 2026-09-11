@@ -1584,6 +1584,7 @@ export function composeTickDeps(
         prState: (url) => githubProvider.prState(url),
         log: appendTickLog,
         allowedRepos: config.learnings?.repos ?? [],
+        canonicalSlugFor: (slug) => canonicalSlugFor(persistedTable, slug),
         applyToRepo: (learning, intent) =>
           applyLearningToRepo(learning, intent, {
             roots: config.codebase.roots.map(expandHome),
@@ -1647,6 +1648,7 @@ export function composeTickDeps(
         [...confirmed.entries()].map(([k, v]) => [k, v.currentSlug]),
       );
     },
+    canonicalSlugFor: (slug) => canonicalSlugFor(persistedTable, slug),
     notifyTickFailure: (error: string) =>
       desktopNotifier("Tick failed", error.slice(0, 200)),
     scaffoldStatePrompts: () =>
