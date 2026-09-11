@@ -91,10 +91,10 @@ Deno.test(
     const ticket = makeTicket({ phase: "spec", status: "waiting" });
     const stateDir = await Deno.makeTempDir();
     await writeTicket(stateDir, ticket);
-    const commitFn = spy(() => Promise.resolve());
+    const commit = spy(() => Promise.resolve());
     try {
       const result = await performRewind(stateDir, ticket.id, "spec", {
-        commitFn,
+        commit,
       });
       assertEquals(result.to, "spec");
     } finally {
@@ -109,9 +109,9 @@ Deno.test(
     const ticket = makeTicket({ phase: "spec", status: "waiting" });
     const stateDir = await Deno.makeTempDir();
     await writeTicket(stateDir, ticket);
-    const commitFn = spy(() => Promise.resolve());
+    const commit = spy(() => Promise.resolve());
     try {
-      await performRewind(stateDir, ticket.id, "intake", { commitFn });
+      await performRewind(stateDir, ticket.id, "intake", { commit });
       const meta = await Deno.readTextFile(
         join(stateDir, ticket.id, "meta.md"),
       );
@@ -129,9 +129,9 @@ Deno.test(
     const ticket = makeTicket({ phase: "implementation", status: "waiting" });
     const stateDir = await Deno.makeTempDir();
     await writeTicket(stateDir, ticket);
-    const commitFn = spy(() => Promise.resolve());
+    const commit = spy(() => Promise.resolve());
     try {
-      await performRewind(stateDir, ticket.id, "spec", { commitFn });
+      await performRewind(stateDir, ticket.id, "spec", { commit });
       const meta = await Deno.readTextFile(
         join(stateDir, ticket.id, "meta.md"),
       );
@@ -167,9 +167,9 @@ Deno.test(
     });
     const stateDir = await Deno.makeTempDir();
     await writeTicket(stateDir, ticket);
-    const commitFn = spy(() => Promise.resolve());
+    const commit = spy(() => Promise.resolve());
     try {
-      await performRewind(stateDir, ticket.id, "spec", { commitFn });
+      await performRewind(stateDir, ticket.id, "spec", { commit });
       const meta = await Deno.readTextFile(
         join(stateDir, ticket.id, "meta.md"),
       );
@@ -199,9 +199,9 @@ Deno.test(
     });
     const stateDir = await Deno.makeTempDir();
     await writeTicket(stateDir, ticket);
-    const commitFn = spy(() => Promise.resolve());
+    const commit = spy(() => Promise.resolve());
     try {
-      await performRewind(stateDir, ticket.id, "spec", { commitFn });
+      await performRewind(stateDir, ticket.id, "spec", { commit });
       const meta = await Deno.readTextFile(
         join(stateDir, ticket.id, "meta.md"),
       );
@@ -226,9 +226,9 @@ Deno.test(
     });
     const stateDir = await Deno.makeTempDir();
     await writeTicket(stateDir, ticket);
-    const commitFn = spy(() => Promise.resolve());
+    const commit = spy(() => Promise.resolve());
     try {
-      await performRewind(stateDir, ticket.id, "spec", { commitFn });
+      await performRewind(stateDir, ticket.id, "spec", { commit });
       const meta = await Deno.readTextFile(
         join(stateDir, ticket.id, "meta.md"),
       );
@@ -267,9 +267,9 @@ Deno.test(
       await Deno.writeTextFile(join(ticketDir, f), "content");
     }
 
-    const commitFn = spy(() => Promise.resolve());
+    const commit = spy(() => Promise.resolve());
     try {
-      await performRewind(stateDir, ticket.id, "spec", { commitFn });
+      await performRewind(stateDir, ticket.id, "spec", { commit });
 
       for (const f of filesToArchive) {
         await assertRejects(
@@ -303,12 +303,12 @@ Deno.test(
     await writeTicket(stateDir, ticket);
     const ticketDir = join(stateDir, ticket.id);
     await Deno.writeTextFile(join(ticketDir, "run.pid"), Deno.pid.toString());
-    const commitFn = spy(() => Promise.resolve());
-    const killFn = spy((_pid: number) => {});
+    const commit = spy(() => Promise.resolve());
+    const kill = spy((_pid: number) => {});
     try {
-      await performRewind(stateDir, ticket.id, "spec", { commitFn, killFn });
-      assertSpyCalls(killFn, 1);
-      assertEquals(killFn.calls[0].args[0], Deno.pid);
+      await performRewind(stateDir, ticket.id, "spec", { commit, kill });
+      assertSpyCalls(kill, 1);
+      assertEquals(kill.calls[0].args[0], Deno.pid);
       await assertRejects(
         () => Deno.stat(join(ticketDir, "run.pid")),
         Deno.errors.NotFound,
@@ -325,11 +325,11 @@ Deno.test(
     const ticket = makeTicket({ phase: "spec", status: "waiting" });
     const stateDir = await Deno.makeTempDir();
     await writeTicket(stateDir, ticket);
-    const commitFn = spy(() => Promise.resolve());
-    const killFn = spy((_pid: number) => {});
+    const commit = spy(() => Promise.resolve());
+    const kill = spy((_pid: number) => {});
     try {
-      await performRewind(stateDir, ticket.id, "spec", { commitFn, killFn });
-      assertSpyCalls(killFn, 0);
+      await performRewind(stateDir, ticket.id, "spec", { commit, kill });
+      assertSpyCalls(kill, 0);
     } finally {
       await Deno.remove(stateDir, { recursive: true });
     }
@@ -342,10 +342,10 @@ Deno.test(
     const ticket = makeTicket({ phase: "implementation", status: "waiting" });
     const stateDir = await Deno.makeTempDir();
     await writeTicket(stateDir, ticket);
-    const commitFn = spy(() => Promise.resolve());
+    const commit = spy(() => Promise.resolve());
     try {
       const result = await performRewind(stateDir, ticket.id, "spec", {
-        commitFn,
+        commit,
       });
       assertEquals(result.from, "implementation");
       assertEquals(result.to, "spec");
@@ -361,9 +361,9 @@ Deno.test(
     const ticket = makeTicket({ phase: "plan", status: "waiting" });
     const stateDir = await Deno.makeTempDir();
     await writeTicket(stateDir, ticket);
-    const commitFn = spy(() => Promise.resolve());
+    const commit = spy(() => Promise.resolve());
     try {
-      await performRewind(stateDir, ticket.id, "spec", { commitFn });
+      await performRewind(stateDir, ticket.id, "spec", { commit });
       const log = await Deno.readTextFile(
         join(stateDir, ticket.id, "log.ndjson"),
       );
@@ -383,11 +383,11 @@ Deno.test(
     const ticket = makeTicket({ phase: "implementation", status: "waiting" });
     const stateDir = await Deno.makeTempDir();
     await writeTicket(stateDir, ticket);
-    const commitFn = spy(() => Promise.resolve());
+    const commit = spy(() => Promise.resolve());
     try {
-      await performRewind(stateDir, ticket.id, "spec", { commitFn });
-      assertSpyCalls(commitFn, 1);
-      assertEquals(commitFn.calls[0].args, [
+      await performRewind(stateDir, ticket.id, "spec", { commit });
+      assertSpyCalls(commit, 1);
+      assertEquals(commit.calls[0].args, [
         stateDir,
         ticket.id,
         `rewind: ${ticket.id}`,
@@ -404,13 +404,13 @@ Deno.test(
     const ticket = makeTicket({ phase: "merge", status: "waiting" });
     const stateDir = await Deno.makeTempDir();
     await writeTicket(stateDir, ticket);
-    const commitFn = spy(() => Promise.resolve());
+    const commit = spy(() => Promise.resolve());
     try {
       const result = await performRewind(
         stateDir,
         ticket.id,
         "implementation",
-        { commitFn },
+        { commit },
       );
       assertEquals(result.from, "merge");
       assertEquals(result.to, "implementation");
@@ -433,12 +433,12 @@ Deno.test(
     await writeTicket(stateDir, ticket);
     const ticketDir = join(stateDir, ticket.id);
     await Deno.writeTextFile(join(ticketDir, "run.pid"), Deno.pid.toString());
-    const commitFn = spy(() => Promise.resolve());
-    const killFn = spy((_pid: number) => {
+    const commit = spy(() => Promise.resolve());
+    const kill = spy((_pid: number) => {
       throw new Error("process already dead");
     });
     try {
-      await performRewind(stateDir, ticket.id, "spec", { commitFn, killFn });
+      await performRewind(stateDir, ticket.id, "spec", { commit, kill });
       const meta = await Deno.readTextFile(
         join(stateDir, ticket.id, "meta.md"),
       );

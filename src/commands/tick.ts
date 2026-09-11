@@ -14,46 +14,42 @@ import { defaultCommandRunner } from "../apfel.ts";
 import type { Command } from "./types.ts";
 
 export type TickUpdateDeps = {
-  // deno-lint-ignore no-fn-suffix/no-fn-suffix
-  updateFn: (dir: string) => Promise<UpdateOutcome>;
-  // deno-lint-ignore no-fn-suffix/no-fn-suffix
-  logFn: typeof appendTickLog;
-  // deno-lint-ignore no-fn-suffix/no-fn-suffix
-  reexecFn: (indexPath: string) => Promise<void>;
-  // deno-lint-ignore no-fn-suffix/no-fn-suffix
-  notifyDivergenceFn: (divergence: Divergence | null) => Promise<void>;
+  update: (dir: string) => Promise<UpdateOutcome>;
+  log: typeof appendTickLog;
+  reexec: (indexPath: string) => Promise<void>;
+  notifyDivergence: (divergence: Divergence | null) => Promise<void>;
 };
 
 export async function performTickUpdate(
   deps: TickUpdateDeps,
 ): Promise<boolean> {
   const srcDir = new URL("../..", import.meta.url).pathname.replace(/\/$/, "");
-  const outcome = await deps.updateFn(srcDir);
+  const outcome = await deps.update(srcDir);
   if (outcome.status === "pulled") {
     const indexPath = new URL("../../index.ts", import.meta.url).pathname;
-    await deps.reexecFn(indexPath);
+    await deps.reexec(indexPath);
     return false;
   }
   if (outcome.status === "current") {
-    await deps.notifyDivergenceFn(null);
+    await deps.notifyDivergence(null);
     return true;
   }
   if (outcome.status === "dirty") {
-    await deps.logFn({ event: "update-skipped", reason: "dirty" });
+    await deps.log({ event: "update-skipped", reason: "dirty" });
     return true;
   }
   if (outcome.status === "diverged") {
     const { ahead, behind } = outcome.divergence;
-    await deps.logFn({
+    await deps.log({
       event: "update-skipped",
       reason: "diverged",
       ahead,
       behind,
     });
-    await deps.notifyDivergenceFn(outcome.divergence);
+    await deps.notifyDivergence(outcome.divergence);
     return true;
   }
-  await deps.logFn({ event: "update-failed", code: outcome.code });
+  await deps.log({ event: "update-failed", code: outcome.code });
   return true;
 }
 
@@ -74,10 +70,10 @@ export const tick: Command = {
   async run(_args) {
     if (
       !(await performTickUpdate({
-        updateFn: runUpdate,
-        logFn: appendTickLog,
-        reexecFn: defaultReexec,
-        notifyDivergenceFn: makeDivergenceNotifier({
+        update: runUpdate,
+        log: appendTickLog,
+        reexec: defaultReexec,
+        notifyDivergence: makeDivergenceNotifier({
           notify: makeDesktopNotifier({ runCommand: defaultCommandRunner() }),
           readLast: readLastDivergence,
           writeLast: writeLastDivergence,

@@ -23,16 +23,13 @@ export async function performDecline(
   id: string,
   reason?: string,
   {
-    commitFn = commitTicket,
-    killFn = defaultKillFn,
-    readTicketFn = readTicketWithPatch,
+    commit = commitTicket,
+    kill = defaultKillFn,
+    readTicket = readTicketWithPatch,
   }: {
-    // deno-lint-ignore no-fn-suffix/no-fn-suffix
-    commitFn?: typeof commitTicket;
-    // deno-lint-ignore no-fn-suffix/no-fn-suffix
-    killFn?: (pid: number) => void;
-    // deno-lint-ignore no-fn-suffix/no-fn-suffix
-    readTicketFn?: typeof readTicketWithPatch;
+    commit?: typeof commitTicket;
+    kill?: (pid: number) => void;
+    readTicket?: typeof readTicketWithPatch;
   } = {},
 ): Promise<{ from: TicketPhase }> {
   const ticketDir = join(stateDir, id);
@@ -42,7 +39,7 @@ export async function performDecline(
     const pid = parseInt(content.trim(), 10);
     if (!isNaN(pid)) {
       try {
-        killFn(pid);
+        kill(pid);
       } catch {
         // TOCTOU: process died between isPhaseAlive and kill
       }
@@ -51,7 +48,7 @@ export async function performDecline(
 
   await deleteRunPid(ticketDir);
 
-  const { ticket, patchTicket } = await readTicketFn(stateDir, id);
+  const { ticket, patchTicket } = await readTicket(stateDir, id);
   const from = ticket.phase;
 
   await patchTicket({
@@ -67,7 +64,7 @@ export async function performDecline(
     to: "wont-do",
   });
 
-  await commitFn(stateDir, id, `decline: ${id}`);
+  await commit(stateDir, id, `decline: ${id}`);
 
   return { from };
 }

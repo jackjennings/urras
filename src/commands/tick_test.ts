@@ -7,17 +7,17 @@ function makeDeps(
   overrides: Partial<Parameters<typeof performTickUpdate>[0]> = {},
 ) {
   return {
-    updateFn: () => Promise.resolve({ status: "current" as const }),
-    logFn: () => Promise.resolve(),
-    reexecFn: () => Promise.resolve(),
-    notifyDivergenceFn: () => Promise.resolve(),
+    update: () => Promise.resolve({ status: "current" as const }),
+    log: () => Promise.resolve(),
+    reexec: () => Promise.resolve(),
+    notifyDivergence: () => Promise.resolve(),
     ...overrides,
   };
 }
 
 Deno.test("performTickUpdate: up to date does not log", async () => {
   const logSpy = spy(() => Promise.resolve());
-  const result = await performTickUpdate(makeDeps({ logFn: logSpy }));
+  const result = await performTickUpdate(makeDeps({ log: logSpy }));
   assertSpyCalls(logSpy, 0);
   assertEquals(result, true);
 });
@@ -26,7 +26,7 @@ Deno.test(
   "performTickUpdate: up to date clears any stored divergence",
   async () => {
     const notifySpy = spy((_d: Divergence | null) => Promise.resolve());
-    await performTickUpdate(makeDeps({ notifyDivergenceFn: notifySpy }));
+    await performTickUpdate(makeDeps({ notifyDivergence: notifySpy }));
     assertSpyCall(notifySpy, 0, { args: [null] });
   },
 );
@@ -36,8 +36,8 @@ Deno.test(
   async () => {
     const logSpy = spy(() => Promise.resolve());
     const result = await performTickUpdate(makeDeps({
-      updateFn: () => Promise.resolve({ status: "failed" as const, code: 1 }),
-      logFn: logSpy,
+      update: () => Promise.resolve({ status: "failed" as const, code: 1 }),
+      log: logSpy,
     }));
     assertSpyCall(logSpy, 0, { args: [{ event: "update-failed", code: 1 }] });
     assertEquals(result, true);
@@ -49,8 +49,8 @@ Deno.test(
   async () => {
     const logSpy = spy(() => Promise.resolve());
     const result = await performTickUpdate(makeDeps({
-      updateFn: () => Promise.resolve({ status: "dirty" as const }),
-      logFn: logSpy,
+      update: () => Promise.resolve({ status: "dirty" as const }),
+      log: logSpy,
     }));
     assertSpyCall(logSpy, 0, {
       args: [{ event: "update-skipped", reason: "dirty" }],
@@ -64,12 +64,12 @@ Deno.test(
   async () => {
     const logSpy = spy(() => Promise.resolve());
     const result = await performTickUpdate(makeDeps({
-      updateFn: () =>
+      update: () =>
         Promise.resolve({
           status: "diverged" as const,
           divergence: { ahead: 3, behind: 2 },
         }),
-      logFn: logSpy,
+      log: logSpy,
     }));
     assertSpyCall(logSpy, 0, {
       args: [{
@@ -88,12 +88,12 @@ Deno.test(
   async () => {
     const notifySpy = spy((_d: Divergence | null) => Promise.resolve());
     await performTickUpdate(makeDeps({
-      updateFn: () =>
+      update: () =>
         Promise.resolve({
           status: "diverged" as const,
           divergence: { ahead: 3, behind: 2 },
         }),
-      notifyDivergenceFn: notifySpy,
+      notifyDivergence: notifySpy,
     }));
     assertSpyCall(notifySpy, 0, { args: [{ ahead: 3, behind: 2 }] });
   },
@@ -104,8 +104,8 @@ Deno.test(
   async () => {
     const notifySpy = spy((_d: Divergence | null) => Promise.resolve());
     await performTickUpdate(makeDeps({
-      updateFn: () => Promise.resolve({ status: "dirty" as const }),
-      notifyDivergenceFn: notifySpy,
+      update: () => Promise.resolve({ status: "dirty" as const }),
+      notifyDivergence: notifySpy,
     }));
     assertSpyCalls(notifySpy, 0);
   },
@@ -116,8 +116,8 @@ Deno.test(
   async () => {
     const reexecSpy = spy((_indexPath: string) => Promise.resolve());
     const result = await performTickUpdate(makeDeps({
-      updateFn: () => Promise.resolve({ status: "pulled" as const }),
-      reexecFn: reexecSpy,
+      update: () => Promise.resolve({ status: "pulled" as const }),
+      reexec: reexecSpy,
     }));
     assertSpyCalls(reexecSpy, 1);
     assertEquals(result, false);

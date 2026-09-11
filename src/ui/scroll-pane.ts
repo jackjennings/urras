@@ -12,8 +12,8 @@ const SIDEBAR_SEP = dim("│");
 const SIDEBAR_SEP_WIDTH = 1;
 
 export class ScrollPane implements Component, Focusable {
-  private getLinesFn: (width: number) => string[];
-  private onInvalidateFn?: () => void;
+  private getLines: (width: number) => string[];
+  private onInvalidate?: () => void;
   private pinnedSidebar?: (
     sidebarWidth: number,
     scrollState: { scrollOffset: number; totalLines: number; height: number },
@@ -22,11 +22,10 @@ export class ScrollPane implements Component, Focusable {
   scrollOffset = 0;
   focused = true;
   private tui: TUI;
-  private titleFn: () => string;
+  private getTitle: () => string;
   private getHeight: () => number;
   private expanded?: {
-    // deno-lint-ignore no-fn-suffix/no-fn-suffix
-    getLinesFn: (width: number) => string[];
+    getLines: (width: number) => string[];
     width: number;
     lines: string[];
   };
@@ -48,13 +47,13 @@ export class ScrollPane implements Component, Focusable {
       pinnedSidebarWidth?: (totalWidth: number) => number;
     } & ({ title: string } | { getTitle: () => string }),
   ) {
-    this.getLinesFn = options.getLines;
+    this.getLines = options.getLines;
     this.tui = options.tui;
-    this.titleFn = "getTitle" in options
+    this.getTitle = "getTitle" in options
       ? options.getTitle
       : () => options.title;
     this.getHeight = options.getHeight;
-    this.onInvalidateFn = options.onInvalidate;
+    this.onInvalidate = options.onInvalidate;
     this.pinnedSidebar = options.pinnedSidebar;
     this.pinnedSidebarWidth = options.pinnedSidebarWidth;
   }
@@ -72,22 +71,22 @@ export class ScrollPane implements Component, Focusable {
   private expandLines(width: number): string[] {
     const cached = this.expanded;
     if (
-      cached && cached.getLinesFn === this.getLinesFn && cached.width === width
+      cached && cached.getLines === this.getLines && cached.width === width
     ) {
       return cached.lines;
     }
-    const raw = this.getLinesFn(width).flatMap((line) =>
+    const raw = this.getLines(width).flatMap((line) =>
       line.split(/\r\n|\n|\r/)
     );
     const lines = width <= 0
       ? raw
       : raw.flatMap((segment) => wrapTextWithAnsi(segment, width));
-    this.expanded = { getLinesFn: this.getLinesFn, width, lines };
+    this.expanded = { getLines: this.getLines, width, lines };
     return lines;
   }
 
   setContent(getLines: (width: number) => string[]): void {
-    this.getLinesFn = getLines;
+    this.getLines = getLines;
     this.expanded = undefined;
     this.scrollOffset = 0;
   }
@@ -108,7 +107,7 @@ export class ScrollPane implements Component, Focusable {
   }
 
   private header(width: number): string {
-    const title = this.titleFn();
+    const title = this.getTitle();
     const label = ` ${title} `;
     const remaining = Math.max(0, width - stripAnsiCode(label).length);
     const left = Math.floor(remaining / 2);
@@ -144,7 +143,7 @@ export class ScrollPane implements Component, Focusable {
 
   invalidate(): void {
     this.expanded = undefined;
-    this.onInvalidateFn?.();
+    this.onInvalidate?.();
   }
 
   render(width: number): string[] {

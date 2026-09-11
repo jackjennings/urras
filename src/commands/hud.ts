@@ -51,9 +51,8 @@ export function isBlockedCommand(name: string): boolean {
 export async function checkReviewPreconditions(
   id: string,
   stateDir: string,
-  { readTicketFn = readTicket }: {
-    // deno-lint-ignore no-fn-suffix/no-fn-suffix
-    readTicketFn?: typeof readTicket;
+  { readTicket: readTicketFn = readTicket }: {
+    readTicket?: typeof readTicket;
   } = {},
 ): Promise<string | null> {
   if (!id) return "Usage: review <ticket-id>";

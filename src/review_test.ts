@@ -1565,8 +1565,8 @@ function makeReviewSession(
   const tui = makeMockTui();
   const closeSpy = spy(() => {});
   const savedKb = { id: "saved-kb" } as unknown as KeybindingsManager;
-  const getKeybindingsFn = spy(() => savedKb);
-  const setKeybindingsFn = spy((_kb: KeybindingsManager) => {});
+  const getKeybindings = spy(() => savedKb);
+  const setKeybindings = spy((_kb: KeybindingsManager) => {});
 
   const session = new ReviewSession({
     id: "github/test/repo/1",
@@ -1576,8 +1576,8 @@ function makeReviewSession(
     systemPrompt: "system prompt",
     tui: tui as unknown as TUI,
     close: closeSpy,
-    getKeybindingsFn,
-    setKeybindingsFn,
+    getKeybindings,
+    setKeybindings,
     ...overrides,
   });
 
@@ -1585,25 +1585,25 @@ function makeReviewSession(
     session,
     tui,
     closeSpy,
-    getKeybindingsFn,
-    setKeybindingsFn,
+    getKeybindings,
+    setKeybindings,
     savedKb,
   };
 }
 
 Deno.test("ReviewSession: saves current keybindings on construction", () => {
-  const { getKeybindingsFn, setKeybindingsFn } = makeReviewSession();
-  assertSpyCalls(getKeybindingsFn, 1);
-  assertSpyCalls(setKeybindingsFn, 1);
-  const reviewKb = setKeybindingsFn.calls[0].args[0] as KeybindingsManager;
+  const { getKeybindings, setKeybindings } = makeReviewSession();
+  assertSpyCalls(getKeybindings, 1);
+  assertSpyCalls(setKeybindings, 1);
+  const reviewKb = setKeybindings.calls[0].args[0] as KeybindingsManager;
   assertExists(reviewKb);
 });
 
 Deno.test("ReviewSession: close() restores saved keybindings", () => {
-  const { session, setKeybindingsFn, savedKb } = makeReviewSession();
+  const { session, setKeybindings, savedKb } = makeReviewSession();
   session.close();
-  assertSpyCalls(setKeybindingsFn, 2);
-  assertEquals(setKeybindingsFn.calls[1].args[0], savedKb);
+  assertSpyCalls(setKeybindings, 2);
+  assertEquals(setKeybindings.calls[1].args[0], savedKb);
 });
 
 Deno.test("ReviewSession: close() invokes the close callback exactly once", () => {

@@ -306,7 +306,7 @@ Deno.test(
       await refreshAnthropicPricingIfStale({
         homeDir: tempHome,
         fetcher: fetcherSpy as typeof fetch,
-        logFn: noopLogFn,
+        log: noopLogFn,
       });
       assertSpyCalls(fetcherSpy, 0);
     } finally {
@@ -327,7 +327,7 @@ Deno.test(
       await refreshAnthropicPricingIfStale({
         homeDir: tempHome,
         fetcher: fetcherSpy as typeof fetch,
-        logFn: noopLogFn,
+        log: noopLogFn,
       });
       assertSpyCalls(fetcherSpy, 1);
       const raw = await Deno.readTextFile(
@@ -364,7 +364,7 @@ Deno.test(
       await refreshAnthropicPricingIfStale({
         homeDir: tempHome,
         fetcher: fetcherSpy as typeof fetch,
-        logFn: noopLogFn,
+        log: noopLogFn,
       });
       assertSpyCalls(fetcherSpy, 1);
       const raw = await Deno.readTextFile(cachePath);
@@ -388,7 +388,7 @@ Deno.test(
       await refreshAnthropicPricingIfStale({
         homeDir: tempHome,
         fetcher: fetcher as typeof fetch,
-        logFn: logFnSpy,
+        log: logFnSpy,
       });
       assertSpyCalls(logFnSpy, 1);
       assertEquals(logFnSpy.calls[0].args[0], {
@@ -420,7 +420,7 @@ Deno.test(
       await refreshAnthropicPricingIfStale({
         homeDir: tempHome,
         fetcher: fetcher as typeof fetch,
-        logFn: logFnSpy,
+        log: logFnSpy,
       });
       assertSpyCalls(logFnSpy, 1);
       assertEquals(logFnSpy.calls[0].args[0], {
@@ -456,7 +456,7 @@ Deno.test(
       await refreshAnthropicPricingIfStale({
         homeDir: tempHome,
         fetcher: fetcher as typeof fetch,
-        logFn: noopLogFn,
+        log: noopLogFn,
       });
       const raw = await Deno.readTextFile(cachePath);
       assertEquals(raw, staleContent);
@@ -482,7 +482,7 @@ Deno.test(
       await refreshAnthropicPricingIfStale({
         homeDir: tempHome,
         fetcher: fetcher as typeof fetch,
-        logFn: noopLogFn,
+        log: noopLogFn,
       });
       assertEquals(
         capturedUrl,

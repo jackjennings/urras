@@ -25,16 +25,14 @@ export async function performApprove(
   stateDir: string,
   id: string,
   {
-    commitFn = commitTicket,
-    readTicketFn = readTicketWithPatch,
+    commit = commitTicket,
+    readTicket = readTicketWithPatch,
   }: {
-    // deno-lint-ignore no-fn-suffix/no-fn-suffix
-    commitFn?: typeof commitTicket;
-    // deno-lint-ignore no-fn-suffix/no-fn-suffix
-    readTicketFn?: typeof readTicketWithPatch;
+    commit?: typeof commitTicket;
+    readTicket?: typeof readTicketWithPatch;
   } = {},
 ): Promise<void> {
-  const { ticket, patchTicket } = await readTicketFn(stateDir, id);
+  const { ticket, patchTicket } = await readTicket(stateDir, id);
   const now = Temporal.Now.instant().toString();
   await patchTicket({
     approvals: [
@@ -43,7 +41,7 @@ export async function performApprove(
     ],
     updated: now,
   });
-  await commitFn(stateDir, id, `approve: ${id}`);
+  await commit(stateDir, id, `approve: ${id}`);
 }
 
 export async function performApproveCeremony(
@@ -51,14 +49,10 @@ export async function performApproveCeremony(
   extensionsDir: string,
   name: string,
   deps: {
-    // deno-lint-ignore no-fn-suffix/no-fn-suffix
-    readApprovalsFn?: () => Promise<ApprovalRecord>;
-    // deno-lint-ignore no-fn-suffix/no-fn-suffix
-    writeApprovalsFn?: (record: ApprovalRecord) => Promise<void>;
-    // deno-lint-ignore no-fn-suffix/no-fn-suffix
-    hashFn?: (ceremonyDir: string) => Promise<string>;
-    // deno-lint-ignore no-fn-suffix/no-fn-suffix
-    manifestFn?: (ceremonyDir: string) => Promise<CeremonyManifestEntry[]>;
+    readApprovals?: () => Promise<ApprovalRecord>;
+    writeApprovals?: (record: ApprovalRecord) => Promise<void>;
+    hash?: (ceremonyDir: string) => Promise<string>;
+    manifest?: (ceremonyDir: string) => Promise<CeremonyManifestEntry[]>;
   } = {},
 ): Promise<{ hash: string; lines: string[] }> {
   if (name.trim() === "") {
@@ -82,10 +76,10 @@ export async function performApproveCeremony(
       `Ceremony ${name} has neither an index.ts nor a prompt.md and can never run`,
     );
   }
-  const readApprovalsFn = deps.readApprovalsFn ?? readApprovals;
-  const writeApprovalsFn = deps.writeApprovalsFn ?? writeApprovals;
-  const hashFn = deps.hashFn ?? ceremonyHash;
-  const manifestFn = deps.manifestFn ?? ceremonyManifest;
+  const readApprovalsFn = deps.readApprovals ?? readApprovals;
+  const writeApprovalsFn = deps.writeApprovals ?? writeApprovals;
+  const hashFn = deps.hash ?? ceremonyHash;
+  const manifestFn = deps.manifest ?? ceremonyManifest;
   const approvals = await readApprovalsFn();
   const manifest = await manifestFn(ceremonyDir);
   const unsupportedEntry = manifest.find((entry) =>

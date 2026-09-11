@@ -52,20 +52,17 @@ export async function performRewind(
   id: string,
   targetPhase: ActivePhase,
   {
-    commitFn = commitTicket,
-    killFn = defaultKillFn,
-    readTicketFn = readTicketWithPatch,
+    commit = commitTicket,
+    kill = defaultKillFn,
+    readTicket = readTicketWithPatch,
   }: {
-    // deno-lint-ignore no-fn-suffix/no-fn-suffix
-    commitFn?: typeof commitTicket;
-    // deno-lint-ignore no-fn-suffix/no-fn-suffix
-    killFn?: (pid: number) => void;
-    // deno-lint-ignore no-fn-suffix/no-fn-suffix
-    readTicketFn?: typeof readTicketWithPatch;
+    commit?: typeof commitTicket;
+    kill?: (pid: number) => void;
+    readTicket?: typeof readTicketWithPatch;
   } = {},
 ): Promise<{ from: TicketPhase; to: ActivePhase }> {
   const ticketDir = join(stateDir, id);
-  const { ticket, patchTicket } = await readTicketFn(stateDir, id);
+  const { ticket, patchTicket } = await readTicket(stateDir, id);
   const from = ticket.phase;
 
   const targetIdx = PHASE_SEQUENCE.indexOf(targetPhase);
@@ -91,7 +88,7 @@ export async function performRewind(
     const pid = parseInt(content.trim(), 10);
     if (!isNaN(pid)) {
       try {
-        killFn(pid);
+        kill(pid);
       } catch {
         // TOCTOU: process died between isPhaseAlive and kill
       }
@@ -135,7 +132,7 @@ export async function performRewind(
     to: targetPhase,
   });
 
-  await commitFn(stateDir, id, `rewind: ${id}`);
+  await commit(stateDir, id, `rewind: ${id}`);
 
   return { from, to: targetPhase };
 }

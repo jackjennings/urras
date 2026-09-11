@@ -545,9 +545,9 @@ tick-specific concept, so its `log` implementation (`appendTickLog`) lives in
 `src/tick.ts` and `composeTickDeps` wires the two together.
 
 Command functions that internally call `commitTicket` take a deps object
-`{ commitFn?, readTicketFn?, writeTicketFn?, ... }` with additional fields as
-needed. `performDecline` and `performRewind` also accept `killFn?`. Tests pass
-spy implementations to avoid a real git repo.
+`{ commit?, readTicket?, writeTicket?, ... }` with additional fields as needed.
+`performDecline` and `performRewind` also accept `kill?`. Tests pass spy
+implementations to avoid a real git repo.
 
 ## CodeAgent adapters
 

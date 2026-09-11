@@ -1548,7 +1548,7 @@ export function composeTickDeps(
       refreshAnthropicPricingIfStale({
         homeDir: home,
         fetcher: fetch,
-        logFn: appendTickLog,
+        log: appendTickLog,
       }),
     processLearnings: () =>
       runLearnings({

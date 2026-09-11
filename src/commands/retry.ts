@@ -11,16 +11,14 @@ export async function performRetry(
   stateDir: string,
   id: string,
   {
-    commitFn = commitTicket,
-    readTicketFn = readTicketWithPatch,
+    commit = commitTicket,
+    readTicket = readTicketWithPatch,
   }: {
-    // deno-lint-ignore no-fn-suffix/no-fn-suffix
-    commitFn?: typeof commitTicket;
-    // deno-lint-ignore no-fn-suffix/no-fn-suffix
-    readTicketFn?: typeof readTicketWithPatch;
+    commit?: typeof commitTicket;
+    readTicket?: typeof readTicketWithPatch;
   } = {},
 ): Promise<{ phase: TicketPhase; targetStatus: TicketStatus }> {
-  const { ticket, patchTicket } = await readTicketFn(stateDir, id);
+  const { ticket, patchTicket } = await readTicket(stateDir, id);
 
   if (ticket.status !== "needs-attention") {
     throw new Error(
@@ -42,7 +40,7 @@ export async function performRetry(
     to: targetStatus,
   });
 
-  await commitFn(stateDir, id, `retry: ${id}`);
+  await commit(stateDir, id, `retry: ${id}`);
 
   return { phase: ticket.phase, targetStatus };
 }
