@@ -1,11 +1,10 @@
-import type { CommandRunner } from "./apfel.ts";
-import { ApfelLanguageModel } from "./models/apfel.ts";
+import type { LanguageModel } from "./models/types.ts";
 import { renderPrompt } from "./filesystem.ts";
 
 const CONTEXT_CHAR_BUDGET = 12000;
 
 export async function generateShortTitle(
-  run: CommandRunner,
+  model: LanguageModel,
   title: string,
   context?: string,
 ): Promise<string | null> {
@@ -15,7 +14,6 @@ export async function generateShortTitle(
       trimmedContext.slice(0, CONTEXT_CHAR_BUDGET)
     }`
     : title;
-  const model = new ApfelLanguageModel(run);
   return model.generateText({
     systemPrompt: await renderPrompt(
       new URL("./short-title.prompt.hbs", import.meta.url),

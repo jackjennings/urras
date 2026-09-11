@@ -93,12 +93,8 @@ import { appendTickLog } from "./logger.ts";
 import { makeCandidateSelector } from "./candidate-selection.ts";
 import { resolvePhaseModel } from "./phases/model.ts";
 import { adjudicatePhaseModel } from "./pre-phase-adjudication.ts";
-import {
-  captureCommandRunner,
-  checkApfelAvailable,
-  defaultCommandRunner,
-} from "./apfel.ts";
-import { generateShortTitle as apfelGenerateShortTitle } from "./short-title.ts";
+import { captureCommandRunner, defaultCommandRunner } from "./apfel.ts";
+import { generateShortTitle } from "./short-title.ts";
 import { makeDesktopNotifier, makeNotify } from "./notify.ts";
 import { PidFileLock } from "./lock.ts";
 import { applyLearning } from "./apply-learning.ts";
@@ -447,6 +443,14 @@ export function composeTickDeps(
         new OllamaLanguageModel(fetch, { model, url: config.ollama!.url }),
     )
     : [];
+
+  const shortTitleModel = new FallbackLanguageModel([
+    ...ollamaModels,
+    new ApfelLanguageModel(captureCommandRunner()),
+    new ClaudeLanguageModel(captureCommandRunner(), {
+      model: "claude-haiku-4-5",
+    }),
+  ]);
 
   const tickActions = [
     createWorktreeAction({
@@ -1105,11 +1109,8 @@ export function composeTickDeps(
           captureCommandRunner(),
           ollamaModels,
         ),
-      generateShortTitle: async (title, body) => {
-        const available = await checkApfelAvailable(defaultCommandRunner());
-        if (!available) return null;
-        return apfelGenerateShortTitle(captureCommandRunner(), title, body);
-      },
+      generateShortTitle: (title, body) =>
+        generateShortTitle(shortTitleModel, title, body),
       config,
     }),
   ];
@@ -1632,11 +1633,8 @@ export function composeTickDeps(
           : undefined,
       ),
     runCeremonies: () => ceremonies.run(),
-    generateShortTitle: async (title, context) => {
-      const available = await checkApfelAvailable(defaultCommandRunner());
-      if (!available) return null;
-      return apfelGenerateShortTitle(captureCommandRunner(), title, context);
-    },
+    generateShortTitle: (title, context) =>
+      generateShortTitle(shortTitleModel, title, context),
     agentsMdPaths: config.tick.agentsMdMaxTokens > 0
       ? config.codebase.roots.map(expandHome).map((r) => join(r, "AGENTS.md"))
       : [],
