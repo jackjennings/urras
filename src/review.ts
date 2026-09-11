@@ -719,6 +719,10 @@ export class ReviewSession implements Component, Focusable {
         this.close();
         return;
       }
+      if (matchesKey(data, "escape")) {
+        this.close();
+        return;
+      }
       if (matchesKey(data, "alt+shift+/")) {
         if (this.questionHandle.isHidden()) {
           this.questionHandle.setHidden(false);
@@ -784,8 +788,7 @@ export class ReviewSession implements Component, Focusable {
   }
 
   render(width: number): string[] {
-    const lines: string[] = [renderTabBar(this.allTabs, this.activeTabIndex)];
-    lines.push(...this.scrollPane.render(width));
+    const lines: string[] = [...this.scrollPane.render(width)];
     if (this.editorVisible) lines.push(...this.editor.render(width));
     return lines;
   }

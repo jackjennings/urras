@@ -662,7 +662,10 @@ export const hud: Command = {
         Deno.exit(0);
       }
       if (matchesKey(data, "escape")) {
-        if (commandEditor.focused && !commandEditor.isShowingAutocomplete()) {
+        if (
+          commandEditor.focused && !reviewSessionActive &&
+          !commandEditor.isShowingAutocomplete()
+        ) {
           commandEditor.setText("");
           commandEditor.focused = false;
           statusPane.focused = true;

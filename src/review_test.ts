@@ -1647,3 +1647,20 @@ Deno.test("ReviewSession: close() removes ScrollPane and Editor from TUI", () =>
   session.close();
   assertEquals(tui.children.length, 0);
 });
+
+Deno.test("ReviewSession: render() includes the tab bar exactly once", () => {
+  const { session } = makeReviewSession();
+  const lines = session.render(80);
+  const joined = stripAnsiCode(lines.join("\n"));
+  const count = (joined.match(/\[ticket\]/g) ?? []).length;
+  assertEquals(count, 1);
+});
+
+Deno.test("ReviewSession: escape input invokes close", () => {
+  const { session, tui, closeSpy } = makeReviewSession();
+  void session;
+  const handler = tui.inputListeners[0];
+  assertExists(handler);
+  handler("\x1b");
+  assertSpyCalls(closeSpy, 1);
+});
