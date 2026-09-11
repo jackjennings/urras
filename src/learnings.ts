@@ -11,6 +11,7 @@ export interface LearningDeps {
     intent: string,
   ): Promise<{ url: string; title: string }>;
   allowedRepos: string[];
+  canonicalSlugFor: (slug: string) => string;
   log?(entry: object): Promise<void>;
 }
 
@@ -23,6 +24,9 @@ export function resolveLearningStatus(prs: PrEntry[]): LearningStatus {
 
 export async function processLearnings(deps: LearningDeps): Promise<void> {
   const entries = await deps.listLearnings();
+  for (const entry of entries) {
+    entry.learning.repo = deps.canonicalSlugFor(entry.learning.repo);
+  }
 
   for (const entry of entries) {
     if (entry.learning.status !== "waiting") continue;
