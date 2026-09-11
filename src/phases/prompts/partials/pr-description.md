@@ -15,11 +15,12 @@ The description must answer, in this order:
 3. **Notable decisions** — timing or ordering constraints, alternatives
    rejected, deviations from the plan, and what was deliberately left unchanged.
 
-Write these as prose paragraphs. Do not write the description as a flat list of
-files, symbols, or per-file changes: one bullet per changed file or per new
-method is a change inventory, not a description, and it leaves the reviewer to
-recover the reasoning from the diff. `## Changes Made` is the inventory — the
-description is not.
+Write these as prose paragraphs, with no manual line breaks — let each paragraph
+soft-wrap. Do not write the description as a flat list of files, symbols, or
+per-file changes: one bullet per changed file or per new method is a change
+inventory, not a description, and it leaves the reviewer to recover the
+reasoning from the diff. `## Changes Made` is the inventory — the description is
+not.
 
 When a template section calls for a screenshot or recording, produce it rather
 than describing it — see the capture instructions below. For any other artifact

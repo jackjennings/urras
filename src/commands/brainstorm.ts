@@ -25,6 +25,8 @@ export function buildSystemPrompt(opts: {
     "  ## Problem",
     "  ## Proposed Solution",
     "",
+    "Write prose as flowing paragraphs — no manual line breaks; let it soft-wrap.",
+    "",
     "Do not call ur capture until the user explicitly confirms they are done refining.",
   ];
   if (opts.initialIdea) {
