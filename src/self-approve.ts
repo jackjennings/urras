@@ -1,11 +1,8 @@
 import { join } from "@std/path";
 import { Data, Effect } from "effect";
 import { findLatestPhaseOutput } from "./review.ts";
-import type { CommandRunner } from "./apfel.ts";
 import { readTextFile } from "./filesystem.ts";
-import { ClaudeLanguageModel } from "./models/claude.ts";
-import { FallbackLanguageModel } from "./models/fallback.ts";
-import { OllamaLanguageModel } from "./models/ollama.ts";
+import type { LanguageModel } from "./models/types.ts";
 import { runGit } from "./worktree.ts";
 import { loadStatePrompt } from "./phases/runners.ts";
 
@@ -22,17 +19,15 @@ export type SelfReviewOutcome = {
 async function executeReview({
   phase,
   ticketDir,
-  run,
+  model,
   worktreePath,
-  ollamaModels,
   stateDir,
   ticketId,
 }: {
   phase: string;
   ticketDir: string;
-  run: CommandRunner;
+  model: LanguageModel;
   worktreePath?: string;
-  ollamaModels?: OllamaLanguageModel[];
   stateDir?: string;
   ticketId?: string;
 }): Promise<SelfReviewOutcome> {
@@ -81,10 +76,6 @@ async function executeReview({
     }
   }
 
-  const claude = new ClaudeLanguageModel(run, { model: "claude-haiku-4-5" });
-  const model = ollamaModels && ollamaModels.length > 0
-    ? new FallbackLanguageModel([...ollamaModels, claude])
-    : claude;
   const text = await model.generateText({
     systemPrompt: systemPrompt,
     prompt: outputContent,
@@ -98,9 +89,8 @@ async function executeReview({
 export function selfApprove(opts: {
   phase: string;
   ticketDir: string;
-  run: CommandRunner;
+  model: LanguageModel;
   worktreePath?: string;
-  ollamaModels?: OllamaLanguageModel[];
   stateDir?: string;
   ticketId?: string;
 }): Effect.Effect<SelfReviewOutcome, SelfReviewModelError> {

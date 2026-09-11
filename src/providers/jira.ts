@@ -2,8 +2,12 @@ import { adf2markdown } from "adf2markdown";
 import type { Provider, WorkItem } from "./types.ts";
 import { jiraTransition } from "../tick-actions/jira-transition.ts";
 import { HttpClient } from "../http-client.ts";
-import { captureCommandRunner, type CommandRunner } from "../apfel.ts";
+import { captureCommandRunner } from "../apfel.ts";
 import { judgeComment } from "../judge-comment.ts";
+import type { LanguageModel } from "../models/types.ts";
+import { ApfelLanguageModel } from "../models/apfel.ts";
+import { ClaudeLanguageModel } from "../models/claude.ts";
+import { FallbackLanguageModel } from "../models/fallback.ts";
 
 interface JiraIssue {
   id: string;
@@ -29,7 +33,7 @@ export class JiraProvider implements Provider {
   private doneStatusName: string;
   private pickupStatusName: string;
   private http: HttpClient;
-  private run: CommandRunner;
+  private judgeCommentModel: LanguageModel;
 
   constructor(opts: {
     baseUrl: string;
@@ -39,7 +43,7 @@ export class JiraProvider implements Provider {
     doneStatusName: string;
     pickupStatusName?: string;
     http: HttpClient;
-    run?: CommandRunner;
+    judgeCommentModel?: LanguageModel;
   }) {
     this.baseUrl = opts.baseUrl;
     this.email = opts.email;
@@ -48,7 +52,13 @@ export class JiraProvider implements Provider {
     this.doneStatusName = opts.doneStatusName;
     this.pickupStatusName = opts.pickupStatusName ?? "In Progress";
     this.http = opts.http;
-    this.run = opts.run ?? captureCommandRunner();
+    this.judgeCommentModel = opts.judgeCommentModel ??
+      new FallbackLanguageModel([
+        new ApfelLanguageModel(captureCommandRunner()),
+        new ClaudeLanguageModel(captureCommandRunner(), {
+          model: "claude-haiku-4-5",
+        }),
+      ]);
   }
 
   async close(url: string): Promise<void> {
@@ -154,7 +164,12 @@ export class JiraProvider implements Provider {
         // deno-lint-ignore no-explicit-any
         : adf2markdown(comment.body as any).trim();
       if (!commentBody) continue;
-      const keep = await judgeComment(commentBody, this.run);
+      let keep = true;
+      try {
+        keep = await judgeComment(commentBody, this.judgeCommentModel);
+      } catch {
+        // fail-open: include comment on model error
+      }
       if (keep) {
         keptComments.push({
           displayName: comment.author.displayName,
