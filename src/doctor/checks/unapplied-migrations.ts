@@ -18,7 +18,7 @@ export function unappliedMigrationsCheck(
       const discovered: string[] = [];
       for await (const entry of deps.readDir(deps.migrationsDir)) {
         if (entry.isFile && /^\d+-[a-z0-9-]+\.ts$/.test(entry.name)) {
-          discovered.push(entry.name.slice(0, -3));
+          discovered.push(entry.name);
         }
       }
 

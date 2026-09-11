@@ -69,3 +69,14 @@ Deno.test(
     assertEquals(result.status, "fail");
   },
 );
+
+Deno.test(
+  "requiredEnvVarsCheck: agent.type claude-code, ANTHROPIC_API_KEY unset → pass",
+  async () => {
+    const result = await requiredEnvVarsCheck({
+      getEnv: () => undefined,
+      config: { ...makeConfig(), agent: { type: "claude-code" } },
+    }).run();
+    assertEquals(result.status, "pass");
+  },
+);

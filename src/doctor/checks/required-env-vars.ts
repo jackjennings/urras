@@ -13,7 +13,10 @@ export function requiredEnvVarsCheck(deps: RequiredEnvVarsDeps): Check {
     run(): Promise<CheckResult> {
       const missing: string[] = [];
 
-      if (!deps.getEnv("ANTHROPIC_API_KEY")) {
+      if (
+        deps.config.agent.type !== "claude-code" &&
+        !deps.getEnv("ANTHROPIC_API_KEY")
+      ) {
         missing.push("ANTHROPIC_API_KEY");
       }
 
