@@ -2,6 +2,7 @@ import { join } from "@std/path";
 import { parse } from "@std/toml";
 import { compactTimestamp } from "../timestamp.ts";
 import type { Ceremony } from "./types.ts";
+import { renderPrompt } from "../filesystem.ts";
 
 const EFFORT_LEVELS = new Set([
   "off",
@@ -67,8 +68,10 @@ export class PromptCeremony implements Ceremony {
     const isoDate = `${d.year}-${String(d.month).padStart(2, "0")}-${
       String(d.day).padStart(2, "0")
     }`;
-    const prompt =
-      `You are an urras ceremony runner. Today is ${isoDate}.\n\n${promptContent}`;
+    const prompt = await renderPrompt(
+      new URL("./prompt.prompt.hbs", import.meta.url),
+      { isoDate, promptContent },
+    );
 
     const args = [
       prompt,

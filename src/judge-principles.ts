@@ -3,9 +3,7 @@ import { ApfelLanguageModel } from "./models/apfel.ts";
 import { ClaudeLanguageModel } from "./models/claude.ts";
 import { FallbackLanguageModel } from "./models/fallback.ts";
 import { OllamaLanguageModel } from "./models/ollama.ts";
-
-const JUDGE_SYSTEM_PROMPT =
-  "You are evaluating whether content from an AI coding agent's Principles section contains substantive engineering guidance worth preserving. Reply with verdict KEEP_LOCAL, KEEP_GLOBAL, or SKIP. Default to KEEP_LOCAL unless the principle is about the urras pipeline or tooling itself — not about the specific codebase being modified — in which case use KEEP_GLOBAL. Reply SKIP if the content is meta-commentary explaining why no principles were added, a placeholder, or otherwise lacks actionable engineering guidance.";
+import { renderPrompt } from "./filesystem.ts";
 
 const VERDICT_SCHEMA = {
   type: "object",
@@ -31,7 +29,9 @@ export async function judgePrinciples(
   const result = await model.generateObject<
     { verdict: "KEEP_LOCAL" | "KEEP_GLOBAL" | "SKIP" }
   >({
-    systemPrompt: JUDGE_SYSTEM_PROMPT,
+    systemPrompt: await renderPrompt(
+      new URL("./judge.prompt.hbs", import.meta.url),
+    ),
     prompt: body,
     schema: VERDICT_SCHEMA,
     maxTokens: 64,
@@ -40,9 +40,6 @@ export async function judgePrinciples(
   if (result?.verdict === "KEEP_GLOBAL") return "global";
   return null;
 }
-
-const FILTER_SYSTEM_PROMPT =
-  "You are selecting the most relevant engineering principles for a coding task. Given a numbered list of principles and a task description, return the indices of the principles most relevant to this task. Return fewer than the requested count if fewer are genuinely relevant.";
 
 const FILTER_SCHEMA = {
   type: "object",
@@ -67,9 +64,13 @@ export async function filterPrinciples(
   ]);
   const numbered = entries.map((e, i) => `${i}: ${e}`).join("\n\n");
   const result = await model.generateObject<{ indices: number[] }>({
-    systemPrompt: FILTER_SYSTEM_PROMPT,
-    prompt:
-      `${context}\n\n${numbered}\n\nReturn the indices of the top ${topK} most relevant principles.`,
+    systemPrompt: await renderPrompt(
+      new URL("./judge-filter.prompt.hbs", import.meta.url),
+    ),
+    prompt: await renderPrompt(
+      new URL("./judge-filter-user.prompt.hbs", import.meta.url),
+      { context, numbered, topK },
+    ),
     schema: FILTER_SCHEMA,
     maxTokens: 128,
   });

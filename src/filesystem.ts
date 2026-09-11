@@ -1,4 +1,14 @@
 export { existsSync } from "@std/fs";
+import Handlebars from "handlebars";
+
+export async function renderPrompt(
+  templateUrl: URL,
+  vars?: Record<string, unknown>,
+): Promise<string> {
+  const source = await readTextFile(templateUrl);
+  const template = Handlebars.compile(source, { noEscape: true });
+  return template(vars ?? {});
+}
 
 export async function exists(path: string): Promise<boolean> {
   try {
