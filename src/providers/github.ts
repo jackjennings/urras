@@ -24,6 +24,11 @@ type CloneFn = (
   token: string,
 ) => Promise<void>;
 
+type GitHubIssue = {
+  title: string;
+  body: string | null;
+};
+
 const REPO_ISSUES_QUERY =
   `query($owner: String!, $name: String!, $login: String!, $after: String) {
     repository(owner: $owner, name: $name) {

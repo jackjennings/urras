@@ -98,10 +98,11 @@ import { generateShortTitle } from "./short-title.ts";
 import { makeDesktopNotifier, makeNotify } from "./notify.ts";
 import { PidFileLock } from "./lock.ts";
 import { applyLearning } from "./apply-learning.ts";
-import { applyLearningToRepo } from "./learning-pr.ts";
+import { applyLearningToRepo as applyProseLearning } from "./learning-pr.ts";
+import { applyTickActionLearning } from "./apply-tick-action-learning.ts";
 import { processLearnings as runLearnings } from "./learnings.ts";
 import { refreshAnthropicPricingIfStale } from "./anthropic-pricing.ts";
-import type { Config } from "./state/types.ts";
+import type { Config, LearningState } from "./state/types.ts";
 import {
   exists,
   existsSync,
@@ -346,6 +347,26 @@ export async function readPhaseOutput(
   } catch {
     return null;
   }
+}
+
+export function applyLearningToRepo(
+  learning: LearningState,
+  intent: string,
+  deps: {
+    prosePath: (
+      learning: LearningState,
+      intent: string,
+    ) => Promise<{ url: string; title: string }>;
+    procedurePath: (
+      learning: LearningState,
+      intent: string,
+    ) => Promise<{ url: string; title: string }>;
+  },
+): Promise<{ url: string; title: string }> {
+  if ((learning as unknown as { kind?: string }).kind === "procedure") {
+    return deps.procedurePath(learning, intent);
+  }
+  return deps.prosePath(learning, intent);
 }
 
 export function composeTickDeps(
@@ -1561,26 +1582,125 @@ export function composeTickDeps(
         allowedRepos: config.learnings?.repos ?? [],
         applyToRepo: (learning, intent) =>
           applyLearningToRepo(learning, intent, {
-            roots: config.codebase.roots.map(expandHome),
-            findLocalRepo: (roots, slug) =>
-              findLocalRepo(roots, slug, (s) => aliasesFor(persistedTable, s)),
-            createWorktree,
-            removeWorktree,
-            readTextFile,
-            writeTextFile,
-            mkdir,
-            applyLearning,
-            captureCommandRunner,
-            resolveAccount,
-            run: (cmd, opts) =>
-              new Deno.Command(cmd[0], {
-                args: cmd.slice(1),
-                cwd: opts.cwd,
-                env: opts.env,
-              }).output().then((out) => ({
-                code: out.code,
-                stdout: new TextDecoder().decode(out.stdout),
-              })),
+            prosePath: (l, i) =>
+              applyProseLearning(l, i, {
+                roots: config.codebase.roots.map(expandHome),
+                findLocalRepo: (roots, slug) =>
+                  findLocalRepo(roots, slug, (s) =>
+                    aliasesFor(persistedTable, s)),
+                createWorktree,
+                removeWorktree,
+                readTextFile,
+                writeTextFile,
+                mkdir,
+                applyLearning,
+                captureCommandRunner,
+                resolveAccount,
+                run: (cmd, opts) =>
+                  new Deno.Command(cmd[0], {
+                    args: cmd.slice(1),
+                    cwd: opts.cwd,
+                    env: opts.env,
+                  }).output().then((out) => ({
+                    code: out.code,
+                    stdout: new TextDecoder().decode(out.stdout),
+                  })),
+              }),
+            procedurePath: async (l, i) => {
+              const localRepoPath = await findLocalRepo(
+                config.codebase.roots.map(expandHome),
+                l.repo,
+                (s) =>
+                  aliasesFor(persistedTable, s),
+              );
+              if (localRepoPath === null) {
+                throw new Error("local-repo-not-found");
+              }
+              const wt = await createWorktree(
+                localRepoPath,
+                `learnings-${l.id}`,
+                l.repo.split("/")[1],
+              ).catch(() => {
+                throw new Error("worktree-creation-failed");
+              });
+              try {
+                const composePath = join(wt.path, "src", "compose.ts");
+                const composeContent = await readTextFile(composePath).catch(
+                  () =>
+                    "",
+                );
+                const generated = await applyTickActionLearning({
+                  targetFile: l.targetFile,
+                  composeContent,
+                  intent: i,
+                  run: captureCommandRunner(),
+                });
+                if (generated === null) {
+                  throw new Error("apply-learning-failed");
+                }
+                await mkdir(
+                  join(wt.path, ...l.targetFile.split("/").slice(0, -1)),
+                  { recursive: true },
+                );
+                await writeTextFile(
+                  join(wt.path, l.targetFile),
+                  generated.tickActionSource,
+                );
+                await writeTextFile(composePath, generated.updatedCompose);
+                const title = `feat: add tick action for ${l.targetFile}`;
+                const body = `${i}\n\nOriginated from ${l.ticketId}.`;
+                const { token } = resolveAccount(l.repo);
+                const env = {
+                  ...Deno.env.toObject(),
+                  GITHUB_TOKEN: token,
+                  GH_TOKEN: token,
+                };
+                const runCmd = (cmd: string[], cwd: string) =>
+                  new Deno.Command(cmd[0], {
+                    args: cmd.slice(1),
+                    cwd,
+                    env,
+                  }).output().then((out) => ({
+                    code: out.code,
+                    stdout: new TextDecoder().decode(out.stdout),
+                  }));
+                await runCmd(
+                  ["git", "add", l.targetFile, "src/compose.ts"],
+                  wt.path,
+                );
+                const commit = await runCmd(
+                  ["git", "commit", "-m", title],
+                  wt.path,
+                );
+                if (commit.code !== 0) {
+                  throw new Error("git-commit-failed");
+                }
+                const created = await runCmd(
+                  [
+                    "gh",
+                    "pr",
+                    "create",
+                    "--draft",
+                    "--title",
+                    title,
+                    "--body",
+                    body,
+                  ],
+                  wt.path,
+                );
+                const url = created.stdout
+                  .trim()
+                  .split("\n")
+                  .filter((line) => line.startsWith("http"))
+                  .pop();
+                if (created.code !== 0 || url === undefined) {
+                  throw new Error("pr-create-failed");
+                }
+                return { url, title };
+              } finally {
+                await removeWorktree(wt).catch(() => {});
+              }
+            },
           }),
       }),
     notify: makeNotify({
