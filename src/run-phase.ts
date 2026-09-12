@@ -717,6 +717,15 @@ export async function executePhase(
     // sidecar write failure does not affect the returned exit code
   }
 
+  try {
+    await writeTextFile(
+      join(opts.ticketDir, opts.outputFile + ".stderr"),
+      finalResult.stderr.slice(0, 8192),
+    );
+  } catch {
+    // sidecar write failure does not affect the returned exit code
+  }
+
   if (sessionId !== null) {
     try {
       await writeTextFile(
