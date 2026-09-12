@@ -48,6 +48,7 @@ export interface TickServiceDeps {
   notifyTickFailure(error: string): Promise<void>;
   preflightGitHubCredentials(): Promise<void>;
   reconcileRepoIdentities(): Promise<void>;
+  canonicalSlugFor: (slug: string) => string;
   writeTickProgress: (label: string | null) => Promise<void>;
   deadlineMs?: number;
 }
@@ -125,7 +126,6 @@ export class TickService {
 
   async #runWorkflow(deps: TickServiceDeps): Promise<void> {
     await deps.preflightGitHubCredentials();
-    await deps.processLearnings();
     let captureEnabled = true;
     try {
       await deps.reconcileRepoIdentities();
@@ -140,6 +140,7 @@ export class TickService {
         throw e;
       }
     }
+    await deps.processLearnings();
     if (captureEnabled) {
       const existingIds = new Set(await deps.listTickets());
       for (const provider of deps.providers) {
@@ -190,6 +191,22 @@ export class TickService {
         });
       }
     }
+    for (const ticket of validTickets) {
+      ticket.scope = ticket.scope.map((s) => deps.canonicalSlugFor(s));
+      const normalizedWorktrees: typeof ticket.worktrees = {};
+      for (const [key, info] of Object.entries(ticket.worktrees)) {
+        normalizedWorktrees[deps.canonicalSlugFor(key)] = info;
+      }
+      ticket.worktrees = normalizedWorktrees;
+      if (ticket.prs) {
+        for (const pr of ticket.prs) {
+          if (pr.worktreeKey !== undefined) {
+            pr.worktreeKey = deps.canonicalSlugFor(pr.worktreeKey);
+          }
+        }
+      }
+    }
+
     const migratedTickets = await deps.runMigrations(
       deps.stateDir,
       validTickets,
