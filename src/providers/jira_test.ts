@@ -8,6 +8,31 @@ import {
 import { JiraProvider } from "./jira.ts";
 import { compareSortKeys } from "./types.ts";
 import { HttpClient } from "../http-client.ts";
+import type { LanguageModel } from "../models/types.ts";
+
+function nullJudgeModel(): LanguageModel {
+  return {
+    name: "stub",
+    generateText: () => Promise.resolve(null),
+    generateObject: () => Promise.resolve(null),
+  };
+}
+
+function verdictJudgeModel(verdict: "KEEP" | "SKIP"): LanguageModel {
+  return {
+    name: "stub",
+    generateText: () => Promise.resolve(null),
+    generateObject: <T>() => Promise.resolve({ verdict } as T),
+  };
+}
+
+function throwingJudgeModel(): LanguageModel {
+  return {
+    name: "stub",
+    generateText: () => Promise.resolve(null),
+    generateObject: () => Promise.reject(new Error("judge unavailable")),
+  };
+}
 
 const BASE_URL = "https://myorg.atlassian.net";
 
@@ -525,7 +550,7 @@ Deno.test("fetchNew fetches comments from the Jira comment endpoint", async () =
         new Response(JSON.stringify({ comments: [] }), { status: 200 }),
       );
     }),
-    run: (_args) => Promise.resolve({ code: 1, stdout: "" }),
+    judgeCommentModel: nullJudgeModel(),
   });
   await provider.fetchNew(new Set());
   assertEquals(commentUrls.length, 1);
@@ -565,13 +590,7 @@ Deno.test("fetchNew appends kept comments to description", async () => {
         ),
       );
     }),
-    run: (args) =>
-      Promise.resolve(
-        args[0] === "apfel" ? { code: 0, stdout: "KEEP" } : {
-          code: 1,
-          stdout: "",
-        },
-      ),
+    judgeCommentModel: nullJudgeModel(),
   });
   const items = await provider.fetchNew(new Set());
   assertStringIncludes(items[0].description, "---\n\n## Comments");
@@ -609,12 +628,7 @@ Deno.test("fetchNew omits rejected comments from description", async () => {
         ),
       );
     }),
-    run: (args) =>
-      Promise.resolve(
-        args[0] === "apfel"
-          ? { code: 0, stdout: JSON.stringify({ verdict: "SKIP" }) }
-          : { code: 1, stdout: "" },
-      ),
+    judgeCommentModel: verdictJudgeModel("SKIP"),
   });
   const items = await provider.fetchNew(new Set());
   assertFalse(items[0].description.includes("## Comments"));
@@ -642,7 +656,7 @@ Deno.test("fetchNew appends no Comments section when issue has no comments", asy
         new Response(JSON.stringify({ comments: [] }), { status: 200 }),
       );
     }),
-    run: (_args) => Promise.resolve({ code: 1, stdout: "" }),
+    judgeCommentModel: nullJudgeModel(),
   });
   const items = await provider.fetchNew(new Set());
   assertFalse(items[0].description.includes("## Comments"));
@@ -678,13 +692,7 @@ Deno.test("fetchNew formats comment date as YYYY-MM-DD", async () => {
         ),
       );
     }),
-    run: (args) =>
-      Promise.resolve(
-        args[0] === "apfel" ? { code: 0, stdout: "KEEP" } : {
-          code: 1,
-          stdout: "",
-        },
-      ),
+    judgeCommentModel: nullJudgeModel(),
   });
   const items = await provider.fetchNew(new Set());
   assertStringIncludes(items[0].description, "(2025-06-20)");
@@ -727,13 +735,7 @@ Deno.test("fetchNew separates multiple kept comments with blank lines", async ()
         ),
       );
     }),
-    run: (args) =>
-      Promise.resolve(
-        args[0] === "apfel" ? { code: 0, stdout: "KEEP" } : {
-          code: 1,
-          stdout: "",
-        },
-      ),
+    judgeCommentModel: nullJudgeModel(),
   });
   const items = await provider.fetchNew(new Set());
   assertStringIncludes(
@@ -772,7 +774,7 @@ Deno.test("fetchNew fail-open: includes all comments when judge throws", async (
         ),
       );
     }),
-    run: (_args) => Promise.reject(new Error("judge unavailable")),
+    judgeCommentModel: throwingJudgeModel(),
   });
   const items = await provider.fetchNew(new Set());
   assertStringIncludes(items[0].description, "## Comments");
@@ -811,7 +813,7 @@ Deno.test(
           ),
         );
       }),
-      run: (_args) => Promise.resolve({ code: 1, stdout: "" }),
+      judgeCommentModel: nullJudgeModel(),
     });
     const items = await provider.fetchNew(new Set());
     assertStringIncludes(items[0].description, "## Comments");
@@ -855,13 +857,7 @@ Deno.test(
       project: "PROJ",
       doneStatusName: "Done",
       http: makeCommentHttp(),
-      run: (args) =>
-        args[0] === "apfel"
-          ? Promise.resolve({ code: 1, stdout: "" })
-          : Promise.resolve({
-            code: 0,
-            stdout: JSON.stringify({ structured_output: { verdict: "KEEP" } }),
-          }),
+      judgeCommentModel: verdictJudgeModel("KEEP"),
     });
     const items = await provider.fetchNew(new Set());
     assertStringIncludes(items[0].description, "## Comments");
@@ -879,13 +875,7 @@ Deno.test(
       project: "PROJ",
       doneStatusName: "Done",
       http: makeCommentHttp(),
-      run: (args) =>
-        args[0] === "apfel"
-          ? Promise.resolve({ code: 1, stdout: "" })
-          : Promise.resolve({
-            code: 0,
-            stdout: JSON.stringify({ verdict: "SKIP" }),
-          }),
+      judgeCommentModel: verdictJudgeModel("SKIP"),
     });
     const items = await provider.fetchNew(new Set());
     assertFalse(items[0].description.includes("## Comments"));

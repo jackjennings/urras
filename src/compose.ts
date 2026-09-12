@@ -411,7 +411,12 @@ export function composeTickDeps(
       doneStatusName: entry.statuses?.done ?? "Done",
       pickupStatusName: entry.statuses?.pickup ?? "In Progress",
       http,
-      run: captureCommandRunner(),
+      judgeCommentModel: new FallbackLanguageModel([
+        new ApfelLanguageModel(captureCommandRunner()),
+        new ClaudeLanguageModel(captureCommandRunner(), {
+          model: "claude-haiku-4-5",
+        }),
+      ]),
     });
     providers.push(jiraProvider);
     jiraProviders.push({
@@ -1062,7 +1067,16 @@ export function composeTickDeps(
         return (author: string) => botLogins.has(author);
       })(),
       judgeComment: (body) =>
-        judgeComment(body, captureCommandRunner(), ollamaModels),
+        judgeComment(
+          body,
+          new FallbackLanguageModel([
+            new ApfelLanguageModel(captureCommandRunner()),
+            ...ollamaModels,
+            new ClaudeLanguageModel(captureCommandRunner(), {
+              model: "claude-haiku-4-5",
+            }),
+          ]),
+        ),
       writeContextFile: async (ticketDir, content) => {
         const timestamp = compactTimestamp(
           Temporal.Now.zonedDateTimeISO("UTC"),
@@ -1106,8 +1120,13 @@ export function composeTickDeps(
           newTitle,
           oldBody,
           newBody,
-          captureCommandRunner(),
-          ollamaModels,
+          new FallbackLanguageModel([
+            new ApfelLanguageModel(captureCommandRunner()),
+            ...ollamaModels,
+            new ClaudeLanguageModel(captureCommandRunner(), {
+              model: "claude-haiku-4-5",
+            }),
+          ]),
         ),
       generateShortTitle: (title, body) =>
         generateShortTitle(shortTitleModel, title, body),
@@ -1296,8 +1315,13 @@ export function composeTickDeps(
         if (!extracted) return;
         const scope = await judgePrinciples(
           extracted,
-          captureCommandRunner(),
-          ollamaModels,
+          new FallbackLanguageModel([
+            new ApfelLanguageModel(captureCommandRunner()),
+            ...ollamaModels,
+            new ClaudeLanguageModel(captureCommandRunner(), {
+              model: "claude-haiku-4-5",
+            }),
+          ]),
         );
         if (scope === null) return;
         const globalPath = join(sd, "principles.md");

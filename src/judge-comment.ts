@@ -1,8 +1,4 @@
-import { captureCommandRunner, type CommandRunner } from "./apfel.ts";
-import { ApfelLanguageModel } from "./models/apfel.ts";
-import { ClaudeLanguageModel } from "./models/claude.ts";
-import { FallbackLanguageModel } from "./models/fallback.ts";
-import { OllamaLanguageModel } from "./models/ollama.ts";
+import type { LanguageModel } from "./models/types.ts";
 import { renderPrompt } from "./filesystem.ts";
 
 const COMMENT_JUDGE_JSON_SCHEMA = {
@@ -15,14 +11,8 @@ const COMMENT_JUDGE_JSON_SCHEMA = {
 
 export async function judgeComment(
   body: string,
-  run: CommandRunner = captureCommandRunner(),
-  ollamaModels?: OllamaLanguageModel[],
+  model: LanguageModel,
 ): Promise<boolean> {
-  const model = new FallbackLanguageModel([
-    new ApfelLanguageModel(run),
-    ...(ollamaModels ?? []),
-    new ClaudeLanguageModel(run, { model: "claude-haiku-4-5" }),
-  ]);
   const result = await model.generateObject<{ verdict: "KEEP" | "SKIP" }>({
     systemPrompt: await renderPrompt(
       new URL("./judge-comment.prompt.hbs", import.meta.url),
