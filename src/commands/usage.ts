@@ -2,6 +2,10 @@ import { join } from "@std/path";
 import { listTickets } from "../state/store.ts";
 import { expandHome, loadConfig } from "../config.ts";
 import { formatLargeTokens, readUsageFiles } from "../usage.ts";
+import {
+  readAncillaryUsageFile,
+  type AncillaryUsageRecord,
+} from "../ancillary-usage.ts";
 import type { PhaseUsage } from "../state/types.ts";
 import type { Command } from "./types.ts";
 
@@ -122,6 +126,85 @@ export function formatUsageOutput(groups: Map<string, ModelGroup>): string {
   return lines.join("\n");
 }
 
+type AncillaryModelGroup = {
+  input: number;
+  output: number;
+  cost: number;
+  count: number;
+  costCount: number;
+  estimated: boolean;
+};
+
+export function aggregateAncillaryUsage(
+  records: AncillaryUsageRecord[],
+): Map<string, Map<string, AncillaryModelGroup>> {
+  const groups = new Map<string, Map<string, AncillaryModelGroup>>();
+
+  for (const r of records) {
+    let siteGroup = groups.get(r.callSite);
+    if (!siteGroup) {
+      siteGroup = new Map();
+      groups.set(r.callSite, siteGroup);
+    }
+    let modelGroup = siteGroup.get(r.model);
+    if (!modelGroup) {
+      modelGroup = {
+        input: 0,
+        output: 0,
+        cost: 0,
+        count: 0,
+        costCount: 0,
+        estimated: false,
+      };
+      siteGroup.set(r.model, modelGroup);
+    }
+    if (r.input !== undefined) modelGroup.input += r.input;
+    if (r.output !== undefined) modelGroup.output += r.output;
+    modelGroup.count++;
+    if (r.cost !== undefined) {
+      modelGroup.cost += r.cost;
+      modelGroup.costCount++;
+    }
+    if (r.estimated) modelGroup.estimated = true;
+  }
+
+  return groups;
+}
+
+export function formatAncillaryUsageOutput(
+  groups: Map<string, Map<string, AncillaryModelGroup>>,
+): string | null {
+  if (groups.size === 0) return null;
+
+  const lines: string[] = ["Ancillary usage:"];
+  const callSites = [...groups.keys()].sort();
+
+  for (const callSite of callSites) {
+    lines.push(`  ${callSite}`);
+    const modelGroups = groups.get(callSite)!;
+    const models = [...modelGroups.keys()].sort();
+
+    for (const model of models) {
+      const g = modelGroups.get(model)!;
+      const prefix = g.estimated ? "~" : "";
+      const inputStr = `${prefix}${formatLargeTokens(g.input)} input`;
+      const outputStr = `${prefix}${formatLargeTokens(g.output)} output`;
+      const callWord = g.count === 1 ? "call" : "calls";
+      const countStr = `(${g.count} ${callWord})`;
+      const costStr = g.costCount === 0
+        ? ""
+        : g.costCount === g.count
+        ? `($${g.cost.toFixed(2)}) `
+        : `(~$${g.cost.toFixed(2)}) `;
+      lines.push(
+        `    ${model}: ${inputStr}, ${outputStr} ${costStr}${countStr}`,
+      );
+    }
+  }
+
+  return lines.join("\n");
+}
+
 export const usage: Command = {
   name: "usage",
   description: "show aggregate usage statistics",
@@ -136,6 +219,14 @@ export const usage: Command = {
         if (records) allRecords.push(...records);
       }),
     );
-    console.log(formatUsageOutput(aggregateUsage(allRecords)));
+    let output = formatUsageOutput(aggregateUsage(allRecords));
+    const ancillaryRecords = await readAncillaryUsageFile();
+    if (ancillaryRecords.length > 0) {
+      const ancillaryOutput = formatAncillaryUsageOutput(
+        aggregateAncillaryUsage(ancillaryRecords),
+      );
+      if (ancillaryOutput) output += "\n" + ancillaryOutput;
+    }
+    console.log(output);
   },
 };
