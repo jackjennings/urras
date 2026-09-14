@@ -1290,6 +1290,7 @@ export function composeTickDeps(
               url: config.ollama!.url,
             }))
             : undefined,
+          barePhase: opts.phase,
         });
       },
       isProcessAlive: (ticketId: string) =>

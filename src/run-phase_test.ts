@@ -3874,3 +3874,56 @@ Deno.test(
     }
   },
 );
+
+Deno.test(
+  "executePhase: invokes self-approve model when barePhase resolves the prompt file",
+  async () => {
+    const ticketDir = await Deno.makeTempDir();
+    const homeDir = await Deno.makeTempDir();
+    try {
+      await Deno.writeTextFile(join(ticketDir, "meta.md"), "---\n---\n");
+      // Provide a prior phase output for findLatestPhaseOutput to find.
+      // Using intake so it is not deleted by executePhase (which removes
+      // the outputFile "20260911T153053-spec.md" at the start of the run).
+      await Deno.writeTextFile(
+        join(ticketDir, "20260629T000000-intake.md"),
+        "## Intake\n\nsome content",
+      );
+
+      const agent: CodeAgent = {
+        runPhase() {
+          return Promise.resolve({ stdout: "", stderr: "", code: 0 });
+        },
+      };
+
+      const runSpy: CommandRunner = spy(() =>
+        Promise.resolve({ code: 0, stdout: "APPROVE" })
+      );
+
+      await executePhase(
+        {
+          ticketDir,
+          stateDir: dirname(ticketDir),
+          outputFile: "20260911T153053-spec.md",
+          phase: "20260911T153053-spec",
+          barePhase: "spec",
+          scopeDirs: [],
+          prompt: "do the thing",
+          worktrees: {},
+          homeDir,
+          provider: "anthropic",
+          model: "claude-sonnet-4-6",
+          thinking: "off",
+          agentType: "pi",
+          run: runSpy as CommandRunner,
+        },
+        agent,
+      );
+
+      assertSpyCalls(runSpy as ReturnType<typeof spy>, 1);
+    } finally {
+      await Deno.remove(ticketDir, { recursive: true });
+      await Deno.remove(homeDir, { recursive: true });
+    }
+  },
+);
