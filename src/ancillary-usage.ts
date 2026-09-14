@@ -23,7 +23,9 @@ export async function appendAncillaryUsage(
   );
 }
 
-export async function readAncillaryUsageFile(): Promise<AncillaryUsageRecord[]> {
+export async function readAncillaryUsageFile(): Promise<
+  AncillaryUsageRecord[]
+> {
   try {
     const content = await readTextFile(
       join(urrasDir(), "ancillary-usage.ndjson"),

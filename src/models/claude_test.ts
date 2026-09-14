@@ -17,7 +17,11 @@ function makeRunner(
 
 function envelope(
   result: string,
-  opts?: { total_cost_usd?: number; input_tokens?: number; output_tokens?: number },
+  opts?: {
+    total_cost_usd?: number;
+    input_tokens?: number;
+    output_tokens?: number;
+  },
 ): string {
   return JSON.stringify({
     result,
@@ -156,7 +160,11 @@ Deno.test("ClaudeLanguageModel.generateObject: recordUsage fires on non-null ret
     callSite: "test",
     recordUsage,
   });
-  await model.generateObject({ systemPrompt: "sys", prompt: "body", schema: {} });
+  await model.generateObject({
+    systemPrompt: "sys",
+    prompt: "body",
+    schema: {},
+  });
   assertEquals(records.length, 1);
   assertEquals(records[0].callSite, "test");
   assertEquals(records[0].adapter, "claude");
@@ -179,7 +187,11 @@ Deno.test("ClaudeLanguageModel.generateObject: recordUsage does not fire on null
     callSite: "test",
     recordUsage,
   });
-  await model.generateObject({ systemPrompt: "sys", prompt: "body", schema: {} });
+  await model.generateObject({
+    systemPrompt: "sys",
+    prompt: "body",
+    schema: {},
+  });
   assertEquals(records.length, 0);
 });
 
