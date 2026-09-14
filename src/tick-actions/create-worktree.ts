@@ -34,8 +34,9 @@ export interface CreateWorktreeDeps {
   ) => Promise<void>;
   listRepoCorpus: () => Promise<RepoCandidate[]>;
   checkRepoExists: (slug: string) => Promise<boolean>;
-  writeFeedbackFile: (
-    ticketDir: string,
+  submitFeedback: (
+    stateDir: string,
+    id: string,
     filename: string,
     content: string,
   ) => Promise<void>;
@@ -186,19 +187,18 @@ export function createWorktreeAction(deps: CreateWorktreeDeps): TickAction {
               "",
               "If none of these match the ticket's intent, output an empty scope list.",
             ].join("\n");
-            await deps.writeFeedbackFile(
-              ticketDir,
+            await deps.submitFeedback(
+              stateDir,
+              ticket.id,
               `${timestamp}-intake-feedback.md`,
               content,
             );
-            const updated = {
+            return {
               ...correctedTicket,
               status: "revising" as const,
               scopeRetries: 1,
               updated: now,
             };
-            await deps.writeTicket(stateDir, updated);
-            return updated;
           } else {
             const updated = {
               ...correctedTicket,

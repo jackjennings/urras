@@ -17,6 +17,8 @@ import {
   listLearnings,
   listTickets,
   readTicket,
+  readTicketWithPatch,
+  submitFeedback,
   writeLearning,
   writePhaseOutput,
   writeTicket,
@@ -537,11 +539,12 @@ export function composeTickDeps(
         );
         return res.ok;
       },
-      writeFeedbackFile: (
-        ticketDir: string,
-        filename: string,
-        content: string,
-      ) => writeTextFile(join(ticketDir, filename), content),
+      submitFeedback: async (stateDir, id, filename, content) => {
+        const { patchTicket } = await readTicketWithPatch(stateDir, id);
+        await submitFeedback(stateDir, id, filename, content, patchTicket, {
+          scopeRetries: 1,
+        });
+      },
     }),
     reviseScopeAction({
       roots: config.codebase.roots.map(expandHome),

@@ -426,6 +426,22 @@ export async function writePhaseOutput(
   await writeTextFile(join(stateDir, id, filename), content);
 }
 
+export async function submitFeedback(
+  stateDir: string,
+  id: string,
+  feedbackFilename: string,
+  content: string,
+  patchTicket: (attrs: Partial<TicketState>) => Promise<void>,
+  extraPatch?: Partial<TicketState>,
+): Promise<void> {
+  await writePhaseOutput(stateDir, id, feedbackFilename, content);
+  await patchTicket({
+    status: "revising",
+    updated: Temporal.Now.instant().toString(),
+    ...extraPatch,
+  });
+}
+
 export function readPhaseOutput(
   stateDir: string,
   id: string,
