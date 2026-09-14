@@ -5,7 +5,14 @@ import {
   assertStringIncludes,
 } from "@std/assert";
 import { join } from "@std/path";
-import { aggregateUsage, formatUsageOutput, usage } from "./usage.ts";
+import {
+  aggregateAncillaryUsage,
+  aggregateUsage,
+  formatAncillaryUsageOutput,
+  formatUsageOutput,
+  usage,
+} from "./usage.ts";
+import type { AncillaryUsageRecord } from "../ancillary-usage.ts";
 import type { PhaseUsage } from "../state/types.ts";
 
 function makeUsage({
@@ -521,6 +528,259 @@ Deno.test("formatUsageOutput: existing sections are unchanged when tools are pre
   const lines = formatUsageOutput(groups).split("\n");
   assertStringIncludes(lines[0], "$1.23");
   assertEquals(lines[1], "Usage by model:");
+});
+
+// ── aggregateAncillaryUsage ───────────────────────────────────────────────────
+
+function makeAncillary(
+  opts: Partial<AncillaryUsageRecord> & {
+    callSite: string;
+    adapter: "apfel" | "ollama" | "claude";
+    model: string;
+  },
+): AncillaryUsageRecord {
+  return {
+    ts: "2026-01-01T00:00:00Z",
+    ...opts,
+  };
+}
+
+Deno.test("aggregateAncillaryUsage: returns empty map for empty input", () => {
+  assertEquals(aggregateAncillaryUsage([]).size, 0);
+});
+
+Deno.test("aggregateAncillaryUsage: groups by callSite and model", () => {
+  const result = aggregateAncillaryUsage([
+    makeAncillary({
+      callSite: "judgePrinciples",
+      adapter: "apfel",
+      model: "apfel",
+      input: 10,
+      output: 5,
+      estimated: true,
+    }),
+    makeAncillary({
+      callSite: "judgePrinciples",
+      adapter: "claude",
+      model: "claude-haiku-4-5",
+      input: 100,
+      output: 20,
+      cost: 0.01,
+    }),
+  ]);
+  assertEquals(result.size, 1);
+  const siteGroup = result.get("judgePrinciples")!;
+  assertEquals(siteGroup.size, 2);
+  assertEquals(siteGroup.get("apfel")!.input, 10);
+  assertEquals(siteGroup.get("claude-haiku-4-5")!.cost, 0.01);
+});
+
+Deno.test("aggregateAncillaryUsage: sums tokens and counts across multiple records for same model", () => {
+  const result = aggregateAncillaryUsage([
+    makeAncillary({
+      callSite: "judgeComment",
+      adapter: "apfel",
+      model: "apfel",
+      input: 5,
+      output: 2,
+      estimated: true,
+    }),
+    makeAncillary({
+      callSite: "judgeComment",
+      adapter: "apfel",
+      model: "apfel",
+      input: 8,
+      output: 3,
+      estimated: true,
+    }),
+  ]);
+  const g = result.get("judgeComment")!.get("apfel")!;
+  assertEquals(g.input, 13);
+  assertEquals(g.output, 5);
+  assertEquals(g.count, 2);
+  assertEquals(g.estimated, true);
+});
+
+Deno.test("aggregateAncillaryUsage: estimated true when any record has estimated", () => {
+  const result = aggregateAncillaryUsage([
+    makeAncillary({
+      callSite: "test",
+      adapter: "claude",
+      model: "claude-haiku-4-5",
+      input: 10,
+      output: 5,
+    }),
+    makeAncillary({
+      callSite: "test",
+      adapter: "apfel",
+      model: "apfel",
+      estimated: true,
+    }),
+  ]);
+  assertFalse(result.get("test")!.get("claude-haiku-4-5")!.estimated);
+  assert(result.get("test")!.get("apfel")!.estimated);
+});
+
+Deno.test("aggregateAncillaryUsage: tracks costCount correctly", () => {
+  const result = aggregateAncillaryUsage([
+    makeAncillary({
+      callSite: "applyLearning",
+      adapter: "claude",
+      model: "claude-sonnet-4-6",
+      cost: 0.05,
+    }),
+    makeAncillary({
+      callSite: "applyLearning",
+      adapter: "claude",
+      model: "claude-sonnet-4-6",
+    }),
+  ]);
+  const g = result.get("applyLearning")!.get("claude-sonnet-4-6")!;
+  assertEquals(g.count, 2);
+  assertEquals(g.costCount, 1);
+  assertEquals(g.cost, 0.05);
+});
+
+// ── formatAncillaryUsageOutput ────────────────────────────────────────────────
+
+Deno.test("formatAncillaryUsageOutput: returns null for empty groups", () => {
+  assertEquals(formatAncillaryUsageOutput(new Map()), null);
+});
+
+Deno.test("formatAncillaryUsageOutput: includes Ancillary usage header", () => {
+  const groups = aggregateAncillaryUsage([
+    makeAncillary({
+      callSite: "judgePrinciples",
+      adapter: "apfel",
+      model: "apfel",
+      input: 100,
+      output: 50,
+      estimated: true,
+    }),
+  ]);
+  const output = formatAncillaryUsageOutput(groups)!;
+  assertStringIncludes(output, "Ancillary usage:");
+});
+
+Deno.test("formatAncillaryUsageOutput: prefixes token counts with ~ when estimated", () => {
+  const groups = aggregateAncillaryUsage([
+    makeAncillary({
+      callSite: "judgePrinciples",
+      adapter: "apfel",
+      model: "apfel",
+      input: 100,
+      output: 50,
+      estimated: true,
+    }),
+  ]);
+  const output = formatAncillaryUsageOutput(groups)!;
+  assertStringIncludes(output, "~100 input");
+  assertStringIncludes(output, "~50 output");
+});
+
+Deno.test("formatAncillaryUsageOutput: no tilde prefix when not estimated", () => {
+  const groups = aggregateAncillaryUsage([
+    makeAncillary({
+      callSite: "applyLearning",
+      adapter: "claude",
+      model: "claude-sonnet-4-6",
+      input: 100,
+      output: 50,
+      cost: 0.01,
+    }),
+  ]);
+  const output = formatAncillaryUsageOutput(groups)!;
+  assertStringIncludes(output, "100 input");
+  assertFalse(output.includes("~100"));
+});
+
+Deno.test("formatAncillaryUsageOutput: shows exact cost when all records have cost", () => {
+  const groups = aggregateAncillaryUsage([
+    makeAncillary({
+      callSite: "applyLearning",
+      adapter: "claude",
+      model: "claude-sonnet-4-6",
+      input: 100,
+      output: 50,
+      cost: 0.05,
+    }),
+  ]);
+  const output = formatAncillaryUsageOutput(groups)!;
+  assertStringIncludes(output, "($0.05)");
+  assertFalse(output.includes("~$0.05"));
+});
+
+Deno.test("formatAncillaryUsageOutput: shows approximate cost when some records lack cost", () => {
+  const groups = aggregateAncillaryUsage([
+    makeAncillary({
+      callSite: "applyLearning",
+      adapter: "claude",
+      model: "claude-sonnet-4-6",
+      cost: 0.05,
+    }),
+    makeAncillary({
+      callSite: "applyLearning",
+      adapter: "claude",
+      model: "claude-sonnet-4-6",
+    }),
+  ]);
+  const output = formatAncillaryUsageOutput(groups)!;
+  assertStringIncludes(output, "(~$0.05)");
+});
+
+Deno.test("formatAncillaryUsageOutput: omits cost when no records have cost", () => {
+  const groups = aggregateAncillaryUsage([
+    makeAncillary({
+      callSite: "judgeComment",
+      adapter: "ollama",
+      model: "qwen2.5:7b",
+      input: 42,
+      output: 18,
+    }),
+  ]);
+  const output = formatAncillaryUsageOutput(groups)!;
+  assertFalse(output.includes("$"));
+});
+
+Deno.test("formatAncillaryUsageOutput: sorts callSites alphabetically", () => {
+  const groups = aggregateAncillaryUsage([
+    makeAncillary({
+      callSite: "judgePrinciples",
+      adapter: "apfel",
+      model: "apfel",
+    }),
+    makeAncillary({
+      callSite: "applyLearning",
+      adapter: "claude",
+      model: "claude-sonnet-4-6",
+    }),
+  ]);
+  const output = formatAncillaryUsageOutput(groups)!;
+  const applyIdx = output.indexOf("applyLearning");
+  const judgeIdx = output.indexOf("judgePrinciples");
+  assert(applyIdx < judgeIdx);
+});
+
+Deno.test("formatAncillaryUsageOutput: shows singular call for count of 1", () => {
+  const groups = aggregateAncillaryUsage([
+    makeAncillary({
+      callSite: "test",
+      adapter: "apfel",
+      model: "apfel",
+    }),
+  ]);
+  const output = formatAncillaryUsageOutput(groups)!;
+  assertStringIncludes(output, "(1 call)");
+  assertFalse(output.includes("(1 calls)"));
+});
+
+Deno.test("formatAncillaryUsageOutput: shows plural calls for count > 1", () => {
+  const groups = aggregateAncillaryUsage([
+    makeAncillary({ callSite: "test", adapter: "apfel", model: "apfel" }),
+    makeAncillary({ callSite: "test", adapter: "apfel", model: "apfel" }),
+  ]);
+  const output = formatAncillaryUsageOutput(groups)!;
+  assertStringIncludes(output, "(2 calls)");
 });
 
 // ── usage command ─────────────────────────────────────────────────────────────

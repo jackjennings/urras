@@ -14,11 +14,11 @@ function runner(
   return spy((args: string[]) => Promise.resolve(handler(args)));
 }
 
-function apfelUnavailable(claudeStdout: string) {
+function apfelUnavailable(claudeResult: string) {
   return (args: string[]) =>
     args[0] === "apfel"
       ? { code: 1, stdout: "" }
-      : { code: 0, stdout: claudeStdout };
+      : { code: 0, stdout: JSON.stringify({ result: claudeResult }) };
 }
 
 function alwaysReturn(stdout: string) {

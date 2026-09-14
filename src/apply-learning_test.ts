@@ -7,8 +7,13 @@ import { assertSpyCalls, spy } from "@std/testing/mock";
 import { applyLearning } from "./apply-learning.ts";
 import type { CommandRunner } from "./apfel.ts";
 
-function runnerReturning(stdout: string, code = 0): CommandRunner {
-  return spy((_args: string[]) => Promise.resolve({ code, stdout }));
+function runnerReturning(text: string, code = 0): CommandRunner {
+  return spy((_args: string[]) =>
+    Promise.resolve({
+      code,
+      stdout: code === 0 ? JSON.stringify({ result: text }) : "",
+    })
+  );
 }
 
 const CURRENT = "# Implementation\n\nDo the thing.\n";

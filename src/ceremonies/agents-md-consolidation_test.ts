@@ -88,7 +88,10 @@ Deno.test(
           return Promise.resolve({ code: 1, stdout: "" });
         }
         if (args[0] === "claude") {
-          return Promise.resolve({ code: 0, stdout: "NO_CHANGES" });
+          return Promise.resolve({
+            code: 0,
+            stdout: JSON.stringify({ result: "NO_CHANGES" }),
+          });
         }
         return Promise.resolve({ code: 0, stdout: "" });
       });
@@ -129,7 +132,10 @@ Deno.test(
           return Promise.resolve({ code: 1, stdout: "" });
         }
         if (args[0] === "claude") {
-          return Promise.resolve({ code: 0, stdout: "# Line 1\n# Line 2\n" });
+          return Promise.resolve({
+            code: 0,
+            stdout: JSON.stringify({ result: "# Line 1\n# Line 2\n" }),
+          });
         }
         if (args[0] === "git" && args[3] === "remote") {
           return Promise.resolve({
@@ -189,7 +195,10 @@ Deno.test(
           return Promise.resolve({ code: 1, stdout: "" });
         }
         if (args[0] === "claude") {
-          return Promise.resolve({ code: 0, stdout: "# Consolidated\n" });
+          return Promise.resolve({
+            code: 0,
+            stdout: JSON.stringify({ result: "# Consolidated\n" }),
+          });
         }
         if (args[0] === "git" && args[3] === "push") {
           return Promise.resolve({ code: 1, stdout: "" });
