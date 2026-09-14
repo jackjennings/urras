@@ -1578,13 +1578,21 @@ export function composeTickDeps(
       }),
     processLearnings: () =>
       runLearnings({
-        listLearnings: () => listLearnings(stateDir),
+        listLearnings: async () => {
+          const entries = await listLearnings(stateDir);
+          return entries.map((e) => ({
+            ...e,
+            learning: {
+              ...e.learning,
+              repo: canonicalSlugFor(persistedTable, e.learning.repo),
+            },
+          }));
+        },
         writeLearning: (learning, intent) =>
           writeLearning(stateDir, learning, intent),
         prState: (url) => githubProvider.prState(url),
         log: appendTickLog,
         allowedRepos: config.learnings?.repos ?? [],
-        canonicalSlugFor: (slug) => canonicalSlugFor(persistedTable, slug),
         applyToRepo: (learning, intent) =>
           applyLearningToRepo(learning, intent, {
             roots: config.codebase.roots.map(expandHome),
