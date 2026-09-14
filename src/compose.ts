@@ -519,6 +519,29 @@ export function composeTickDeps(
           );
         }
       },
+      listRepoCorpus: () =>
+        listRepoCorpus(
+          config.codebase.roots.map(expandHome),
+          config.github.repos,
+        ),
+      checkRepoExists: async (slug: string) => {
+        const { token } = resolveAccount(slug);
+        const res = await http.get(
+          `https://api.github.com/repos/${slug}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              Accept: "application/vnd.github+json",
+            },
+          },
+        );
+        return res.ok;
+      },
+      writeFeedbackFile: (
+        ticketDir: string,
+        filename: string,
+        content: string,
+      ) => writeTextFile(join(ticketDir, filename), content),
     }),
     reviseScopeAction({
       roots: config.codebase.roots.map(expandHome),
