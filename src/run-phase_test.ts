@@ -3896,10 +3896,6 @@ Deno.test(
         },
       };
 
-      const runSpy: CommandRunner = spy(() =>
-        Promise.resolve({ code: 0, stdout: "APPROVE" })
-      );
-
       await executePhase(
         {
           ticketDir,
@@ -3915,12 +3911,15 @@ Deno.test(
           model: "claude-sonnet-4-6",
           thinking: "off",
           agentType: "pi",
-          run: runSpy as CommandRunner,
+          languageModel: textModel("APPROVE"),
         },
         agent,
       );
 
-      assertSpyCalls(runSpy as ReturnType<typeof spy>, 1);
+      const sidecar = await Deno.readTextFile(
+        join(ticketDir, "20260911T153053-spec.md.selfapprove"),
+      );
+      assertEquals(JSON.parse(sidecar).approved, true);
     } finally {
       await Deno.remove(ticketDir, { recursive: true });
       await Deno.remove(homeDir, { recursive: true });
