@@ -10,7 +10,6 @@ import {
   type RepoCandidate,
   resolveGitHubSlug,
 } from "../worktree.ts";
-import { compactTimestamp } from "../timestamp.ts";
 
 export interface CreateWorktreeDeps {
   roots: string[];
@@ -34,12 +33,12 @@ export interface CreateWorktreeDeps {
   ) => Promise<void>;
   listRepoCorpus: () => Promise<RepoCandidate[]>;
   checkRepoExists: (slug: string) => Promise<boolean>;
-  submitFeedback: (
-    stateDir: string,
-    id: string,
-    filename: string,
-    content: string,
-  ) => Promise<void>;
+  submitFeedback: (opts: {
+    stateDir: string;
+    id: string;
+    phase: string;
+    content: string;
+  }) => Promise<void>;
 }
 
 export function createWorktreeAction(deps: CreateWorktreeDeps): TickAction {
@@ -172,9 +171,6 @@ export function createWorktreeAction(deps: CreateWorktreeDeps): TickAction {
 
         if (invalidSlugs.length > 0) {
           if ((correctedTicket.scopeRetries ?? 0) === 0) {
-            const timestamp = compactTimestamp(
-              Temporal.Now.zonedDateTimeISO("UTC"),
-            );
             const corpusList = corpus.map((c) => `- ${c.slug}`).join("\n");
             const content = [
               `The following repository slug(s) chosen by intake do not exist as GitHub repositories: ${
@@ -187,12 +183,12 @@ export function createWorktreeAction(deps: CreateWorktreeDeps): TickAction {
               "",
               "If none of these match the ticket's intent, output an empty scope list.",
             ].join("\n");
-            await deps.submitFeedback(
+            await deps.submitFeedback({
               stateDir,
-              ticket.id,
-              `${timestamp}-intake-feedback.md`,
+              id: ticket.id,
+              phase: "intake",
               content,
-            );
+            });
             return {
               ...correctedTicket,
               status: "revising" as const,

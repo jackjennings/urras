@@ -36,7 +36,7 @@ function makeAction(
     applyWorktreeInclude: () => Promise.resolve(),
     listRepoCorpus: () => Promise.resolve([]),
     checkRepoExists: () => Promise.resolve(true),
-    submitFeedback: () => Promise.resolve(),
+    submitFeedback: (_opts) => Promise.resolve(),
     ...overrides,
   });
 }
@@ -714,7 +714,7 @@ Deno.test(
     const submitted: {
       stateDir: string;
       id: string;
-      filename: string;
+      phase: string;
       content: string;
     }[] = [];
     const result = await makeAction({
@@ -722,8 +722,8 @@ Deno.test(
       listRepoCorpus: () =>
         Promise.resolve([{ slug: "real/repo", localPath: null }]),
       checkRepoExists: (_slug) => Promise.resolve(false),
-      submitFeedback: (sd, id, filename, content) => {
-        submitted.push({ stateDir: sd, id, filename, content });
+      submitFeedback: ({ stateDir: sd, id, phase, content }) => {
+        submitted.push({ stateDir: sd, id, phase, content });
         return Promise.resolve();
       },
     }).run(makeTicket(BASE), "/state");
@@ -731,7 +731,7 @@ Deno.test(
     assertEquals(result?.status, "revising");
     assertEquals(result?.scopeRetries, 1);
     assertEquals(submitted.length, 1);
-    assertEquals(/intake-feedback\.md$/.test(submitted[0].filename), true);
+    assertEquals(submitted[0].phase, "intake");
     assertEquals(
       submitted[0].content.includes("bad/hallucination"),
       true,
@@ -779,13 +779,13 @@ Deno.test(
   async () => {
     const intakeContent =
       "## Proposed Scope\n\n```yaml\nscope:\n  - bad/one\n  - bad/two\n```\n\n## Reasoning\n\nText.\n";
-    const submitted: { filename: string; content: string }[] = [];
+    const submitted: { phase: string; content: string }[] = [];
     await makeAction({
       readIntakeOutput: () => Promise.resolve(intakeContent),
       listRepoCorpus: () => Promise.resolve([]),
       checkRepoExists: () => Promise.resolve(false),
-      submitFeedback: (_sd, _id, filename, content) => {
-        submitted.push({ filename, content });
+      submitFeedback: ({ phase, content }) => {
+        submitted.push({ phase, content });
         return Promise.resolve();
       },
     }).run(makeTicket(BASE), "/state");
