@@ -1,8 +1,4 @@
-import type { CommandRunner } from "./apfel.ts";
-import { ApfelLanguageModel } from "./models/apfel.ts";
-import { ClaudeLanguageModel } from "./models/claude.ts";
-import { FallbackLanguageModel } from "./models/fallback.ts";
-import { OllamaLanguageModel } from "./models/ollama.ts";
+import type { LanguageModel } from "./models/types.ts";
 import { renderPrompt } from "./filesystem.ts";
 
 const VERDICT_SCHEMA = {
@@ -18,14 +14,8 @@ type Scope = "local" | "global";
 
 export async function judgePrinciples(
   body: string,
-  run: CommandRunner,
-  ollamaModels?: OllamaLanguageModel[],
+  model: LanguageModel,
 ): Promise<Scope | null> {
-  const model = new FallbackLanguageModel([
-    new ApfelLanguageModel(run),
-    ...(ollamaModels ?? []),
-    new ClaudeLanguageModel(run, { model: "claude-haiku-4-5" }),
-  ]);
   const result = await model.generateObject<
     { verdict: "KEEP_LOCAL" | "KEEP_GLOBAL" | "SKIP" }
   >({
@@ -54,14 +44,8 @@ export async function filterPrinciples(
   entries: string[],
   context: string,
   topK: number,
-  run: CommandRunner,
-  ollamaModels?: OllamaLanguageModel[],
+  model: LanguageModel,
 ): Promise<number[] | null> {
-  const model = new FallbackLanguageModel([
-    new ApfelLanguageModel(run),
-    ...(ollamaModels ?? []),
-    new ClaudeLanguageModel(run, { model: "claude-haiku-4-5" }),
-  ]);
   const numbered = entries.map((e, i) => `${i}: ${e}`).join("\n\n");
   const result = await model.generateObject<{ indices: number[] }>({
     systemPrompt: await renderPrompt(

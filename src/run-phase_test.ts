@@ -9,9 +9,8 @@ import {
   assertRejects,
   assertStringIncludes,
 } from "@std/assert";
-import { assertSpyCalls, spy } from "@std/testing/mock";
-import { OllamaLanguageModel } from "./models/ollama.ts";
 import { dirname, join } from "@std/path";
+import type { LanguageModel, LanguageModelRequest } from "./models/types.ts";
 import {
   appendPhaseLog,
   buildContextFiles,
@@ -29,7 +28,51 @@ import {
 } from "./run-phase.ts";
 import type { CodeAgent } from "./agents/types.ts";
 import type { AnthropicPricingCache } from "./anthropic-pricing.ts";
-import type { CommandRunner } from "./apfel.ts";
+
+function indicesModel(indices: number[]): LanguageModel {
+  return {
+    name: "stub",
+    generateText: () => Promise.resolve(null),
+    generateObject: <T>(_req: LanguageModelRequest & { schema: object }) =>
+      Promise.resolve({ indices } as T),
+  };
+}
+
+function capturingIndicesModel(
+  indices: number[],
+  onCall: (req: LanguageModelRequest) => void,
+): LanguageModel {
+  return {
+    name: "stub",
+    generateText: () => Promise.resolve(null),
+    generateObject: <T>(req: LanguageModelRequest & { schema: object }) => {
+      onCall(req);
+      return Promise.resolve({ indices } as T);
+    },
+  };
+}
+
+function textModel(response: string | null): LanguageModel {
+  return {
+    name: "stub",
+    generateText: () => Promise.resolve(response),
+    generateObject: () => Promise.resolve(null),
+  };
+}
+
+function capturingTextModel(
+  response: string | null,
+  onCall: (req: LanguageModelRequest) => void,
+): LanguageModel {
+  return {
+    name: "stub",
+    generateText: (req: LanguageModelRequest) => {
+      onCall(req);
+      return Promise.resolve(response);
+    },
+    generateObject: () => Promise.resolve(null),
+  };
+}
 
 // ── getPiEnvironmentVariables ────────────────────────────────────────────────
 
@@ -623,17 +666,18 @@ Deno.test(
         "\n",
       );
       await Deno.writeTextFile(join(stateDir, "principles.md"), entries);
-      const run: CommandRunner = spy(() =>
-        Promise.resolve({ code: 0, stdout: JSON.stringify({ indices: [0] }) })
-      );
+      let modelCalled = false;
+      const model = capturingIndicesModel([0], () => {
+        modelCalled = true;
+      });
       const { contextFiles, tempPrinciplesFile } = await buildContextFiles({
         ticketDir,
         stateDir,
-        run,
+        model,
       });
       assertEquals(contextFiles[0], `@${stateDir}/principles.md`);
       assertEquals(tempPrinciplesFile, undefined);
-      assertSpyCalls(run as ReturnType<typeof spy>, 0);
+      assertFalse(modelCalled);
     } finally {
       await Deno.remove(stateDir, { recursive: true });
       await Deno.remove(ticketDir, { recursive: true });
@@ -657,25 +701,15 @@ Deno.test(
         "\n",
       );
       await Deno.writeTextFile(join(stateDir, "principles.md"), entries);
-      const run: CommandRunner = spy(() =>
-        Promise.resolve({
-          code: 0,
-          stdout: JSON.stringify({ indices: [0, 2] }),
-        })
-      );
       ({ tempPrinciplesFile } = await buildContextFiles({
         ticketDir,
         stateDir,
-        run,
+        model: indicesModel([0, 2]),
       }));
       const { contextFiles } = await buildContextFiles({
         ticketDir,
         stateDir,
-        run: () =>
-          Promise.resolve({
-            code: 0,
-            stdout: JSON.stringify({ indices: [0, 2] }),
-          }),
+        model: indicesModel([0, 2]),
       });
       assertNotEquals(tempPrinciplesFile, undefined);
       assertFalse(contextFiles.includes(`@${stateDir}/principles.md`));
@@ -708,15 +742,10 @@ Deno.test(
         join(stateDir, "principles.md"),
         principles.join("\n"),
       );
-      const run: CommandRunner = () =>
-        Promise.resolve({
-          code: 0,
-          stdout: JSON.stringify({ indices: [5, 1] }),
-        });
       ({ tempPrinciplesFile } = await buildContextFiles({
         ticketDir,
         stateDir,
-        run,
+        model: indicesModel([5, 1]),
       }));
       const content = await Deno.readTextFile(tempPrinciplesFile!);
       assertStringIncludes(content, "- entry 1");
@@ -770,11 +799,15 @@ Deno.test(
         "\n",
       );
       await Deno.writeTextFile(join(stateDir, "principles.md"), entries);
-      const run: CommandRunner = () => Promise.resolve({ code: 1, stdout: "" });
+      const model: LanguageModel = {
+        name: "stub",
+        generateText: () => Promise.resolve(null),
+        generateObject: () => Promise.resolve(null),
+      };
       const { contextFiles, tempPrinciplesFile } = await buildContextFiles({
         ticketDir,
         stateDir,
-        run,
+        model,
       });
       assertEquals(contextFiles[0], `@${stateDir}/principles.md`);
       assertEquals(tempPrinciplesFile, undefined);
@@ -802,12 +835,10 @@ Deno.test(
         "\n",
       );
       await Deno.writeTextFile(join(stateDir, "principles.md"), entries);
-      const run: CommandRunner = () =>
-        Promise.resolve({ code: 0, stdout: JSON.stringify({ indices: [0] }) });
       const { contextFiles } = await buildContextFiles({
         ticketDir,
         stateDir,
-        run,
+        model: indicesModel([0]),
       });
       assertEquals(contextFiles[0], `@${stateDir}/principles.md`);
       const log = await Deno.readTextFile(join(ticketDir, "log.ndjson"));
@@ -837,15 +868,10 @@ Deno.test(
         "\n",
       );
       await Deno.writeTextFile(join(stateDir, "principles.md"), entries);
-      const run: CommandRunner = () =>
-        Promise.resolve({
-          code: 0,
-          stdout: JSON.stringify({ indices: [0, 3] }),
-        });
       ({ tempPrinciplesFile } = await buildContextFiles({
         ticketDir,
         stateDir,
-        run,
+        model: indicesModel([0, 3]),
       }));
       const log = await Deno.readTextFile(join(ticketDir, "log.ndjson"));
       const logEntries = log.trim().split("\n").map((l) => JSON.parse(l));
@@ -880,12 +906,10 @@ Deno.test(
         "\n",
       );
       await Deno.writeTextFile(join(stateDir, "principles.md"), entries);
-      const run: CommandRunner = () =>
-        Promise.resolve({ code: 0, stdout: JSON.stringify({ indices: [] }) });
       ({ tempPrinciplesFile } = await buildContextFiles({
         ticketDir,
         stateDir,
-        run,
+        model: indicesModel([]),
       }));
       assertExists(tempPrinciplesFile);
       const content = await Deno.readTextFile(tempPrinciplesFile!);
@@ -922,17 +946,12 @@ Deno.test(
         "\n",
       );
       await Deno.writeTextFile(join(stateDir, "principles.md"), entries);
-      const run: CommandRunner = (args) => {
-        capturedPrompt = args[args.length - 1];
-        return Promise.resolve({
-          code: 0,
-          stdout: JSON.stringify({ indices: [] }),
-        });
-      };
       ({ tempPrinciplesFile } = await buildContextFiles({
         ticketDir,
         stateDir,
-        run,
+        model: capturingIndicesModel([], (req) => {
+          capturedPrompt = req.prompt;
+        }),
       }));
       assertStringIncludes(capturedPrompt, "Improve caching");
       assertStringIncludes(capturedPrompt, "Cache misses are too frequent.");
@@ -963,17 +982,12 @@ Deno.test(
         "\n",
       );
       await Deno.writeTextFile(join(stateDir, "principles.md"), entries);
-      const run: CommandRunner = (args) => {
-        capturedPrompt = args[args.length - 1];
-        return Promise.resolve({
-          code: 0,
-          stdout: JSON.stringify({ indices: [] }),
-        });
-      };
       ({ tempPrinciplesFile } = await buildContextFiles({
         ticketDir,
         stateDir,
-        run,
+        model: capturingIndicesModel([], (req) => {
+          capturedPrompt = req.prompt;
+        }),
       }));
       assertStringIncludes(capturedPrompt, "All the context lives here.");
     } finally {
@@ -3052,8 +3066,6 @@ Deno.test(
           return Promise.resolve({ stdout: "", stderr: "", code: 0 });
         },
       };
-      const run: CommandRunner = () =>
-        Promise.resolve({ code: 0, stdout: JSON.stringify({ indices: [0] }) });
 
       await executePhase(
         {
@@ -3069,7 +3081,7 @@ Deno.test(
           model: "claude-sonnet-4-6",
           thinking: "off",
           agentType: "pi",
-          run,
+          languageModel: indicesModel([0]),
         },
         agent,
       );
@@ -3208,8 +3220,6 @@ Deno.test(
           throw new Error("agent crashed");
         },
       };
-      const run: CommandRunner = () =>
-        Promise.resolve({ code: 0, stdout: JSON.stringify({ indices: [0] }) });
 
       await assertRejects(
         () =>
@@ -3227,7 +3237,7 @@ Deno.test(
               model: "claude-sonnet-4-6",
               thinking: "off",
               agentType: "pi",
-              run,
+              languageModel: indicesModel([0]),
             },
             agent,
           ),
@@ -3245,7 +3255,7 @@ Deno.test(
   },
 );
 
-Deno.test("buildContextFiles: passes ollamaModels to filterPrinciples", async () => {
+Deno.test("buildContextFiles: passes model to filterPrinciples", async () => {
   const stateDir = await Deno.makeTempDir();
   const ticketDir = join(stateDir, "github", "test-org", "test-repo", "1");
   await Deno.mkdir(ticketDir, { recursive: true });
@@ -3259,24 +3269,10 @@ Deno.test("buildContextFiles: passes ollamaModels to filterPrinciples", async ()
       join(ticketDir, "meta.md"),
       "---\ntitle: Test\n---\n## Problem\nsome problem",
     );
-    const ollamaFetch = spy(
-      (_url: unknown, _init?: RequestInit) =>
-        Promise.resolve(
-          new Response(
-            JSON.stringify({ response: JSON.stringify({ indices: [3] }) }),
-            { status: 200 },
-          ),
-        ),
-    ) as unknown as typeof fetch;
-    const ollama = new OllamaLanguageModel(ollamaFetch, { model: "test" });
-    const run = spy((_args: string[]) =>
-      Promise.resolve({ code: 1, stdout: "" })
-    );
     const { contextFiles, tempPrinciplesFile } = await buildContextFiles({
       ticketDir,
       stateDir,
-      run,
-      ollamaModels: [ollama],
+      model: indicesModel([3]),
     });
     assert(
       contextFiles.some((f) => f.includes("principles-filtered")),
@@ -3611,6 +3607,7 @@ Deno.test(
           model: "claude-sonnet-4-6",
           thinking: "off",
           agentType: "pi",
+          languageModel: textModel("APPROVE"),
         },
         agent,
       );
@@ -3641,9 +3638,10 @@ Deno.test(
           ).then(() => ({ stdout: "", stderr: "", code: 0 }));
         },
       };
-      const run: CommandRunner = spy(() =>
-        Promise.resolve({ code: 0, stdout: "APPROVE" })
-      );
+      let capturedPrompt = "";
+      const languageModel = capturingTextModel("APPROVE", (req) => {
+        capturedPrompt = req.prompt;
+      });
       await executePhase(
         {
           ticketDir,
@@ -3659,21 +3657,12 @@ Deno.test(
           model: "claude-sonnet-4-6",
           thinking: "off",
           agentType: "pi",
-          run,
+          languageModel,
         },
         agent,
       );
-      const calls = (run as ReturnType<typeof spy>).calls;
-      const selfApproveCall = calls.find((c) =>
-        (c.args[0] as string[]).includes("--dangerously-skip-permissions")
-      );
-      assertExists(selfApproveCall);
-      const args = selfApproveCall.args[0] as string[];
-      assertStringIncludes(args[args.length - 1], "## Ticket");
-      assertStringIncludes(
-        args[args.length - 1],
-        "github/jackjennings/lazyboy/652",
-      );
+      assertStringIncludes(capturedPrompt, "## Ticket");
+      assertStringIncludes(capturedPrompt, "github/jackjennings/lazyboy/652");
     } finally {
       await Deno.remove(ticketDir, { recursive: true });
       await Deno.remove(homeDir, { recursive: true });
@@ -3696,9 +3685,10 @@ Deno.test(
           ).then(() => ({ stdout: "", stderr: "", code: 0 }));
         },
       };
-      const run: CommandRunner = spy(() =>
-        Promise.resolve({ code: 0, stdout: "APPROVE" })
-      );
+      let capturedPrompt = "";
+      const languageModel = capturingTextModel("APPROVE", (req) => {
+        capturedPrompt = req.prompt;
+      });
       await executePhase(
         {
           ticketDir,
@@ -3716,18 +3706,12 @@ Deno.test(
           model: "claude-sonnet-4-6",
           thinking: "off",
           agentType: "pi",
-          run,
+          languageModel,
         },
         agent,
       );
-      const calls = (run as ReturnType<typeof spy>).calls;
-      const selfApproveCall = calls.find((c) =>
-        (c.args[0] as string[]).includes("--dangerously-skip-permissions")
-      );
-      assertExists(selfApproveCall);
-      const args = selfApproveCall.args[0] as string[];
-      assertStringIncludes(args[args.length - 1], "## Changed Files");
-      assertStringIncludes(args[args.length - 1], "new-feature.ts");
+      assertStringIncludes(capturedPrompt, "## Changed Files");
+      assertStringIncludes(capturedPrompt, "new-feature.ts");
     } finally {
       await Deno.remove(ticketDir, { recursive: true });
       await Deno.remove(homeDir, { recursive: true });

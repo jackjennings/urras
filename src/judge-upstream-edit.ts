@@ -1,8 +1,4 @@
-import type { CommandRunner } from "./apfel.ts";
-import { ApfelLanguageModel } from "./models/apfel.ts";
-import { ClaudeLanguageModel } from "./models/claude.ts";
-import { FallbackLanguageModel } from "./models/fallback.ts";
-import { OllamaLanguageModel } from "./models/ollama.ts";
+import type { LanguageModel } from "./models/types.ts";
 import { renderPrompt } from "./filesystem.ts";
 
 const SCHEMA = {
@@ -19,14 +15,8 @@ export async function judgeUpstreamEdit(
   newTitle: string,
   oldBody: string,
   newBody: string,
-  run: CommandRunner,
-  ollamaModels?: OllamaLanguageModel[],
+  model: LanguageModel,
 ): Promise<boolean | null> {
-  const model = new FallbackLanguageModel([
-    new ApfelLanguageModel(run),
-    ...(ollamaModels ?? []),
-    new ClaudeLanguageModel(run, { model: "claude-haiku-4-5" }),
-  ]);
   const prompt = await renderPrompt(
     new URL("./judge-upstream-edit-user.prompt.hbs", import.meta.url),
     { oldTitle, newTitle, oldBody, newBody },

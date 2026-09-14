@@ -1,30 +1,42 @@
-import {
-  assert,
-  assertEquals,
-  assertFalse,
-  assertNotEquals,
-  assertStringIncludes,
-} from "@std/assert";
-import { assertSpyCalls, spy } from "@std/testing/mock";
+import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import { join } from "@std/path";
 import { Effect, Exit } from "effect";
-import { OllamaLanguageModel } from "./models/ollama.ts";
+import type { LanguageModel, LanguageModelRequest } from "./models/types.ts";
 import { selfApprove } from "./self-approve.ts";
-import type { CommandRunner } from "./apfel.ts";
 
-function runnerReturning(stdout: string, code = 0): CommandRunner {
-  return spy((_args: string[]) => Promise.resolve({ code, stdout }));
+function textModel(
+  response: string | null,
+  onCall?: (req: LanguageModelRequest) => void,
+): LanguageModel {
+  return {
+    name: "stub",
+    generateText: (req: LanguageModelRequest) => {
+      onCall?.(req);
+      return Promise.resolve(response);
+    },
+    generateObject: () => Promise.resolve(null),
+  };
+}
+
+function throwingModel(): LanguageModel {
+  return {
+    name: "stub",
+    generateText: () => Promise.reject(new Error("model error")),
+    generateObject: () => Promise.resolve(null),
+  };
 }
 
 Deno.test("selfApprove: returns false when no self-approve prompt exists for phase", async () => {
   const tempDir = await Deno.makeTempDir();
   try {
-    const run = runnerReturning("APPROVE");
     const result = await Effect.runPromise(
-      selfApprove({ phase: "spec", ticketDir: tempDir, run }),
+      selfApprove({
+        phase: "spec",
+        ticketDir: tempDir,
+        model: textModel("APPROVE"),
+      }),
     );
     assertEquals(result, { approved: false, reason: null });
-    assertSpyCalls(run as ReturnType<typeof spy>, 0);
   } finally {
     await Deno.remove(tempDir, { recursive: true });
   }
@@ -33,45 +45,52 @@ Deno.test("selfApprove: returns false when no self-approve prompt exists for pha
 Deno.test("selfApprove: returns false when no phase output file is found", async () => {
   const tempDir = await Deno.makeTempDir();
   try {
-    const run = runnerReturning("APPROVE");
     const result = await Effect.runPromise(
-      selfApprove({ phase: "intake", ticketDir: tempDir, run }),
+      selfApprove({
+        phase: "intake",
+        ticketDir: tempDir,
+        model: textModel("APPROVE"),
+      }),
     );
     assertEquals(result, { approved: false, reason: null });
-    assertSpyCalls(run as ReturnType<typeof spy>, 0);
   } finally {
     await Deno.remove(tempDir, { recursive: true });
   }
 });
 
-Deno.test("selfApprove: returns approved when claude CLI outputs APPROVE", async () => {
+Deno.test("selfApprove: returns approved when model returns APPROVE", async () => {
   const tempDir = await Deno.makeTempDir();
   try {
     await Deno.writeTextFile(
       join(tempDir, "20260717T120000-intake.md"),
       "## Proposed Scope\n\n```yaml\nscope:\n  - /Users/jack/code/myorg/repo\n```\n",
     );
-    const run = runnerReturning("APPROVE");
     const result = await Effect.runPromise(
-      selfApprove({ phase: "intake", ticketDir: tempDir, run }),
+      selfApprove({
+        phase: "intake",
+        ticketDir: tempDir,
+        model: textModel("APPROVE"),
+      }),
     );
     assertEquals(result, { approved: true, reason: null });
-    assertSpyCalls(run as ReturnType<typeof spy>, 1);
   } finally {
     await Deno.remove(tempDir, { recursive: true });
   }
 });
 
-Deno.test("selfApprove: returns not approved when claude CLI outputs REJECT", async () => {
+Deno.test("selfApprove: returns not approved when model returns REJECT", async () => {
   const tempDir = await Deno.makeTempDir();
   try {
     await Deno.writeTextFile(
       join(tempDir, "20260717T120000-intake.md"),
       "bad output",
     );
-    const run = runnerReturning("REJECT");
     const result = await Effect.runPromise(
-      selfApprove({ phase: "intake", ticketDir: tempDir, run }),
+      selfApprove({
+        phase: "intake",
+        ticketDir: tempDir,
+        model: textModel("REJECT"),
+      }),
     );
     assertEquals(result, { approved: false, reason: "REJECT" });
   } finally {
@@ -79,16 +98,19 @@ Deno.test("selfApprove: returns not approved when claude CLI outputs REJECT", as
   }
 });
 
-Deno.test("selfApprove: returns failed Effect when claude CLI exits non-zero", async () => {
+Deno.test("selfApprove: returns failed Effect when model returns null", async () => {
   const tempDir = await Deno.makeTempDir();
   try {
     await Deno.writeTextFile(
       join(tempDir, "20260717T120000-intake.md"),
       "output",
     );
-    const run = runnerReturning("", 1);
     const exit = await Effect.runPromiseExit(
-      selfApprove({ phase: "intake", ticketDir: tempDir, run }),
+      selfApprove({
+        phase: "intake",
+        ticketDir: tempDir,
+        model: textModel(null),
+      }),
     );
     assert(Exit.isFailure(exit));
   } finally {
@@ -96,18 +118,19 @@ Deno.test("selfApprove: returns failed Effect when claude CLI exits non-zero", a
   }
 });
 
-Deno.test("selfApprove: returns failed Effect when run throws", async () => {
+Deno.test("selfApprove: returns failed Effect when model throws", async () => {
   const tempDir = await Deno.makeTempDir();
   try {
     await Deno.writeTextFile(
       join(tempDir, "20260717T120000-intake.md"),
       "output",
     );
-    const run: CommandRunner = spy((_args: string[]) =>
-      Promise.reject(new Error("not found"))
-    );
     const exit = await Effect.runPromiseExit(
-      selfApprove({ phase: "intake", ticketDir: tempDir, run }),
+      selfApprove({
+        phase: "intake",
+        ticketDir: tempDir,
+        model: throwingModel(),
+      }),
     );
     assert(Exit.isFailure(exit));
   } finally {
@@ -115,7 +138,7 @@ Deno.test("selfApprove: returns failed Effect when run throws", async () => {
   }
 });
 
-Deno.test("selfApprove: passes output file content after -- to claude", async () => {
+Deno.test("selfApprove: sends output file content as prompt to model", async () => {
   const tempDir = await Deno.makeTempDir();
   try {
     const outputContent =
@@ -124,75 +147,41 @@ Deno.test("selfApprove: passes output file content after -- to claude", async ()
       join(tempDir, "20260717T120000-intake.md"),
       outputContent,
     );
-    const run = runnerReturning("APPROVE");
+    let capturedPrompt = "";
     await Effect.runPromise(
-      selfApprove({ phase: "intake", ticketDir: tempDir, run }),
+      selfApprove({
+        phase: "intake",
+        ticketDir: tempDir,
+        model: textModel("APPROVE", (req) => {
+          capturedPrompt = req.prompt;
+        }),
+      }),
     );
-    const args = (run as ReturnType<typeof spy>).calls[0].args[0] as string[];
-    assertEquals(args[0], "claude");
-    assertEquals(args[args.length - 1], outputContent);
+    assertEquals(capturedPrompt, outputContent);
   } finally {
     await Deno.remove(tempDir, { recursive: true });
   }
 });
 
-Deno.test("selfApprove: passes --system-prompt containing APPROVE and REJECT to claude", async () => {
+Deno.test("selfApprove: system prompt contains APPROVE and REJECT", async () => {
   const tempDir = await Deno.makeTempDir();
   try {
     await Deno.writeTextFile(
       join(tempDir, "20260717T120000-intake.md"),
       "output",
     );
-    const run = runnerReturning("APPROVE");
+    let capturedSystemPrompt = "";
     await Effect.runPromise(
-      selfApprove({ phase: "intake", ticketDir: tempDir, run }),
+      selfApprove({
+        phase: "intake",
+        ticketDir: tempDir,
+        model: textModel("APPROVE", (req) => {
+          capturedSystemPrompt = req.systemPrompt;
+        }),
+      }),
     );
-    const args = (run as ReturnType<typeof spy>).calls[0].args[0] as string[];
-    const promptIdx = args.indexOf("--system-prompt");
-    assertNotEquals(promptIdx, -1);
-    assertStringIncludes(args[promptIdx + 1], "APPROVE");
-    assertStringIncludes(args[promptIdx + 1], "REJECT");
-  } finally {
-    await Deno.remove(tempDir, { recursive: true });
-  }
-});
-
-Deno.test("selfApprove: passes --model claude-haiku-4-5 to claude", async () => {
-  const tempDir = await Deno.makeTempDir();
-  try {
-    await Deno.writeTextFile(
-      join(tempDir, "20260717T120000-intake.md"),
-      "output",
-    );
-    const run = runnerReturning("APPROVE");
-    await Effect.runPromise(
-      selfApprove({ phase: "intake", ticketDir: tempDir, run }),
-    );
-    const args = (run as ReturnType<typeof spy>).calls[0].args[0] as string[];
-    const modelIdx = args.indexOf("--model");
-    assertNotEquals(modelIdx, -1);
-    assertEquals(args[modelIdx + 1], "claude-haiku-4-5");
-  } finally {
-    await Deno.remove(tempDir, { recursive: true });
-  }
-});
-
-Deno.test("selfApprove: passes --dangerously-skip-permissions to claude", async () => {
-  const tempDir = await Deno.makeTempDir();
-  try {
-    await Deno.writeTextFile(
-      join(tempDir, "20260717T120000-intake.md"),
-      "output",
-    );
-    const run = runnerReturning("APPROVE");
-    await Effect.runPromise(
-      selfApprove({ phase: "intake", ticketDir: tempDir, run }),
-    );
-    const args = (run as ReturnType<typeof spy>).calls[0].args[0] as string[];
-    assert(
-      args.includes("--dangerously-skip-permissions"),
-      "--dangerously-skip-permissions must be present in args",
-    );
+    assertStringIncludes(capturedSystemPrompt, "APPROVE");
+    assertStringIncludes(capturedSystemPrompt, "REJECT");
   } finally {
     await Deno.remove(tempDir, { recursive: true });
   }
@@ -209,7 +198,7 @@ Deno.test("selfApprove: APPROVE is case-insensitive", async () => {
       selfApprove({
         phase: "intake",
         ticketDir: tempDir,
-        run: runnerReturning("approve"),
+        model: textModel("approve"),
       }),
     );
     assertEquals(result, { approved: true, reason: null });
@@ -218,18 +207,21 @@ Deno.test("selfApprove: APPROVE is case-insensitive", async () => {
   }
 });
 
-Deno.test("selfApprove: returns reason text when claude outputs REJECT with explanation", async () => {
+Deno.test("selfApprove: returns reason text when model outputs REJECT with explanation", async () => {
   const tempDir = await Deno.makeTempDir();
   try {
     await Deno.writeTextFile(
       join(tempDir, "20260717T120000-intake.md"),
       "bad output",
     );
-    const run = runnerReturning(
-      "REJECT\nCriterion 2 was violated because the scope list is missing.",
-    );
     const result = await Effect.runPromise(
-      selfApprove({ phase: "intake", ticketDir: tempDir, run }),
+      selfApprove({
+        phase: "intake",
+        ticketDir: tempDir,
+        model: textModel(
+          "REJECT\nCriterion 2 was violated because the scope list is missing.",
+        ),
+      }),
     );
     assertEquals(result, {
       approved: false,
@@ -252,7 +244,7 @@ Deno.test("selfApprove: works for enrichment phase when output file exists", asy
       selfApprove({
         phase: "enrichment",
         ticketDir: tempDir,
-        run: runnerReturning("APPROVE"),
+        model: textModel("APPROVE"),
       }),
     );
     assertEquals(result, { approved: true, reason: null });
@@ -327,63 +319,27 @@ Deno.test("selfApprove: appends changed files list to content when worktreePath 
       join(tempDir, "20260811T120000-implementation.md"),
       "## Changes Made\n\n- new-feature.ts\n\n## Summary of Changes\n\nAdded feature.\n\n## Tests\n\nok | 1 passed\n\n## PR\n\nhttps://github.com/example/repo/pull/1\n",
     );
-    const run = runnerReturning("APPROVE");
+    let capturedPrompt = "";
     await Effect.runPromise(
       selfApprove({
         phase: "implementation",
         ticketDir: tempDir,
-        run,
+        model: textModel("APPROVE", (req) => {
+          capturedPrompt = req.prompt;
+        }),
         worktreePath: worktreeDir,
       }),
     );
-    const args = (run as ReturnType<typeof spy>).calls[0].args[0] as string[];
-    const content = args[args.length - 1];
-    assertStringIncludes(content, "## Changed Files");
-    assertStringIncludes(content, "new-feature.ts");
+    assertStringIncludes(capturedPrompt, "## Changed Files");
+    assertStringIncludes(capturedPrompt, "new-feature.ts");
     assert(
-      !content.includes("diff --git"),
+      !capturedPrompt.includes("diff --git"),
       "should not include full diff output",
     );
   } finally {
     await Deno.remove(tempDir, { recursive: true });
     await Deno.remove(worktreeDir, { recursive: true });
     await Deno.remove(originDir, { recursive: true });
-  }
-});
-
-Deno.test("selfApprove: uses ollamaModels before Claude when provided", async () => {
-  const tempDir = await Deno.makeTempDir();
-  try {
-    await Deno.writeTextFile(
-      join(tempDir, "20260101T000000-intake.md"),
-      "Some intake output",
-    );
-    const ollamaFetch = spy(
-      (_url: unknown, _init?: RequestInit) =>
-        Promise.resolve(
-          new Response(JSON.stringify({ response: "APPROVE" }), {
-            status: 200,
-          }),
-        ),
-    ) as unknown as typeof fetch;
-    const ollama = new OllamaLanguageModel(ollamaFetch, { model: "test" });
-    let claudeCalled = false;
-    const run = spy((args: string[]) => {
-      if (args[0] === "claude") claudeCalled = true;
-      return Promise.resolve({ code: 1, stdout: "" });
-    });
-    const result = await Effect.runPromise(
-      selfApprove({
-        phase: "intake",
-        ticketDir: tempDir,
-        run,
-        ollamaModels: [ollama],
-      }),
-    );
-    assert(result.approved);
-    assertFalse(claudeCalled);
-  } finally {
-    await Deno.remove(tempDir, { recursive: true });
   }
 });
 
@@ -394,20 +350,20 @@ Deno.test("selfApprove: continues without diff when worktreePath git command fai
       join(tempDir, "20260717T120000-intake.md"),
       "## Proposed Scope\n\n```yaml\nscope:\n  - jackjennings/lazyboy\n```\n",
     );
-    const run = runnerReturning("APPROVE");
+    let capturedPrompt = "";
     const result = await Effect.runPromise(
       selfApprove({
         phase: "intake",
         ticketDir: tempDir,
-        run,
+        model: textModel("APPROVE", (req) => {
+          capturedPrompt = req.prompt;
+        }),
         worktreePath: "/nonexistent/path/that/does/not/exist",
       }),
     );
     assertEquals(result, { approved: true, reason: null });
-    assertSpyCalls(run as ReturnType<typeof spy>, 1);
-    const args = (run as ReturnType<typeof spy>).calls[0].args[0] as string[];
     assert(
-      !args[args.length - 1].includes("## Changed Files"),
+      !capturedPrompt.includes("## Changed Files"),
       "should not include changed files on git failure",
     );
   } finally {
@@ -428,14 +384,19 @@ Deno.test("selfApprove: appends global state-dir self-approve supplement to syst
       join(stateDir, "prompts", "intake-self-approve.md"),
       "Always approve tickets scoped to example/repo.",
     );
-    const run = runnerReturning("APPROVE");
+    let capturedSystemPrompt = "";
     await Effect.runPromise(
-      selfApprove({ phase: "intake", ticketDir: tempDir, run, stateDir }),
+      selfApprove({
+        phase: "intake",
+        ticketDir: tempDir,
+        model: textModel("APPROVE", (req) => {
+          capturedSystemPrompt = req.systemPrompt;
+        }),
+        stateDir,
+      }),
     );
-    const args = (run as ReturnType<typeof spy>).calls[0].args[0] as string[];
-    const promptIdx = args.indexOf("--system-prompt");
     assertStringIncludes(
-      args[promptIdx + 1],
+      capturedSystemPrompt,
       "Always approve tickets scoped to example/repo.",
     );
   } finally {
@@ -464,20 +425,20 @@ Deno.test("selfApprove: appends project-scoped self-approve supplement for match
       join(projectPromptDir, "implementation-self-approve.md"),
       "Approve unconditionally for this repository.",
     );
-    const run = runnerReturning("APPROVE");
+    let capturedSystemPrompt = "";
     await Effect.runPromise(
       selfApprove({
         phase: "implementation",
         ticketDir: tempDir,
-        run,
+        model: textModel("APPROVE", (req) => {
+          capturedSystemPrompt = req.systemPrompt;
+        }),
         stateDir,
         ticketId: "github/jackjennings/lazyboy/652",
       }),
     );
-    const args = (run as ReturnType<typeof spy>).calls[0].args[0] as string[];
-    const promptIdx = args.indexOf("--system-prompt");
     assertStringIncludes(
-      args[promptIdx + 1],
+      capturedSystemPrompt,
       "Approve unconditionally for this repository.",
     );
   } finally {
@@ -506,20 +467,20 @@ Deno.test("selfApprove: does not apply another project's scoped supplement", asy
       join(otherProjectPromptDir, "implementation-self-approve.md"),
       "Approve unconditionally for this repository.",
     );
-    const run = runnerReturning("APPROVE");
+    let capturedSystemPrompt = "";
     await Effect.runPromise(
       selfApprove({
         phase: "implementation",
         ticketDir: tempDir,
-        run,
+        model: textModel("APPROVE", (req) => {
+          capturedSystemPrompt = req.systemPrompt;
+        }),
         stateDir,
         ticketId: "github/jackjennings/lazyboy/652",
       }),
     );
-    const args = (run as ReturnType<typeof spy>).calls[0].args[0] as string[];
-    const promptIdx = args.indexOf("--system-prompt");
     assert(
-      !args[promptIdx + 1].includes(
+      !capturedSystemPrompt.includes(
         "Approve unconditionally for this repository.",
       ),
       "should not include another project's supplement",
@@ -537,19 +498,19 @@ Deno.test("selfApprove: prepends ticket id to content sent to model when ticketI
       join(tempDir, "20260717T120000-intake.md"),
       "output",
     );
-    const run = runnerReturning("APPROVE");
+    let capturedPrompt = "";
     await Effect.runPromise(
       selfApprove({
         phase: "intake",
         ticketDir: tempDir,
-        run,
+        model: textModel("APPROVE", (req) => {
+          capturedPrompt = req.prompt;
+        }),
         ticketId: "github/jackjennings/lazyboy/652",
       }),
     );
-    const args = (run as ReturnType<typeof spy>).calls[0].args[0] as string[];
-    const content = args[args.length - 1];
-    assertStringIncludes(content, "## Ticket");
-    assertStringIncludes(content, "github/jackjennings/lazyboy/652");
+    assertStringIncludes(capturedPrompt, "## Ticket");
+    assertStringIncludes(capturedPrompt, "github/jackjennings/lazyboy/652");
   } finally {
     await Deno.remove(tempDir, { recursive: true });
   }

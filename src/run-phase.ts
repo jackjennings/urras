@@ -20,9 +20,13 @@ import {
 } from "./filesystem.ts";
 import { deriveProjectPath } from "./phases/project-path.ts";
 import matter from "gray-matter";
-import { captureCommandRunner, type CommandRunner } from "./apfel.ts";
+import { captureCommandRunner } from "./apfel.ts";
 import { filterPrinciples } from "./judge-principles.ts";
 import { OllamaLanguageModel } from "./models/ollama.ts";
+import type { LanguageModel } from "./models/types.ts";
+import { ApfelLanguageModel } from "./models/apfel.ts";
+import { ClaudeLanguageModel } from "./models/claude.ts";
+import { FallbackLanguageModel } from "./models/fallback.ts";
 import { compactTimestamp } from "./timestamp.ts";
 import { PHASE_MODEL_DEFAULTS } from "./phases/model.ts";
 import { selfApprove } from "./self-approve.ts";
@@ -97,14 +101,12 @@ export async function buildContextFiles(
     ticketDir,
     stateDir,
     includePrinciples = true,
-    run,
-    ollamaModels,
+    model,
   }: {
     ticketDir: string;
     stateDir: string;
     includePrinciples?: boolean;
-    run?: CommandRunner;
-    ollamaModels?: OllamaLanguageModel[];
+    model?: LanguageModel;
   },
 ): Promise<{ contextFiles: string[]; tempPrinciplesFile?: string }> {
   const principlesPath = join(stateDir, "principles.md");
@@ -121,7 +123,7 @@ export async function buildContextFiles(
 
     if (principlesText !== null) {
       const allEntries = parsePrincipleEntries(principlesText);
-      if (run !== undefined && allEntries.length > PRINCIPLES_THRESHOLD) {
+      if (model !== undefined && allEntries.length > PRINCIPLES_THRESHOLD) {
         let filtered = false;
         try {
           const metaRaw = await readTextFile(join(ticketDir, "meta.md"));
@@ -139,8 +141,7 @@ export async function buildContextFiles(
             allEntries.map((e) => e.raw),
             filterContext,
             PRINCIPLES_TOP_K,
-            run,
-            ollamaModels,
+            model,
           );
           if (indices === null) throw new Error("llm-failed");
 
@@ -475,10 +476,9 @@ export async function executePhase(
     sessionId?: string;
     resume?: boolean;
     includePrinciples?: boolean;
-    run?: CommandRunner;
+    languageModel?: LanguageModel;
     critiqueModel?: string;
     critiqueThinking?: string;
-    ollamaModels?: OllamaLanguageModel[];
   },
   agent: CodeAgent,
 ): Promise<number> {
@@ -495,14 +495,13 @@ export async function executePhase(
     await setupClaudeCodeDirectories(opts.homeDir);
   }
 
-  const run = opts.run ?? captureCommandRunner();
   const { contextFiles } = opts.contextFiles
     ? { contextFiles: opts.contextFiles }
     : await buildContextFiles({
       ticketDir: opts.ticketDir,
       stateDir: opts.stateDir,
       includePrinciples: opts.includePrinciples,
-      run,
+      model: opts.languageModel,
     });
 
   const allPaths = [
@@ -729,16 +728,16 @@ export async function executePhase(
   }
 
   try {
+    if (opts.languageModel === undefined) throw new Error("no-model");
     const ticketProvider = opts.ticketId?.split("/")[0];
     const selfApproveResult = await Effect.runPromise(selfApprove({
       phase: opts.phase,
       ticketDir: opts.ticketDir,
-      run: opts.run ?? captureCommandRunner(),
+      model: opts.languageModel,
       worktreePath: (ticketProvider && opts.ticketId)
         ? opts.worktrees[deriveProjectPath(ticketProvider, opts.ticketId)]
           ?.path
         : undefined,
-      ollamaModels: opts.ollamaModels,
       stateDir: opts.stateDir,
       ticketId: opts.ticketId,
     }));
@@ -862,6 +861,14 @@ if (import.meta.main) {
     >).map((m) => new OllamaLanguageModel(fetch, m))
     : [];
 
+  const languageModel = new FallbackLanguageModel([
+    new ApfelLanguageModel(captureCommandRunner()),
+    ...ollamaModels,
+    new ClaudeLanguageModel(captureCommandRunner(), {
+      model: "claude-haiku-4-5",
+    }),
+  ]);
+
   const code = await executePhase(
     {
       ticketDir,
@@ -881,9 +888,9 @@ if (import.meta.main) {
       sessionId: args["session-id"] ?? undefined,
       resume: args["resume"] ?? false,
       includePrinciples: !args["skip-principles"],
+      languageModel,
       critiqueModel: args["critique-model"] ?? undefined,
       critiqueThinking: args["critique-thinking"] ?? undefined,
-      ollamaModels: ollamaModels.length > 0 ? ollamaModels : undefined,
     },
     agentType === "claude-code"
       ? new ClaudeCodeAgent(
