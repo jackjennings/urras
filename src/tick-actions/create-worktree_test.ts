@@ -36,7 +36,7 @@ function makeAction(
     applyWorktreeInclude: () => Promise.resolve(),
     listRepoCorpus: () => Promise.resolve([]),
     checkRepoExists: () => Promise.resolve(true),
-    writeFeedbackFile: () => Promise.resolve(),
+    submitFeedback: () => Promise.resolve(),
     ...overrides,
   });
 }
@@ -711,34 +711,32 @@ Deno.test(
   async () => {
     const intakeContent =
       "## Proposed Scope\n\n```yaml\nscope:\n  - bad/hallucination\n```\n\n## Reasoning\n\nText.\n";
-    const written: TicketState[] = [];
-    const feedbackFiles: { name: string; content: string }[] = [];
+    const submitted: {
+      stateDir: string;
+      id: string;
+      filename: string;
+      content: string;
+    }[] = [];
     const result = await makeAction({
       readIntakeOutput: () => Promise.resolve(intakeContent),
       listRepoCorpus: () =>
         Promise.resolve([{ slug: "real/repo", localPath: null }]),
       checkRepoExists: (_slug) => Promise.resolve(false),
-      writeFeedbackFile: (_dir, name, content) => {
-        feedbackFiles.push({ name, content });
-        return Promise.resolve();
-      },
-      writeTicket: (_dir, t) => {
-        written.push(t);
+      submitFeedback: (sd, id, filename, content) => {
+        submitted.push({ stateDir: sd, id, filename, content });
         return Promise.resolve();
       },
     }).run(makeTicket(BASE), "/state");
 
     assertEquals(result?.status, "revising");
     assertEquals(result?.scopeRetries, 1);
-    assertEquals(feedbackFiles.length, 1);
-    assertEquals(/intake-feedback\.md$/.test(feedbackFiles[0].name), true);
+    assertEquals(submitted.length, 1);
+    assertEquals(/intake-feedback\.md$/.test(submitted[0].filename), true);
     assertEquals(
-      feedbackFiles[0].content.includes("bad/hallucination"),
+      submitted[0].content.includes("bad/hallucination"),
       true,
     );
-    assertEquals(feedbackFiles[0].content.includes("- real/repo"), true);
-    assertEquals(written[0].status, "revising");
-    assertEquals(written[0].scopeRetries, 1);
+    assertEquals(submitted[0].content.includes("- real/repo"), true);
   },
 );
 
@@ -781,20 +779,20 @@ Deno.test(
   async () => {
     const intakeContent =
       "## Proposed Scope\n\n```yaml\nscope:\n  - bad/one\n  - bad/two\n```\n\n## Reasoning\n\nText.\n";
-    const feedbackFiles: { name: string; content: string }[] = [];
+    const submitted: { filename: string; content: string }[] = [];
     await makeAction({
       readIntakeOutput: () => Promise.resolve(intakeContent),
       listRepoCorpus: () => Promise.resolve([]),
       checkRepoExists: () => Promise.resolve(false),
-      writeFeedbackFile: (_dir, name, content) => {
-        feedbackFiles.push({ name, content });
+      submitFeedback: (_sd, _id, filename, content) => {
+        submitted.push({ filename, content });
         return Promise.resolve();
       },
     }).run(makeTicket(BASE), "/state");
 
-    assertEquals(feedbackFiles.length, 1);
-    assertEquals(feedbackFiles[0].content.includes("bad/one"), true);
-    assertEquals(feedbackFiles[0].content.includes("bad/two"), true);
+    assertEquals(submitted.length, 1);
+    assertEquals(submitted[0].content.includes("bad/one"), true);
+    assertEquals(submitted[0].content.includes("bad/two"), true);
   },
 );
 
