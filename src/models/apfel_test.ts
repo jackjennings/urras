@@ -213,6 +213,10 @@ Deno.test("ApfelLanguageModel.generateObject: recordUsage does not fire on null 
     callSite: "test",
     recordUsage,
   });
-  await model.generateObject({ systemPrompt: "sys", prompt: "body", schema: {} });
+  await model.generateObject({
+    systemPrompt: "sys",
+    prompt: "body",
+    schema: {},
+  });
   assertEquals(records.length, 0);
 });

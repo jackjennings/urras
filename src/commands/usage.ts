@@ -3,8 +3,8 @@ import { listTickets } from "../state/store.ts";
 import { expandHome, loadConfig } from "../config.ts";
 import { formatLargeTokens, readUsageFiles } from "../usage.ts";
 import {
-  readAncillaryUsageFile,
   type AncillaryUsageRecord,
+  readAncillaryUsageFile,
 } from "../ancillary-usage.ts";
 import type { PhaseUsage } from "../state/types.ts";
 import type { Command } from "./types.ts";

@@ -1,9 +1,9 @@
 import { assertEquals } from "@std/assert";
 import { join } from "@std/path";
 import {
+  type AncillaryUsageRecord,
   appendAncillaryUsage,
   readAncillaryUsageFile,
-  type AncillaryUsageRecord,
 } from "./ancillary-usage.ts";
 import { withUrrasDir } from "./test-support.ts";
 
