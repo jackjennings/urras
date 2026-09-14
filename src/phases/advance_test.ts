@@ -363,17 +363,12 @@ Deno.test("advancePhase: dead PID on implementation logs status-transition to wa
       resolveModelConfig: () => ({ model: "m", thinking: "off" }),
     }),
   );
-  assertSpyCalls(appendLogSpy, 2);
+  assertSpyCalls(appendLogSpy, 1);
   assertEquals(logEntries[0], {
     event: "status-transition",
     phase: "implementation",
     from: "running",
     to: "waiting",
-  });
-  assertEquals(logEntries[1], {
-    event: "error",
-    context: "spawnOutlierAnalysis",
-    message: "no jackjennings/lazyboy worktree",
   });
 });
 
@@ -2282,12 +2277,11 @@ Deno.test(
   "advancePhase: implementation/running with dead PID calls spawnOutlierAnalysis with ticket id, dir, worktree path, and phase",
   async () => {
     const ticket = makeTicket({
-      id: "gh-1",
       phase: "implementation",
       status: "running",
       prs: [{ url: "u", title: "T", dependsOn: [], merged: false }],
       worktrees: {
-        "jackjennings/lazyboy": { path: "/wt/path", branch: "gh-1" },
+        "org/repo": { path: "/wt/path", branch: "b" },
       },
     });
     const calls: Array<[string, string, string, string]> = [];
@@ -2311,15 +2305,15 @@ Deno.test(
       }),
     );
     assertSpyCalls(spawnOutlierAnalysisSpy, 1);
-    assertEquals(calls[0][0], "gh-1");
-    assertEquals(calls[0][1], "/state/gh-1");
+    assertEquals(calls[0][0], "github/org/repo/1");
+    assertEquals(calls[0][1], "/state/github/org/repo/1");
     assertEquals(calls[0][2], "/wt/path");
     assertEquals(calls[0][3], "implementation");
   },
 );
 
 Deno.test(
-  "advancePhase: implementation/running with dead PID and no lazyboy worktree logs error and does not call spawnOutlierAnalysis",
+  "advancePhase: implementation/running with dead PID and no matching worktree silently skips spawnOutlierAnalysis",
   async () => {
     const ticket = makeTicket({
       phase: "implementation",
@@ -2328,30 +2322,15 @@ Deno.test(
       worktrees: {},
     });
     const spawnOutlierAnalysisSpy = spy(() => Promise.resolve());
-    const logEntries: object[] = [];
-    const appendLogSpy = spy(
-      (_dir: string, _id: string, entry: object) => {
-        logEntries.push(entry);
-        return Promise.resolve();
-      },
-    );
     await advancePhase(
       ticket,
       "/state",
       makeTickDeps({
-        appendLog: appendLogSpy,
         resolveModelConfig: () => ({ model: "m", thinking: "off" }),
         spawnOutlierAnalysis: spawnOutlierAnalysisSpy,
       }),
     );
     assertSpyCalls(spawnOutlierAnalysisSpy, 0);
-    assert(
-      logEntries.some(
-        (e) =>
-          (e as Record<string, unknown>).event === "error" &&
-          (e as Record<string, unknown>).context === "spawnOutlierAnalysis",
-      ),
-    );
   },
 );
 
@@ -2359,11 +2338,10 @@ Deno.test(
   'advancePhase: plan/running with dead PID calls spawnOutlierAnalysis with phase "plan"',
   async () => {
     const ticket = makeTicket({
-      id: "gh-1",
       phase: "plan",
       status: "running",
       worktrees: {
-        "jackjennings/lazyboy": { path: "/wt/path", branch: "gh-1" },
+        "org/repo": { path: "/wt/path", branch: "b" },
       },
     });
     const calls: Array<[string, string, string, string]> = [];
@@ -2387,15 +2365,15 @@ Deno.test(
       }),
     );
     assertSpyCalls(spawnOutlierAnalysisSpy, 1);
-    assertEquals(calls[0][0], "gh-1");
-    assertEquals(calls[0][1], "/state/gh-1");
+    assertEquals(calls[0][0], "github/org/repo/1");
+    assertEquals(calls[0][1], "/state/github/org/repo/1");
     assertEquals(calls[0][2], "/wt/path");
     assertEquals(calls[0][3], "plan");
   },
 );
 
 Deno.test(
-  "advancePhase: plan/running with dead PID and no lazyboy worktree logs error and does not call spawnOutlierAnalysis",
+  "advancePhase: plan/running with dead PID and no matching worktree silently skips spawnOutlierAnalysis",
   async () => {
     const ticket = makeTicket({
       phase: "plan",
@@ -2403,10 +2381,38 @@ Deno.test(
       worktrees: {},
     });
     const spawnOutlierAnalysisSpy = spy(() => Promise.resolve());
-    const logEntries: object[] = [];
-    const appendLogSpy = spy(
-      (_dir: string, _id: string, entry: object) => {
-        logEntries.push(entry);
+    await advancePhase(
+      ticket,
+      "/state",
+      makeTickDeps({
+        resolveModelConfig: () => ({ model: "m", thinking: "off" }),
+        spawnOutlierAnalysis: spawnOutlierAnalysisSpy,
+      }),
+    );
+    assertSpyCalls(spawnOutlierAnalysisSpy, 0);
+  },
+);
+
+Deno.test(
+  "advancePhase: implementation/running with dead PID resolves worktree by derived project path for non-self-hosted GitHub repo",
+  async () => {
+    const ticket = makeTicket({
+      phase: "implementation",
+      status: "running",
+      prs: [{ url: "u", title: "T", dependsOn: [], merged: false }],
+      worktrees: {
+        "org/repo": { path: "/some/path", branch: "b" },
+      },
+    });
+    const calls: Array<[string, string, string, string]> = [];
+    const spawnOutlierAnalysisSpy = spy(
+      (
+        ticketId: string,
+        ticketDir: string,
+        worktreePath: string,
+        phase: string,
+      ) => {
+        calls.push([ticketId, ticketDir, worktreePath, phase]);
         return Promise.resolve();
       },
     );
@@ -2414,19 +2420,12 @@ Deno.test(
       ticket,
       "/state",
       makeTickDeps({
-        appendLog: appendLogSpy,
         resolveModelConfig: () => ({ model: "m", thinking: "off" }),
         spawnOutlierAnalysis: spawnOutlierAnalysisSpy,
       }),
     );
-    assertSpyCalls(spawnOutlierAnalysisSpy, 0);
-    assert(
-      logEntries.some(
-        (e) =>
-          (e as Record<string, unknown>).event === "error" &&
-          (e as Record<string, unknown>).context === "spawnOutlierAnalysis",
-      ),
-    );
+    assertSpyCalls(spawnOutlierAnalysisSpy, 1);
+    assertEquals(calls[0][2], "/some/path");
   },
 );
 
