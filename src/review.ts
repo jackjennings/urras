@@ -844,15 +844,13 @@ export class ReviewSession implements Component, Focusable {
       this.close();
       return;
     }
-    const timestamp = formatTimestamp(now);
-    const feedbackFile = `${timestamp}-${this.ticket.phase}-feedback.md`;
-    await submitFeedback(
-      this.stateDir,
-      this.id,
-      feedbackFile,
-      text,
-      this.patchTicket,
-    );
+    await submitFeedback({
+      stateDir: this.stateDir,
+      id: this.id,
+      phase: this.ticket.phase,
+      content: text,
+      patchTicket: this.patchTicket,
+    });
     await this.commit(this.stateDir, this.id, `review: ${this.id}`);
     this.close();
   };
@@ -1035,10 +1033,13 @@ export async function review(
         }`,
       );
     }
-    const now = Temporal.Now.zonedDateTimeISO("UTC");
-    const timestamp = formatTimestamp(now);
-    const feedbackFile = `${timestamp}-${ticket.phase}-feedback.md`;
-    await submitFeedback(stateDir, id, feedbackFile, text, patchTicket);
+    await submitFeedback({
+      stateDir,
+      id,
+      phase: ticket.phase,
+      content: text,
+      patchTicket,
+    });
     await commit(stateDir, id, `review: ${id}`);
     Deno.exit(0);
   }

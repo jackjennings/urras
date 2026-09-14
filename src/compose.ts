@@ -534,10 +534,15 @@ export function composeTickDeps(
         );
         return res.ok;
       },
-      submitFeedback: async (stateDir, id, filename, content) => {
+      submitFeedback: async ({ stateDir, id, phase, content }) => {
         const { patchTicket } = await readTicketWithPatch(stateDir, id);
-        await submitFeedback(stateDir, id, filename, content, patchTicket, {
-          scopeRetries: 1,
+        await submitFeedback({
+          stateDir,
+          id,
+          phase,
+          content,
+          patchTicket,
+          extraPatch: { scopeRetries: 1 },
         });
       },
     }),
