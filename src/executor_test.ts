@@ -34,10 +34,29 @@ function makeOpts(overrides: Partial<ExecutorOptions> = {}): ExecutorOptions {
 }
 
 Deno.test("buildPhaseArgs: derives --phase from outputFile stem", () => {
-  const args = buildPhaseArgs(makeOpts({ outputFile: "intake.md" }));
+  const args = buildPhaseArgs(
+    makeOpts({ outputFile: "20260911T153053-intake.md" }),
+  );
   const idx = args.indexOf("--phase");
   assertNotEquals(idx, -1);
+  assertEquals(args[idx + 1], "20260911T153053-intake");
+});
+
+Deno.test("buildPhaseArgs: includes --bare-phase when barePhase is set", () => {
+  const args = buildPhaseArgs(
+    makeOpts({
+      outputFile: "20260911T153053-intake.md",
+      barePhase: "intake",
+    }),
+  );
+  const idx = args.indexOf("--bare-phase");
+  assertNotEquals(idx, -1);
   assertEquals(args[idx + 1], "intake");
+});
+
+Deno.test("buildPhaseArgs: omits --bare-phase when barePhase is absent", () => {
+  const args = buildPhaseArgs(makeOpts());
+  assertFalse(args.includes("--bare-phase"));
 });
 
 Deno.test("buildPhaseArgs: includes --ticket-dir", () => {

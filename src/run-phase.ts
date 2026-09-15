@@ -479,6 +479,7 @@ export async function executePhase(
     languageModel?: LanguageModel;
     critiqueModel?: string;
     critiqueThinking?: string;
+    barePhase?: string;
   },
   agent: CodeAgent,
 ): Promise<number> {
@@ -556,9 +557,10 @@ export async function executePhase(
   let rerunResult: { stdout: string; stderr: string; code: number } | null =
     null;
 
+  const effectivePhase = opts.barePhase ?? opts.phase;
   const critiquePath = join(
     new URL("./phases/prompts/", import.meta.url).pathname,
-    `${opts.phase}-critique.md`,
+    `${effectivePhase}-critique.md`,
   );
   let critiquePrompt: string | null = null;
   try {
@@ -731,7 +733,7 @@ export async function executePhase(
     if (opts.languageModel === undefined) throw new Error("no-model");
     const ticketProvider = opts.ticketId?.split("/")[0];
     const selfApproveResult = await Effect.runPromise(selfApprove({
-      phase: opts.phase,
+      phase: effectivePhase,
       ticketDir: opts.ticketDir,
       model: opts.languageModel,
       worktreePath: (ticketProvider && opts.ticketId)
@@ -809,6 +811,7 @@ if (import.meta.main) {
       "ticket-dir",
       "output-file",
       "phase",
+      "bare-phase",
       "scope",
       "prompt",
       "worktrees",
@@ -875,6 +878,7 @@ if (import.meta.main) {
       stateDir,
       outputFile,
       phase,
+      barePhase: args["bare-phase"] ?? undefined,
       scopeDirs,
       prompt,
       worktrees,

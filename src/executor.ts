@@ -1,4 +1,5 @@
 import type { WorktreeInfo } from "./state/types.ts";
+import type { ActivePhase } from "./phases/types.ts";
 import { readTextFileSync, remove, writeTextFile } from "./filesystem.ts";
 import { bootId } from "./paths.ts";
 
@@ -25,6 +26,7 @@ export interface ExecutorOptions {
   includePrinciples?: boolean;
   maxTurns?: number;
   ollamaModels?: Array<{ model: string; url?: string }>;
+  barePhase?: ActivePhase;
 }
 
 export function isProcessAlive(pid: number): boolean {
@@ -90,6 +92,9 @@ export function buildPhaseArgs(opts: ExecutorOptions): string[] {
   }
   if (opts.ollamaModels && opts.ollamaModels.length > 0) {
     args.push("--ollama-models", JSON.stringify(opts.ollamaModels));
+  }
+  if (opts.barePhase !== undefined) {
+    args.push("--bare-phase", opts.barePhase);
   }
   return args;
 }
