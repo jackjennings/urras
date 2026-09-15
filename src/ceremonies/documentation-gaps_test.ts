@@ -20,7 +20,10 @@ Deno.test("DocumentationGapsCeremony: calls run when open questions are present"
       "## Open Questions\n\nWhy does X work this way?\n",
     );
     const run: CommandRunner = spy((_args: string[]) =>
-      Promise.resolve({ code: 0, stdout: "## Gap\n\n**Occurrences:** 1\n" })
+      Promise.resolve({
+        code: 0,
+        stdout: JSON.stringify({ result: "## Gap\n\n**Occurrences:** 1\n" }),
+      })
     );
     const ceremony = new DocumentationGapsCeremony({
       stateDir,
@@ -89,7 +92,10 @@ Deno.test("DocumentationGapsCeremony: passes correct model and flags to claude",
     let capturedArgs: string[] = [];
     const run: CommandRunner = spy((args: string[]) => {
       capturedArgs = args;
-      return Promise.resolve({ code: 0, stdout: "NO_GAPS" });
+      return Promise.resolve({
+        code: 0,
+        stdout: JSON.stringify({ result: "NO_GAPS" }),
+      });
     });
     const ceremony = new DocumentationGapsCeremony({
       stateDir,
@@ -104,7 +110,7 @@ Deno.test("DocumentationGapsCeremony: passes correct model and flags to claude",
     assertEquals(capturedArgs[modelIdx + 1], "claude-sonnet-4-6");
     const fmtIdx = capturedArgs.indexOf("--output-format");
     assertNotEquals(fmtIdx, -1);
-    assertEquals(capturedArgs[fmtIdx + 1], "text");
+    assertEquals(capturedArgs[fmtIdx + 1], "json");
     assertStringIncludes(capturedArgs.join("\0"), "--tools\0");
   } finally {
     await Deno.remove(stateDir, { recursive: true });
@@ -125,7 +131,10 @@ Deno.test("DocumentationGapsCeremony: writes no-gaps report when run returns NO_
       "## Open Questions\n\nAny gaps?\n",
     );
     const run: CommandRunner = spy((_args: string[]) =>
-      Promise.resolve({ code: 0, stdout: "NO_GAPS" })
+      Promise.resolve({
+        code: 0,
+        stdout: JSON.stringify({ result: "NO_GAPS" }),
+      })
     );
     const ceremony = new DocumentationGapsCeremony({
       stateDir,

@@ -1,5 +1,6 @@
 import { assert, assertEquals, assertFalse } from "@std/assert";
 import { spy } from "@std/testing/mock";
+import type { AncillaryUsageRecord } from "../ancillary-usage.ts";
 import { checkOllamaAvailable, OllamaLanguageModel } from "./ollama.ts";
 
 function makeFetch(
@@ -124,4 +125,100 @@ Deno.test("checkOllamaAvailable: fetch throws returns false", async () => {
     (_url: unknown) => Promise.reject(new Error("refused")),
   ) as unknown as typeof fetch;
   assertFalse(await checkOllamaAvailable(_fetch, "http://localhost:11434"));
+});
+
+Deno.test("OllamaLanguageModel.generateText: recordUsage fires with token counts when present", async () => {
+  const records: AncillaryUsageRecord[] = [];
+  const recordUsage = (r: AncillaryUsageRecord) => {
+    records.push(r);
+    return Promise.resolve();
+  };
+  const _fetch = makeFetch(() => ({
+    status: 200,
+    body: JSON.stringify({
+      response: "Short Title",
+      prompt_eval_count: 42,
+      eval_count: 18,
+    }),
+  }));
+  const model = new OllamaLanguageModel(_fetch, {
+    model: "qwen2.5:7b",
+    callSite: "generateShortTitle",
+    recordUsage,
+  });
+  const result = await model.generateText({ systemPrompt: "s", prompt: "p" });
+  assertEquals(result, "Short Title");
+  assertEquals(records.length, 1);
+  assertEquals(records[0].callSite, "generateShortTitle");
+  assertEquals(records[0].adapter, "ollama");
+  assertEquals(records[0].model, "qwen2.5:7b");
+  assertEquals(records[0].input, 42);
+  assertEquals(records[0].output, 18);
+  assert(records[0].estimated === undefined);
+});
+
+Deno.test("OllamaLanguageModel.generateText: recordUsage omits token fields when absent", async () => {
+  const records: AncillaryUsageRecord[] = [];
+  const recordUsage = (r: AncillaryUsageRecord) => {
+    records.push(r);
+    return Promise.resolve();
+  };
+  const _fetch = makeFetch(() => ({
+    status: 200,
+    body: JSON.stringify({ response: "ok" }),
+  }));
+  const model = new OllamaLanguageModel(_fetch, {
+    model: "qwen2.5:7b",
+    callSite: "test",
+    recordUsage,
+  });
+  await model.generateText({ systemPrompt: "s", prompt: "p" });
+  assertEquals(records.length, 1);
+  assert(records[0].input === undefined);
+  assert(records[0].output === undefined);
+});
+
+Deno.test("OllamaLanguageModel.generateText: recordUsage does not fire on null return", async () => {
+  const records: AncillaryUsageRecord[] = [];
+  const recordUsage = (r: AncillaryUsageRecord) => {
+    records.push(r);
+    return Promise.resolve();
+  };
+  const _fetch = makeFetch(() => ({ status: 500 }));
+  const model = new OllamaLanguageModel(_fetch, {
+    model: "qwen2.5:7b",
+    callSite: "test",
+    recordUsage,
+  });
+  await model.generateText({ systemPrompt: "s", prompt: "p" });
+  assertEquals(records.length, 0);
+});
+
+Deno.test("OllamaLanguageModel.generateObject: recordUsage fires with token counts when present", async () => {
+  const records: AncillaryUsageRecord[] = [];
+  const recordUsage = (r: AncillaryUsageRecord) => {
+    records.push(r);
+    return Promise.resolve();
+  };
+  const _fetch = makeFetch(() => ({
+    status: 200,
+    body: JSON.stringify({
+      response: '{"verdict":"KEEP"}',
+      prompt_eval_count: 15,
+      eval_count: 8,
+    }),
+  }));
+  const model = new OllamaLanguageModel(_fetch, {
+    model: "qwen2.5:7b",
+    callSite: "judgePrinciples",
+    recordUsage,
+  });
+  await model.generateObject<{ verdict: string }>({
+    systemPrompt: "s",
+    prompt: "p",
+    schema: {},
+  });
+  assertEquals(records.length, 1);
+  assertEquals(records[0].input, 15);
+  assertEquals(records[0].output, 8);
 });
