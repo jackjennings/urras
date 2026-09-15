@@ -1012,6 +1012,23 @@ Deno.test("writeTicket/readTicket: outputRetries absent when undefined", async (
   }
 });
 
+Deno.test("store: scopeRetries round-trips through writeTicket/readTicket", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    const ticket = makeTicket({
+      id: "github/org/repo/1",
+      scopeRetries: 1,
+      status: "waiting",
+      phase: "intake",
+    });
+    await writeTicket(dir, ticket);
+    const read = await readTicket(dir, ticket.id);
+    assertEquals(read.scopeRetries, 1);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
 Deno.test("commitPrinciples: commits principles.md to git", async () => {
   const dir = await Deno.makeTempDir();
   try {
@@ -1796,6 +1813,7 @@ Deno.test(
         providerPickedUp: true,
         outputRetries: 1,
         resumeRetries: 2,
+        scopeRetries: 3,
         phaseSessionIds: { spec: "abc-123", implementation: undefined },
         notifiedNeedsAttention: true,
         created: "2026-01-01T00:00:00Z",

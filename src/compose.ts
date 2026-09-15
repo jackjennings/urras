@@ -16,6 +16,8 @@ import {
   listLearnings,
   listTickets,
   readTicket,
+  readTicketWithPatch,
+  submitFeedback,
   writeLearning,
   writePhaseOutput,
   writeTicket,
@@ -513,6 +515,35 @@ export function composeTickDeps(
             }`,
           );
         }
+      },
+      listRepoCorpus: () =>
+        listRepoCorpus(
+          config.codebase.roots.map(expandHome),
+          config.github.repos,
+        ),
+      checkRepoExists: async (slug: string) => {
+        const { token } = resolveAccount(slug);
+        const res = await http.get(
+          `https://api.github.com/repos/${slug}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              Accept: "application/vnd.github+json",
+            },
+          },
+        );
+        return res.ok;
+      },
+      submitFeedback: async ({ stateDir, id, phase, content }) => {
+        const { patchTicket } = await readTicketWithPatch(stateDir, id);
+        await submitFeedback({
+          stateDir,
+          id,
+          phase,
+          content,
+          patchTicket,
+          extraPatch: { scopeRetries: 1 },
+        });
       },
     }),
     reviseScopeAction({
