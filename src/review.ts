@@ -204,6 +204,35 @@ export async function findLatestSelfApprove(
   return { filename: newest, fullText };
 }
 
+export async function findLatestFeedback(
+  ticketDir: string,
+  phaseName: string,
+  afterTimestamp: string,
+  beforeTimestamp: string,
+): Promise<{ filename: string; fullText: string } | null> {
+  const pattern = new RegExp(
+    `^\\d{8}T\\d{6}-${phaseName}-feedback\\.md$`,
+  );
+  const matches: string[] = [];
+  try {
+    for await (const entry of readDir(ticketDir)) {
+      if (entry.isFile && pattern.test(entry.name)) {
+        const ts = entry.name.slice(0, 15);
+        if (ts > afterTimestamp && ts <= beforeTimestamp) {
+          matches.push(entry.name);
+        }
+      }
+    }
+  } catch {
+    /* dir missing */
+  }
+  if (matches.length === 0) return null;
+  matches.sort();
+  const newest = matches[matches.length - 1];
+  const fullText = await readTextFile(join(ticketDir, newest));
+  return { filename: newest, fullText };
+}
+
 export function renderTabBar(
   tabs: Array<{ phaseName: string }>,
   activeIndex: number,
@@ -472,6 +501,18 @@ function rejectionBannerLines(
   const bodyLines = fullText
     .split("\n")
     .flatMap((line) => (line ? wrapTextWithAnsi(red(line), width) : [""]));
+  return [header, ...bodyLines];
+}
+
+function feedbackBannerLines(
+  phaseName: string,
+  fullText: string,
+  width: number,
+): string[] {
+  const header = bold(yellow(`Human feedback: ${phaseName}`));
+  const bodyLines = fullText
+    .split("\n")
+    .flatMap((line) => (line ? wrapTextWithAnsi(yellow(line), width) : [""]));
   return [header, ...bodyLines];
 }
 
@@ -938,6 +979,32 @@ export class ReviewSession implements Component, Focusable {
             ...originalGetLines(width),
           ],
         };
+      }
+    }
+
+    for (let i = 0; i < tabs.length; i++) {
+      const isLatest = i === tabs.length - 1;
+      const previousFilename = tabs[i].previousFilename;
+      if (isLatest && previousFilename !== null) {
+        const feedback = await findLatestFeedback(
+          ticketDir,
+          tabs[i].phaseName,
+          previousFilename.slice(0, 15),
+          tabs[i].filename.slice(0, 15),
+        );
+        if (feedback !== null) {
+          const originalGetLines = tabContents[i].getLines;
+          const phaseName = tabs[i].phaseName;
+          const fullText = feedback.fullText;
+          tabContents[i] = {
+            ...tabContents[i],
+            getLines: (width) => [
+              ...feedbackBannerLines(phaseName, fullText, width),
+              "",
+              ...originalGetLines(width),
+            ],
+          };
+        }
       }
     }
 
