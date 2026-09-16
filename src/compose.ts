@@ -31,6 +31,7 @@ import { Effect } from "effect";
 import { SelfReviewModelError } from "./self-approve.ts";
 import { judgePrinciples } from "./judge-principles.ts";
 import { expandHome } from "./config.ts";
+import { bootstrapGlossaryEntry } from "./glossary.ts";
 import { urrasDir } from "./paths.ts";
 import { GitHubProvider } from "./providers/github.ts";
 import { JiraProvider } from "./providers/jira.ts";
@@ -1506,6 +1507,8 @@ export function composeTickDeps(
         });
       },
       maxPromptTokens: config.tick.maxPromptTokens,
+      bootstrapGlossaryEntry: (dir, org, repo) =>
+        bootstrapGlossaryEntry(dir, org, repo),
     },
     runMigrations: createMigrationRunner({
       listMigrationFiles: async () => {
