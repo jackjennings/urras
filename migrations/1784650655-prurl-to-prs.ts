@@ -20,12 +20,13 @@ const migration: Migration = {
     const prUrl = data.prUrl as string | undefined;
     if (!prUrl) return ticket;
 
+    const worktreeKey = Object.keys(ticket.worktrees)[0];
     const prs: PrEntry[] = [{
       url: prUrl,
       title: "",
       dependsOn: [],
       merged: false,
-      worktreeKey: Object.keys(ticket.worktrees)[0],
+      ...(worktreeKey !== undefined ? { worktreeKey } : {}),
     }];
 
     return { ...ticket, prs };

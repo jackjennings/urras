@@ -94,6 +94,37 @@ body
   await Deno.remove(dir, { recursive: true });
 });
 
+Deno.test("readTicket: drops malformed worktrees entry instead of nulling path/branch", async () => {
+  const dir = await Deno.makeTempDir();
+  const ticketDir = join(dir, "gh-2");
+  await Deno.mkdir(ticketDir);
+  await Deno.writeTextFile(
+    join(ticketDir, "meta.md"),
+    `---
+id: gh-2
+provider: github
+title: Test
+url: https://github.com/jackjennings/lazyboy/issues/2
+phase: new
+approved: false
+scope: []
+created: "2026-06-22T00:00:00Z"
+updated: "2026-06-22T00:00:00Z"
+worktrees:
+  jackjennings/lazyboy: gh-2/some-branch
+---
+
+body
+`,
+  );
+  const ticket = await readTicket(dir, "gh-2");
+  assertEquals(ticket.worktrees, {});
+  await writeTicket(dir, ticket);
+  const rewritten = await readTicket(dir, "gh-2");
+  assertEquals(rewritten.worktrees, {});
+  await Deno.remove(dir, { recursive: true });
+});
+
 Deno.test("readTicket: migrates old phase format to two fields", async () => {
   const dir = await Deno.makeTempDir();
   const ticketDir = join(dir, "gh-1");

@@ -131,13 +131,22 @@ const FIELDS: { [K in keyof TicketState]-?: Field<K> } = {
   worktrees: {
     write: (t) => t.worktrees,
     read: (d) => {
-      const raw = d.worktrees as
-        | Record<string, { path: string; branch: string }>
-        | undefined;
+      const raw = d.worktrees as Record<string, unknown> | undefined;
       const worktrees: Record<string, WorktreeInfo> = {};
       if (raw) {
         for (const [slug, info] of Object.entries(raw)) {
-          worktrees[slug] = { path: info.path, branch: info.branch };
+          if (
+            typeof info !== "object" || info === null ||
+            typeof (info as Record<string, unknown>).path !== "string" ||
+            typeof (info as Record<string, unknown>).branch !== "string"
+          ) {
+            console.error(
+              `readTicket: dropping malformed worktrees entry for ${slug}`,
+            );
+            continue;
+          }
+          const { path, branch } = info as { path: string; branch: string };
+          worktrees[slug] = { path, branch };
         }
       }
       return worktrees;
