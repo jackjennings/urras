@@ -579,6 +579,134 @@ Deno.test(
   },
 );
 
+// ── shared worktreeKey (stacked PRs on same branch) ──────────────────────────
+
+Deno.test(
+  "shared worktreeKey: first PR merges, second still open → worktree retained, no cleanup, status waiting",
+  async () => {
+    const cleanups: string[] = [];
+    const result = await makeAction({
+      getPRState: (url) =>
+        Promise.resolve(
+          url === "https://github.com/myorg/myrepo/pull/1" ? "merged" : "open",
+        ),
+      cleanupWorktree: (wt) => {
+        cleanups.push(wt.path);
+        return Promise.resolve();
+      },
+    }).run(
+      makeTicket({
+        ...BASE,
+        worktrees: {
+          "myorg/myrepo": { path: "/wt/myorg/myrepo", branch: "gh-42" },
+        },
+        prs: [
+          {
+            url: "https://github.com/myorg/myrepo/pull/1",
+            title: "A",
+            dependsOn: [],
+            merged: false,
+            worktreeKey: "myorg/myrepo",
+          },
+          {
+            url: "https://github.com/myorg/myrepo/pull/2",
+            title: "B",
+            dependsOn: [],
+            merged: false,
+            worktreeKey: "myorg/myrepo",
+          },
+        ],
+      }),
+      "/state",
+    );
+    assertEquals(result?.status, "waiting");
+    assertEquals(cleanups, []);
+    assertEquals(result?.worktrees?.["myorg/myrepo"]?.path, "/wt/myorg/myrepo");
+  },
+);
+
+Deno.test(
+  "shared worktreeKey: both PRs merge in same tick → cleanup called once, status done",
+  async () => {
+    const cleanups: string[] = [];
+    const result = await makeAction({
+      getPRState: () => Promise.resolve("merged"),
+      cleanupWorktree: (wt) => {
+        cleanups.push(wt.path);
+        return Promise.resolve();
+      },
+    }).run(
+      makeTicket({
+        ...BASE,
+        worktrees: {
+          "myorg/myrepo": { path: "/wt/myorg/myrepo", branch: "gh-42" },
+        },
+        prs: [
+          {
+            url: "https://github.com/myorg/myrepo/pull/1",
+            title: "A",
+            dependsOn: [],
+            merged: false,
+            worktreeKey: "myorg/myrepo",
+          },
+          {
+            url: "https://github.com/myorg/myrepo/pull/2",
+            title: "B",
+            dependsOn: [],
+            merged: false,
+            worktreeKey: "myorg/myrepo",
+          },
+        ],
+      }),
+      "/state",
+    );
+    assertEquals(result?.status, "done");
+    assertEquals(cleanups, ["/wt/myorg/myrepo"]);
+  },
+);
+
+Deno.test(
+  "shared worktreeKey: second PR merges on tick 2 (first pre-merged, no worktree entry for it) → cleanup runs for shared key",
+  async () => {
+    const cleanups: string[] = [];
+    const result = await makeAction({
+      getPRState: (url) =>
+        Promise.resolve(
+          url === "https://github.com/myorg/myrepo/pull/2" ? "merged" : "open",
+        ),
+      cleanupWorktree: (wt) => {
+        cleanups.push(wt.path);
+        return Promise.resolve();
+      },
+    }).run(
+      makeTicket({
+        ...BASE,
+        worktrees: {
+          "myorg/myrepo": { path: "/wt/myorg/myrepo", branch: "gh-42" },
+        },
+        prs: [
+          {
+            url: "https://github.com/myorg/myrepo/pull/1",
+            title: "A",
+            dependsOn: [],
+            merged: true,
+          },
+          {
+            url: "https://github.com/myorg/myrepo/pull/2",
+            title: "B",
+            dependsOn: ["https://github.com/myorg/myrepo/pull/1"],
+            merged: false,
+            worktreeKey: "myorg/myrepo",
+          },
+        ],
+      }),
+      "/state",
+    );
+    assertEquals(result?.status, "done");
+    assertEquals(cleanups, ["/wt/myorg/myrepo"]);
+  },
+);
+
 // ── assertSpyCalls usage verification ────────────────────────────────────────
 
 Deno.test(
