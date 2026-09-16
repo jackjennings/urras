@@ -17,6 +17,7 @@ import {
   classifyApproval,
   ErrorOverlay,
   findAllPhaseOutputs,
+  findLatestFeedback,
   findLatestPhaseOutput,
   findLatestSelfApprove,
   formatTimestamp,
@@ -516,6 +517,151 @@ Deno.test("findLatestSelfApprove: returns newest self-review, skips stale ones",
     );
     assertEquals(result?.filename, "20260812T032227-plan-self-approve.md");
     assertEquals(result?.fullText, "REJECT newer");
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+// ── findLatestFeedback ────────────────────────────────────────────────────────
+
+Deno.test("findLatestFeedback: returns null when directory is missing", async () => {
+  assertEquals(
+    await findLatestFeedback(
+      "/nonexistent/path",
+      "implementation",
+      "20260101T000000",
+      "20260103T000000",
+    ),
+    null,
+  );
+});
+
+Deno.test("findLatestFeedback: returns null when no feedback files exist", async () => {
+  const tempDir = await Deno.makeTempDir();
+  try {
+    assertEquals(
+      await findLatestFeedback(
+        tempDir,
+        "implementation",
+        "20260101T000000",
+        "20260103T000000",
+      ),
+      null,
+    );
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+Deno.test("findLatestFeedback: returns null when feedback file timestamp is <= afterTimestamp", async () => {
+  const tempDir = await Deno.makeTempDir();
+  try {
+    await Deno.writeTextFile(
+      join(tempDir, "20260101T000000-implementation-feedback.md"),
+      "feedback",
+    );
+    assertEquals(
+      await findLatestFeedback(
+        tempDir,
+        "implementation",
+        "20260101T000000",
+        "20260103T000000",
+      ),
+      null,
+    );
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+Deno.test("findLatestFeedback: returns null when feedback file timestamp is > beforeTimestamp", async () => {
+  const tempDir = await Deno.makeTempDir();
+  try {
+    await Deno.writeTextFile(
+      join(tempDir, "20260103T000001-implementation-feedback.md"),
+      "feedback",
+    );
+    assertEquals(
+      await findLatestFeedback(
+        tempDir,
+        "implementation",
+        "20260101T000000",
+        "20260103T000000",
+      ),
+      null,
+    );
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+Deno.test("findLatestFeedback: returns file and content when timestamp is strictly between bounds", async () => {
+  const tempDir = await Deno.makeTempDir();
+  try {
+    const content = "Please fix the tests.";
+    await Deno.writeTextFile(
+      join(tempDir, "20260102T120000-implementation-feedback.md"),
+      content,
+    );
+    const result = await findLatestFeedback(
+      tempDir,
+      "implementation",
+      "20260101T000000",
+      "20260103T000000",
+    );
+    assertEquals(
+      result?.filename,
+      "20260102T120000-implementation-feedback.md",
+    );
+    assertEquals(result?.fullText, content);
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+Deno.test("findLatestFeedback: returns newest when multiple qualifying files exist", async () => {
+  const tempDir = await Deno.makeTempDir();
+  try {
+    await Deno.writeTextFile(
+      join(tempDir, "20260102T060000-implementation-feedback.md"),
+      "older feedback",
+    );
+    await Deno.writeTextFile(
+      join(tempDir, "20260102T180000-implementation-feedback.md"),
+      "newer feedback",
+    );
+    const result = await findLatestFeedback(
+      tempDir,
+      "implementation",
+      "20260101T000000",
+      "20260103T000000",
+    );
+    assertEquals(
+      result?.filename,
+      "20260102T180000-implementation-feedback.md",
+    );
+    assertEquals(result?.fullText, "newer feedback");
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+Deno.test("findLatestFeedback: returns null when only self-approve files exist", async () => {
+  const tempDir = await Deno.makeTempDir();
+  try {
+    await Deno.writeTextFile(
+      join(tempDir, "20260102T120000-implementation-self-approve.md"),
+      "REJECT",
+    );
+    assertEquals(
+      await findLatestFeedback(
+        tempDir,
+        "implementation",
+        "20260101T000000",
+        "20260103T000000",
+      ),
+      null,
+    );
   } finally {
     await Deno.remove(tempDir, { recursive: true });
   }
@@ -1664,3 +1810,101 @@ Deno.test("ReviewSession: escape input invokes close", () => {
   handler("\x1b");
   assertSpyCalls(closeSpy, 1);
 });
+
+// ── ReviewSession.create (feedback banner) ────────────────────────────────────
+
+Deno.test(
+  "ReviewSession.create: renders feedback banner on diff tab when feedback file exists between revisions",
+  async () => {
+    const stateDir = await Deno.makeTempDir();
+    try {
+      const id = "github/test/repo/200";
+      const ticketDir = join(stateDir, id);
+      await Deno.mkdir(ticketDir, { recursive: true });
+
+      await Deno.writeTextFile(
+        join(ticketDir, "20260101T000000-implementation.md"),
+        "Old implementation.",
+      );
+      await Deno.writeTextFile(
+        join(ticketDir, "20260103T000000-implementation.md"),
+        "New implementation.",
+      );
+      await Deno.writeTextFile(
+        join(ticketDir, "20260102T000000-implementation-feedback.md"),
+        "Please fix the tests.",
+      );
+
+      const tui = makeMockTui();
+      const ticket = makeTicket({
+        id,
+        phase: "implementation",
+        status: "waiting",
+      });
+      const savedKb = { id: "kb" } as unknown as KeybindingsManager;
+
+      const session = await ReviewSession.create({
+        id,
+        stateDir,
+        ticketDir,
+        ticket,
+        patchTicket: () => Promise.resolve(),
+        tui: tui as unknown as TUI,
+        close: () => {},
+        getKeybindings: () => savedKb,
+        setKeybindings: () => {},
+      });
+
+      const lines = session.render(80).map(stripAnsiCode);
+      assert(lines.some((l) => l.startsWith("Human feedback: implementation")));
+    } finally {
+      await Deno.remove(stateDir, { recursive: true });
+    }
+  },
+);
+
+Deno.test(
+  "ReviewSession.create: no feedback banner on diff tab when no feedback file exists in the window",
+  async () => {
+    const stateDir = await Deno.makeTempDir();
+    try {
+      const id = "github/test/repo/201";
+      const ticketDir = join(stateDir, id);
+      await Deno.mkdir(ticketDir, { recursive: true });
+
+      await Deno.writeTextFile(
+        join(ticketDir, "20260101T000000-implementation.md"),
+        "Old implementation.",
+      );
+      await Deno.writeTextFile(
+        join(ticketDir, "20260103T000000-implementation.md"),
+        "New implementation.",
+      );
+
+      const tui = makeMockTui();
+      const ticket = makeTicket({
+        id,
+        phase: "implementation",
+        status: "waiting",
+      });
+      const savedKb = { id: "kb" } as unknown as KeybindingsManager;
+
+      const session = await ReviewSession.create({
+        id,
+        stateDir,
+        ticketDir,
+        ticket,
+        patchTicket: () => Promise.resolve(),
+        tui: tui as unknown as TUI,
+        close: () => {},
+        getKeybindings: () => savedKb,
+        setKeybindings: () => {},
+      });
+
+      const lines = session.render(80).map(stripAnsiCode);
+      assertFalse(lines.some((l) => l.includes("Human feedback:")));
+    } finally {
+      await Deno.remove(stateDir, { recursive: true });
+    }
+  },
+);
