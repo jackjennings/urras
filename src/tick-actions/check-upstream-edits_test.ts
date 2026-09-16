@@ -547,6 +547,28 @@ Deno.test(
 );
 
 Deno.test(
+  "checkUpstreamEditsAction: trailing-whitespace-only body diff does not call judge, logs nothing, keeps waiting",
+  async () => {
+    const logged: object[] = [];
+    const judgeSpy = spy(() => Promise.resolve(false));
+    const result = await checkUpstreamEditsAction(
+      makeDeps({
+        fetchCurrentTicket: () =>
+          Promise.resolve({ title: BASE.title, body: BASE.body + "\n\n" }),
+        judgeUpstreamEdit: judgeSpy,
+        appendLog: (_sd, _id, entry) => {
+          logged.push(entry);
+          return Promise.resolve();
+        },
+      }),
+    ).run(makeTicket(BASE), "/state");
+    assertSpyCalls(judgeSpy, 0);
+    assertEquals(logged.length, 0);
+    assertEquals((result as TicketState | null)?.status, "waiting");
+  },
+);
+
+Deno.test(
   "checkUpstreamEditsAction: jira context file content references jira ticket URL",
   async () => {
     const written: string[] = [];
