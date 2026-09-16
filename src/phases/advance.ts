@@ -21,6 +21,7 @@ import {
 import { type ActivePhase, PHASE_SEQUENCE } from "./types.ts";
 import type { ModelablePhase } from "./model.ts";
 import { readDir, readTextFile } from "../filesystem.ts";
+import { deriveProjectPath } from "./project-path.ts";
 import type {
   SelfReviewModelError,
   SelfReviewOutcome,
@@ -570,7 +571,6 @@ export async function advancePhase(
           deps.readSelfApprove(
             join(stateDir, ticket.id),
             ticket.phase,
-            ticket.worktrees["jackjennings/lazyboy"]?.path,
           ),
         );
         if (Exit.isSuccess(selfApproveExit)) {
@@ -608,7 +608,8 @@ export async function advancePhase(
         }
       }
       if (ticket.phase === "implementation") {
-        const wt = ticket.worktrees["jackjennings/lazyboy"];
+        const wt =
+          ticket.worktrees[deriveProjectPath(ticket.provider, ticket.id)];
         if (wt) {
           deps.spawnOutlierAnalysis(
             ticket.id,
@@ -616,16 +617,11 @@ export async function advancePhase(
             wt.path,
             "implementation",
           ).catch(() => {});
-        } else {
-          await deps.appendLog(stateDir, ticket.id, {
-            event: "error",
-            context: "spawnOutlierAnalysis",
-            message: "no jackjennings/lazyboy worktree",
-          });
         }
       }
       if (ticket.phase === "plan") {
-        const wt = ticket.worktrees["jackjennings/lazyboy"];
+        const wt =
+          ticket.worktrees[deriveProjectPath(ticket.provider, ticket.id)];
         if (wt) {
           deps.spawnOutlierAnalysis(
             ticket.id,
@@ -633,12 +629,6 @@ export async function advancePhase(
             wt.path,
             "plan",
           ).catch(() => {});
-        } else {
-          await deps.appendLog(stateDir, ticket.id, {
-            event: "error",
-            context: "spawnOutlierAnalysis",
-            message: "no jackjennings/lazyboy worktree",
-          });
         }
       }
     }
