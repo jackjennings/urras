@@ -21,6 +21,10 @@ alias uhd='ur hud'
 alias uus='ur usage'
 alias uca='ur capture'
 alias ubr='ur brainstorm'
+alias uho='ur hold'
+alias ure='ur resume'
+alias upr='ur prioritize'
+alias ude='ur deprioritize'
 
 source <(ur completion zsh)
 
@@ -31,3 +35,7 @@ compdef urw=ur
 compdef urv=ur
 compdef ush=ur
 compdef uta=ur
+compdef uho=ur
+compdef ure=ur
+compdef upr=ur
+compdef ude=ur

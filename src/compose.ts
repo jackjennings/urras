@@ -1542,22 +1542,27 @@ export function composeTickDeps(
     }),
     selectCandidates: makeCandidateSelector({
       readLastWorked: async () => {
+        const empty = { prioritized: [], normal: [] };
         try {
           const raw = await readTextFile(lastWorkedPath);
           const parsed = JSON.parse(raw);
           if (
-            !Array.isArray(parsed) ||
-            !parsed.every((x) => typeof x === "string")
+            typeof parsed !== "object" ||
+            parsed === null ||
+            !Array.isArray(parsed.prioritized) ||
+            !Array.isArray(parsed.normal) ||
+            !parsed.prioritized.every((x: unknown) => typeof x === "string") ||
+            !parsed.normal.every((x: unknown) => typeof x === "string")
           ) {
-            return [];
+            return empty;
           }
-          return parsed as string[];
+          return parsed as { prioritized: string[]; normal: string[] };
         } catch {
-          return [];
+          return empty;
         }
       },
-      writeLastWorked: (ids) =>
-        writeTextFile(lastWorkedPath, JSON.stringify(ids)),
+      writeLastWorked: (worked) =>
+        writeTextFile(lastWorkedPath, JSON.stringify(worked)),
     }),
     listTickets: () => listTickets(stateDir),
     readTicket: (id) => readTicket(stateDir, id),

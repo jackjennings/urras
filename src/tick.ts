@@ -206,7 +206,7 @@ export class TickService {
     const limit = pLimit(TICK_ACTION_CONCURRENCY);
     const tasks = processedTickets.map((ticket) =>
       limit(async () => {
-        if (ticket.phase === "wont-do") return ticket;
+        if (ticket.phase === "wont-do" || ticket.held) return ticket;
         let current = ticket;
         for (const action of deps.tickActions) {
           try {
@@ -281,6 +281,7 @@ export class TickService {
     const candidateTickets = processedTickets.filter(
       (t) =>
         !droppedTicketIds.has(t.id) &&
+        !t.held &&
         t.status !== "done" &&
         t.status !== "needs-attention" &&
         !(t.phase === "merge" && t.status === "waiting") &&
@@ -289,7 +290,10 @@ export class TickService {
     );
 
     const selectedIds = await deps.selectCandidates(
-      candidateTickets.map((t) => t.id),
+      candidateTickets.map((t) => ({
+        id: t.id,
+        prioritized: t.prioritized ?? false,
+      })),
       deps.concurrency,
     );
     const selectedSet = new Set(selectedIds);

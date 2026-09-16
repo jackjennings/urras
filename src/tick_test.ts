@@ -11,6 +11,7 @@ import { join } from "@std/path";
 import { assertSpyCall, assertSpyCalls, spy } from "@std/testing/mock";
 import { TickService } from "./tick.ts";
 import { adjudicatePhaseModel } from "./pre-phase-adjudication.ts";
+import type { CandidateEntry } from "./candidate-selection.ts";
 import type { LanguageModel } from "./models/types.ts";
 import type { TickDeps } from "./phases/advance.ts";
 import type { Lock } from "./lock.ts";
@@ -324,7 +325,9 @@ Deno.test(
       status: "waiting",
     });
     const store: Record<string, TicketState> = { "gh-1": t1, "gh-2": t2 };
-    const selectCandidatesSpy = spy((ids: string[]) => Promise.resolve(ids));
+    const selectCandidatesSpy = spy((candidates: CandidateEntry[]) =>
+      Promise.resolve(candidates.map((c) => c.id))
+    );
     const deps = makeTickServiceDeps({
       listTickets: () => Promise.resolve(["gh-1", "gh-2"]),
       readTicket: (id) => Promise.resolve(store[id]),
@@ -332,7 +335,15 @@ Deno.test(
       concurrency: 1,
     });
     await new TickService(deps).run();
-    assertSpyCall(selectCandidatesSpy, 0, { args: [["gh-1", "gh-2"], 1] });
+    assertSpyCall(selectCandidatesSpy, 0, {
+      args: [
+        [
+          { id: "gh-1", prioritized: false },
+          { id: "gh-2", prioritized: false },
+        ],
+        1,
+      ],
+    });
   },
 );
 
@@ -353,7 +364,9 @@ Deno.test(
       "gh-1": running,
       "gh-2": waiting,
     };
-    const selectCandidatesSpy = spy((ids: string[]) => Promise.resolve(ids));
+    const selectCandidatesSpy = spy((candidates: CandidateEntry[]) =>
+      Promise.resolve(candidates.map((c) => c.id))
+    );
     const deps = makeTickServiceDeps({
       listTickets: () => Promise.resolve(["gh-1", "gh-2"]),
       readTicket: (id) => Promise.resolve(store[id]),
@@ -365,7 +378,9 @@ Deno.test(
       concurrency: 2,
     });
     await new TickService(deps).run();
-    assertSpyCall(selectCandidatesSpy, 0, { args: [["gh-2"], 2] });
+    assertSpyCall(selectCandidatesSpy, 0, {
+      args: [[{ id: "gh-2", prioritized: false }], 2],
+    });
   },
 );
 
@@ -378,7 +393,9 @@ Deno.test(
       status: "running",
     });
     const store: Record<string, TicketState> = { "gh-1": running };
-    const selectCandidatesSpy = spy((ids: string[]) => Promise.resolve(ids));
+    const selectCandidatesSpy = spy((candidates: CandidateEntry[]) =>
+      Promise.resolve(candidates.map((c) => c.id))
+    );
     const deps = makeTickServiceDeps({
       listTickets: () => Promise.resolve(["gh-1"]),
       readTicket: (id) => Promise.resolve(store[id]),
@@ -409,7 +426,9 @@ Deno.test(
       "gh-2": needsAttention,
       "gh-3": mergeWaiting,
     };
-    const selectCandidatesSpy = spy((ids: string[]) => Promise.resolve(ids));
+    const selectCandidatesSpy = spy((candidates: CandidateEntry[]) =>
+      Promise.resolve(candidates.map((c) => c.id))
+    );
     const deps = makeTickServiceDeps({
       listTickets: () => Promise.resolve(["gh-1", "gh-2", "gh-3"]),
       readTicket: (id) => Promise.resolve(store[id]),
@@ -430,7 +449,9 @@ Deno.test(
       status: "done",
     });
     const store: Record<string, TicketState> = { "gh-wont-do": wontDo };
-    const selectCandidatesSpy = spy((ids: string[]) => Promise.resolve(ids));
+    const selectCandidatesSpy = spy((candidates: CandidateEntry[]) =>
+      Promise.resolve(candidates.map((c) => c.id))
+    );
     const deps = makeTickServiceDeps({
       listTickets: () => Promise.resolve(["gh-wont-do"]),
       readTicket: (id) => Promise.resolve(store[id]),
@@ -447,9 +468,9 @@ Deno.test(
   async () => {
     const sequence: string[] = [];
     const deps = makeTickServiceDeps({
-      selectCandidates: spy((ids: string[]) => {
+      selectCandidates: spy((candidates: CandidateEntry[]) => {
         sequence.push("selectCandidates");
-        return Promise.resolve(ids);
+        return Promise.resolve(candidates.map((c) => c.id));
       }),
       commitState: spy(() => {
         sequence.push("commitState");

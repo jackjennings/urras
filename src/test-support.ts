@@ -61,7 +61,13 @@ export function makeTickServiceDeps(
     tickDeps: makeTickDeps(),
     runMigrations: (_dir, tickets) => Promise.resolve(tickets),
     selectCandidates: (candidates, concurrency) =>
-      Promise.resolve(selectCandidates(candidates, [], concurrency)),
+      Promise.resolve(
+        selectCandidates(
+          candidates,
+          { prioritized: [], normal: [] },
+          concurrency,
+        ),
+      ),
     listTickets: () => Promise.resolve([]),
     readTicket: (_id) => Promise.resolve(makeTicket()),
     writeTicket: () => Promise.resolve(),

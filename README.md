@@ -335,26 +335,30 @@ plugins=(... urras)
 The plugin sources `ur completion zsh` at shell startup, so no separate
 completion setup is needed when using the plugin.
 
-| Alias | Command         |
-| ----- | --------------- |
-| `utk` | `ur tick`       |
-| `uap` | `ur approve`    |
-| `ust` | `ur status`     |
-| `uen` | `ur enable`     |
-| `udi` | `ur disable`    |
-| `udo` | `ur doctor`     |
-| `uco` | `ur completion` |
-| `urt` | `ur retry`      |
-| `udc` | `ur decline`    |
-| `urw` | `ur rewind`     |
-| `urv` | `ur review`     |
-| `ush` | `ur shell`      |
-| `uta` | `ur tail`       |
-| `uup` | `ur update`     |
-| `uhd` | `ur hud`        |
-| `uus` | `ur usage`      |
-| `uca` | `ur capture`    |
-| `ubr` | `ur brainstorm` |
+| Alias | Command           |
+| ----- | ----------------- |
+| `utk` | `ur tick`         |
+| `uap` | `ur approve`      |
+| `ust` | `ur status`       |
+| `uen` | `ur enable`       |
+| `udi` | `ur disable`      |
+| `udo` | `ur doctor`       |
+| `uco` | `ur completion`   |
+| `urt` | `ur retry`        |
+| `udc` | `ur decline`      |
+| `urw` | `ur rewind`       |
+| `urv` | `ur review`       |
+| `ush` | `ur shell`        |
+| `uta` | `ur tail`         |
+| `uup` | `ur update`       |
+| `uhd` | `ur hud`          |
+| `uus` | `ur usage`        |
+| `uca` | `ur capture`      |
+| `ubr` | `ur brainstorm`   |
+| `uho` | `ur hold`         |
+| `ure` | `ur resume`       |
+| `upr` | `ur prioritize`   |
+| `ude` | `ur deprioritize` |
 
 ---
 
