@@ -13,6 +13,7 @@ import { assertSpyCall, assertSpyCalls, spy } from "@std/testing/mock";
 import { Effect } from "effect";
 import { advancePhase, type TickDeps } from "./advance.ts";
 import type { TicketState } from "../state/types.ts";
+import { readTicket, writeTicket } from "../state/store.ts";
 import { SelfReviewModelError } from "../self-approve.ts";
 import { loadPromptFile } from "./runners.ts";
 import { makeTickDeps, makeTicket } from "../test-support.ts";
@@ -1881,6 +1882,41 @@ Deno.test(
       to: "waiting",
     });
     assertEquals(logEntries[1], { event: "self-approved", phase: "intake" });
+  },
+);
+
+Deno.test(
+  "advancePhase: with real writeTicket, self-approve write after the running-to-waiting write does not throw stale revision",
+  async () => {
+    const stateDir = await Deno.makeTempDir();
+    try {
+      const initial = makeTicket({
+        id: "gh-99",
+        phase: "intake",
+        status: "running",
+      });
+      await writeTicket(stateDir, initial);
+      const ticket = await readTicket(stateDir, "gh-99");
+
+      await advancePhase(
+        ticket,
+        stateDir,
+        makeTickDeps({
+          writeTicket,
+          resolveModelConfig: () => ({ model: "m", thinking: "off" }),
+          readSelfApprove: () =>
+            Effect.succeed({ approved: true, reason: null }),
+        }),
+      );
+
+      const result = await readTicket(stateDir, "gh-99");
+      assertEquals(result.status, "waiting");
+      assertEquals(result.approvals.length, 1);
+      assertEquals(result.approvals[0].actor, "agent");
+      assertEquals(result.approvals[0].phase, "intake");
+    } finally {
+      await Deno.remove(stateDir, { recursive: true });
+    }
   },
 );
 

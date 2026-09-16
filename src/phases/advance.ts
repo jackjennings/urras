@@ -307,6 +307,7 @@ export async function advancePhase(
         phaseSessionIds,
       };
       await deps.writeTicket(stateDir, waitingTicket);
+      ticket.revision = waitingTicket.revision;
       await deps.appendLog(stateDir, ticket.id, {
         event: "status-transition",
         phase: ticket.phase,

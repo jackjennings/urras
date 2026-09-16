@@ -385,6 +385,7 @@ export async function writeTicket(
   }
   const raw = matter.stringify(ticket.body, frontmatter);
   await writeTextFile(join(dir, "meta.md"), raw);
+  ticket.revision = await sha256Hex(raw);
 }
 
 export async function readTicketWithPatch(
