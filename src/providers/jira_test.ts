@@ -1,10 +1,12 @@
 import {
+  assertArrayIncludes,
   assertEquals,
   assertFalse,
   assertLess,
   assertRejects,
   assertStringIncludes,
 } from "@std/assert";
+import { assertSpyCalls, spy } from "@std/testing/mock";
 import { JiraProvider } from "./jira.ts";
 import { compareSortKeys } from "./types.ts";
 import { HttpClient } from "../http-client.ts";
@@ -999,5 +1001,598 @@ Deno.test(
     const result = await provider.fetchCurrent("jira/PROJ-1");
     assertEquals(result?.title, "Title");
     assertEquals(result?.body, "");
+  },
+);
+
+Deno.test("fetchNew includes issuelinks in JQL fields", async () => {
+  let capturedBody = "";
+  const provider = new JiraProvider({
+    baseUrl: BASE_URL,
+    email: "test@example.com",
+    apiToken: "token",
+    project: "PROJ",
+    doneStatusName: "Done",
+    http: new HttpClient((_url, init) => {
+      if (init?.method === "POST") {
+        capturedBody = init.body as string;
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ issues: [] }), { status: 200 }),
+      );
+    }),
+  });
+  await provider.fetchNew(new Set());
+  assertArrayIncludes(JSON.parse(capturedBody).fields, ["issuelinks"]);
+});
+
+Deno.test(
+  "fetchNew skips ticket with unresolved 'is blocked by' inward link",
+  async () => {
+    const consoleSpy = spy(console, "log");
+    try {
+      const issue = {
+        id: "10001",
+        key: "PROJ-1",
+        fields: {
+          summary: "Blocked task",
+          description: null,
+          issuelinks: [{
+            type: { inward: "is blocked by", outward: "blocks" },
+            inwardIssue: { key: "NW-100" },
+          }],
+        },
+      };
+      const provider = new JiraProvider({
+        baseUrl: BASE_URL,
+        email: "test@example.com",
+        apiToken: "token",
+        project: "PROJ",
+        doneStatusName: "Done",
+        http: new HttpClient((url, init) => {
+          const urlStr = url as string;
+          if (init?.method === "POST") {
+            return Promise.resolve(
+              new Response(JSON.stringify({ issues: [issue] }), {
+                status: 200,
+              }),
+            );
+          }
+          if (urlStr.includes("/issue/NW-100")) {
+            return Promise.resolve(
+              new Response(
+                JSON.stringify({
+                  fields: {
+                    status: { statusCategory: { key: "indeterminate" } },
+                  },
+                }),
+                { status: 200 },
+              ),
+            );
+          }
+          return Promise.resolve(
+            new Response(JSON.stringify({ comments: [] }), { status: 200 }),
+          );
+        }),
+        judgeCommentModel: nullJudgeModel(),
+      });
+      const items = await provider.fetchNew(new Set());
+      assertEquals(items.length, 0);
+      assertSpyCalls(consoleSpy, 1);
+      assertStringIncludes(
+        consoleSpy.calls[0].args[0] as string,
+        "jira/PROJ-1 is blocked by NW-100",
+      );
+      assertStringIncludes(
+        consoleSpy.calls[0].args[0] as string,
+        "(statusCategory: indeterminate)",
+      );
+      assertStringIncludes(
+        consoleSpy.calls[0].args[0] as string,
+        "skipping",
+      );
+    } finally {
+      consoleSpy.restore();
+    }
+  },
+);
+
+Deno.test(
+  "fetchNew skips ticket with unresolved 'depends on' outward link",
+  async () => {
+    const consoleSpy = spy(console, "log");
+    try {
+      const issue = {
+        id: "10001",
+        key: "PROJ-1",
+        fields: {
+          summary: "Dependent task",
+          description: null,
+          issuelinks: [{
+            type: { inward: "blocks", outward: "depends on" },
+            outwardIssue: { key: "NW-200" },
+          }],
+        },
+      };
+      const provider = new JiraProvider({
+        baseUrl: BASE_URL,
+        email: "test@example.com",
+        apiToken: "token",
+        project: "PROJ",
+        doneStatusName: "Done",
+        http: new HttpClient((url, init) => {
+          const urlStr = url as string;
+          if (init?.method === "POST") {
+            return Promise.resolve(
+              new Response(JSON.stringify({ issues: [issue] }), {
+                status: 200,
+              }),
+            );
+          }
+          if (urlStr.includes("/issue/NW-200")) {
+            return Promise.resolve(
+              new Response(
+                JSON.stringify({
+                  fields: { status: { statusCategory: { key: "new" } } },
+                }),
+                { status: 200 },
+              ),
+            );
+          }
+          return Promise.resolve(
+            new Response(JSON.stringify({ comments: [] }), { status: 200 }),
+          );
+        }),
+        judgeCommentModel: nullJudgeModel(),
+      });
+      const items = await provider.fetchNew(new Set());
+      assertEquals(items.length, 0);
+      assertSpyCalls(consoleSpy, 1);
+      assertStringIncludes(
+        consoleSpy.calls[0].args[0] as string,
+        "jira/PROJ-1 is blocked by NW-200",
+      );
+    } finally {
+      consoleSpy.restore();
+    }
+  },
+);
+
+Deno.test(
+  "fetchNew does not treat 'is depended on by' inward links as blockers",
+  async () => {
+    const consoleSpy = spy(console, "log");
+    try {
+      const issue = {
+        id: "10001",
+        key: "PROJ-1",
+        fields: {
+          summary: "Dependency target",
+          description: null,
+          issuelinks: [{
+            type: { inward: "is depended on by", outward: "depends on" },
+            inwardIssue: { key: "NW-999" },
+          }],
+        },
+      };
+      const provider = new JiraProvider({
+        baseUrl: BASE_URL,
+        email: "test@example.com",
+        apiToken: "token",
+        project: "PROJ",
+        doneStatusName: "Done",
+        http: new HttpClient((_url, init) => {
+          if (init?.method === "POST") {
+            return Promise.resolve(
+              new Response(JSON.stringify({ issues: [issue] }), {
+                status: 200,
+              }),
+            );
+          }
+          return Promise.resolve(
+            new Response(JSON.stringify({ comments: [] }), { status: 200 }),
+          );
+        }),
+        judgeCommentModel: nullJudgeModel(),
+      });
+      const items = await provider.fetchNew(new Set());
+      assertEquals(items.length, 1);
+      assertEquals(items[0].id, "jira/PROJ-1");
+      assertSpyCalls(consoleSpy, 0);
+    } finally {
+      consoleSpy.restore();
+    }
+  },
+);
+
+Deno.test(
+  "fetchNew proceeds normally when issuelinks is an empty array",
+  async () => {
+    const issue = {
+      id: "10001",
+      key: "PROJ-1",
+      fields: { summary: "No links", description: null, issuelinks: [] },
+    };
+    const provider = new JiraProvider({
+      baseUrl: BASE_URL,
+      email: "test@example.com",
+      apiToken: "token",
+      project: "PROJ",
+      doneStatusName: "Done",
+      http: new HttpClient((_url, init) => {
+        if (init?.method === "POST") {
+          return Promise.resolve(
+            new Response(JSON.stringify({ issues: [issue] }), { status: 200 }),
+          );
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify({ comments: [] }), { status: 200 }),
+        );
+      }),
+      judgeCommentModel: nullJudgeModel(),
+    });
+    const items = await provider.fetchNew(new Set());
+    assertEquals(items.length, 1);
+    assertEquals(items[0].id, "jira/PROJ-1");
+  },
+);
+
+Deno.test(
+  "fetchNew proceeds normally when all blocking issues are done",
+  async () => {
+    const issue = {
+      id: "10001",
+      key: "PROJ-1",
+      fields: {
+        summary: "Unblocked task",
+        description: null,
+        issuelinks: [{
+          type: { inward: "is blocked by", outward: "blocks" },
+          inwardIssue: { key: "NW-100" },
+        }],
+      },
+    };
+    const provider = new JiraProvider({
+      baseUrl: BASE_URL,
+      email: "test@example.com",
+      apiToken: "token",
+      project: "PROJ",
+      doneStatusName: "Done",
+      http: new HttpClient((url, init) => {
+        const urlStr = url as string;
+        if (init?.method === "POST") {
+          return Promise.resolve(
+            new Response(JSON.stringify({ issues: [issue] }), { status: 200 }),
+          );
+        }
+        if (urlStr.includes("/issue/NW-100")) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                fields: { status: { statusCategory: { key: "done" } } },
+              }),
+              { status: 200 },
+            ),
+          );
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify({ comments: [] }), { status: 200 }),
+        );
+      }),
+      judgeCommentModel: nullJudgeModel(),
+    });
+    const items = await provider.fetchNew(new Set());
+    assertEquals(items.length, 1);
+    assertEquals(items[0].id, "jira/PROJ-1");
+  },
+);
+
+Deno.test(
+  "fetchNew statusCategory key comparison is case-insensitive",
+  async () => {
+    const issue = {
+      id: "10001",
+      key: "PROJ-1",
+      fields: {
+        summary: "Unblocked task",
+        description: null,
+        issuelinks: [{
+          type: { inward: "is blocked by", outward: "blocks" },
+          inwardIssue: { key: "NW-100" },
+        }],
+      },
+    };
+    const provider = new JiraProvider({
+      baseUrl: BASE_URL,
+      email: "test@example.com",
+      apiToken: "token",
+      project: "PROJ",
+      doneStatusName: "Done",
+      http: new HttpClient((url, init) => {
+        const urlStr = url as string;
+        if (init?.method === "POST") {
+          return Promise.resolve(
+            new Response(JSON.stringify({ issues: [issue] }), { status: 200 }),
+          );
+        }
+        if (urlStr.includes("/issue/NW-100")) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                fields: { status: { statusCategory: { key: "DONE" } } },
+              }),
+              { status: 200 },
+            ),
+          );
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify({ comments: [] }), { status: 200 }),
+        );
+      }),
+      judgeCommentModel: nullJudgeModel(),
+    });
+    const items = await provider.fetchNew(new Set());
+    assertEquals(items.length, 1);
+    assertEquals(items[0].id, "jira/PROJ-1");
+  },
+);
+
+Deno.test(
+  "fetchNew treats 403 on blocker lookup as unresolved and logs unknown",
+  async () => {
+    const consoleSpy = spy(console, "log");
+    try {
+      const issue = {
+        id: "10001",
+        key: "PROJ-1",
+        fields: {
+          summary: "Blocked task",
+          description: null,
+          issuelinks: [{
+            type: { inward: "is blocked by", outward: "blocks" },
+            inwardIssue: { key: "NW-100" },
+          }],
+        },
+      };
+      const provider = new JiraProvider({
+        baseUrl: BASE_URL,
+        email: "test@example.com",
+        apiToken: "token",
+        project: "PROJ",
+        doneStatusName: "Done",
+        http: new HttpClient((url, init) => {
+          const urlStr = url as string;
+          if (init?.method === "POST") {
+            return Promise.resolve(
+              new Response(JSON.stringify({ issues: [issue] }), {
+                status: 200,
+              }),
+            );
+          }
+          if (urlStr.includes("/issue/NW-100")) {
+            return Promise.resolve(new Response("Forbidden", { status: 403 }));
+          }
+          return Promise.resolve(
+            new Response(JSON.stringify({ comments: [] }), { status: 200 }),
+          );
+        }),
+      });
+      const items = await provider.fetchNew(new Set());
+      assertEquals(items.length, 0);
+      assertSpyCalls(consoleSpy, 1);
+      assertStringIncludes(
+        consoleSpy.calls[0].args[0] as string,
+        "(statusCategory: unknown)",
+      );
+    } finally {
+      consoleSpy.restore();
+    }
+  },
+);
+
+Deno.test(
+  "fetchNew treats 404 on blocker lookup as unresolved and logs unknown",
+  async () => {
+    const consoleSpy = spy(console, "log");
+    try {
+      const issue = {
+        id: "10001",
+        key: "PROJ-1",
+        fields: {
+          summary: "Blocked task",
+          description: null,
+          issuelinks: [{
+            type: { inward: "is blocked by", outward: "blocks" },
+            inwardIssue: { key: "NW-100" },
+          }],
+        },
+      };
+      const provider = new JiraProvider({
+        baseUrl: BASE_URL,
+        email: "test@example.com",
+        apiToken: "token",
+        project: "PROJ",
+        doneStatusName: "Done",
+        http: new HttpClient((url, init) => {
+          const urlStr = url as string;
+          if (init?.method === "POST") {
+            return Promise.resolve(
+              new Response(JSON.stringify({ issues: [issue] }), {
+                status: 200,
+              }),
+            );
+          }
+          if (urlStr.includes("/issue/NW-100")) {
+            return Promise.resolve(new Response("Not Found", { status: 404 }));
+          }
+          return Promise.resolve(
+            new Response(JSON.stringify({ comments: [] }), { status: 200 }),
+          );
+        }),
+      });
+      const items = await provider.fetchNew(new Set());
+      assertEquals(items.length, 0);
+      assertSpyCalls(consoleSpy, 1);
+      assertStringIncludes(
+        consoleSpy.calls[0].args[0] as string,
+        "(statusCategory: unknown)",
+      );
+    } finally {
+      consoleSpy.restore();
+    }
+  },
+);
+
+Deno.test(
+  "fetchNew with three blockers two done one not skips and logs exactly once",
+  async () => {
+    const consoleSpy = spy(console, "log");
+    try {
+      const issue = {
+        id: "10001",
+        key: "PROJ-1",
+        fields: {
+          summary: "Task with three blockers",
+          description: null,
+          issuelinks: [
+            {
+              type: { inward: "is blocked by", outward: "blocks" },
+              inwardIssue: { key: "NW-100" },
+            },
+            {
+              type: { inward: "is blocked by", outward: "blocks" },
+              inwardIssue: { key: "NW-200" },
+            },
+            {
+              type: { inward: "is blocked by", outward: "blocks" },
+              inwardIssue: { key: "NW-300" },
+            },
+          ],
+        },
+      };
+      const provider = new JiraProvider({
+        baseUrl: BASE_URL,
+        email: "test@example.com",
+        apiToken: "token",
+        project: "PROJ",
+        doneStatusName: "Done",
+        http: new HttpClient((url, init) => {
+          const urlStr = url as string;
+          if (init?.method === "POST") {
+            return Promise.resolve(
+              new Response(JSON.stringify({ issues: [issue] }), {
+                status: 200,
+              }),
+            );
+          }
+          if (
+            urlStr.includes("/issue/NW-100") ||
+            urlStr.includes("/issue/NW-200")
+          ) {
+            return Promise.resolve(
+              new Response(
+                JSON.stringify({
+                  fields: { status: { statusCategory: { key: "done" } } },
+                }),
+                { status: 200 },
+              ),
+            );
+          }
+          if (urlStr.includes("/issue/NW-300")) {
+            return Promise.resolve(
+              new Response(
+                JSON.stringify({
+                  fields: { status: { statusCategory: { key: "new" } } },
+                }),
+                { status: 200 },
+              ),
+            );
+          }
+          return Promise.resolve(
+            new Response(JSON.stringify({ comments: [] }), { status: 200 }),
+          );
+        }),
+      });
+      const items = await provider.fetchNew(new Set());
+      assertEquals(items.length, 0);
+      assertSpyCalls(consoleSpy, 1);
+      assertStringIncludes(
+        consoleSpy.calls[0].args[0] as string,
+        "NW-300",
+      );
+    } finally {
+      consoleSpy.restore();
+    }
+  },
+);
+
+Deno.test(
+  "fetchNew with two unresolved blockers logs both and skips",
+  async () => {
+    const consoleSpy = spy(console, "log");
+    try {
+      const issue = {
+        id: "10001",
+        key: "PROJ-1",
+        fields: {
+          summary: "Doubly blocked",
+          description: null,
+          issuelinks: [
+            {
+              type: { inward: "is blocked by", outward: "blocks" },
+              inwardIssue: { key: "NW-100" },
+            },
+            {
+              type: { inward: "is blocked by", outward: "blocks" },
+              inwardIssue: { key: "NW-200" },
+            },
+          ],
+        },
+      };
+      const provider = new JiraProvider({
+        baseUrl: BASE_URL,
+        email: "test@example.com",
+        apiToken: "token",
+        project: "PROJ",
+        doneStatusName: "Done",
+        http: new HttpClient((url, init) => {
+          const urlStr = url as string;
+          if (init?.method === "POST") {
+            return Promise.resolve(
+              new Response(JSON.stringify({ issues: [issue] }), {
+                status: 200,
+              }),
+            );
+          }
+          if (urlStr.includes("/issue/NW-")) {
+            return Promise.resolve(
+              new Response(
+                JSON.stringify({
+                  fields: {
+                    status: { statusCategory: { key: "in-progress" } },
+                  },
+                }),
+                { status: 200 },
+              ),
+            );
+          }
+          return Promise.resolve(
+            new Response(JSON.stringify({ comments: [] }), { status: 200 }),
+          );
+        }),
+      });
+      const items = await provider.fetchNew(new Set());
+      assertEquals(items.length, 0);
+      assertSpyCalls(consoleSpy, 2);
+      assertStringIncludes(
+        consoleSpy.calls[0].args[0] as string,
+        "NW-100",
+      );
+      assertStringIncludes(
+        consoleSpy.calls[1].args[0] as string,
+        "NW-200",
+      );
+    } finally {
+      consoleSpy.restore();
+    }
   },
 );
