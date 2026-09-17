@@ -14,6 +14,7 @@ import {
 import { compactTimestamp } from "../timestamp.ts";
 import {
   type ApprovalEntry,
+  type Config,
   isApproved,
   type TicketState,
   type WorktreeInfo,
@@ -94,6 +95,12 @@ export interface TickDeps {
   ) => Promise<{ model: string; thinking: string } | null>;
   readRunPidBootStamp: (ticketDir: string) => Promise<string | null>;
   currentBootId: () => string;
+  runVerification: (
+    command: string,
+    worktreePath: string,
+  ) => Promise<{ exitCode: number; output: string }>;
+  writeVerificationContext: (ticketDir: string, content: string) => Promise<void>;
+  config?: Pick<Config, "repos">;
 }
 
 export async function advancePhase(
@@ -145,7 +152,8 @@ export async function advancePhase(
         if (
           entry.isFile &&
           (entry.name.endsWith("-comment-context.md") ||
-            entry.name.endsWith("-upstream-edit-context.md"))
+            entry.name.endsWith("-upstream-edit-context.md") ||
+            entry.name.endsWith("-verification-failure-context.md"))
         ) {
           contextFiles.push(entry.name);
         }
@@ -571,6 +579,47 @@ export async function advancePhase(
       }
       const skipSelfApprove = ticket.phase === "plan" &&
         (ticket.newRepos?.length ?? 0) > 0;
+      if (ticket.phase === "implementation" && !feedbackPrecedesOutput && !skipSelfApprove) {
+        const projectKey = deriveProjectPath(ticket.provider, ticket.id);
+        const verifyCommand = deps.config?.repos?.[projectKey]?.verify;
+        const worktreePath = ticket.worktrees[projectKey]?.path;
+        if (verifyCommand && worktreePath) {
+          try {
+            const result = await deps.runVerification(verifyCommand, worktreePath);
+            if (result.exitCode !== 0) {
+              const truncated = result.output.length > 8000
+                ? result.output.slice(0, 8000)
+                : result.output;
+              const content =
+                `Command: ${verifyCommand}\nExit code: ${result.exitCode}\n\n${truncated}`;
+              await deps.writeVerificationContext(join(stateDir, ticket.id), content);
+              await deps.writeTicket(stateDir, {
+                ...waitingTicket,
+                status: "revising",
+                updated: now,
+              });
+              await deps.appendLog(stateDir, ticket.id, {
+                event: "verification-failed",
+                phase: ticket.phase,
+                exitCode: result.exitCode,
+              });
+              return;
+            }
+          } catch (e) {
+            await deps.writeTicket(stateDir, {
+              ...waitingTicket,
+              status: "needs-attention",
+              updated: now,
+            });
+            await deps.appendLog(stateDir, ticket.id, {
+              event: "verification-error",
+              phase: ticket.phase,
+              error: String(e),
+            });
+            return;
+          }
+        }
+      }
       if (!feedbackPrecedesOutput && !skipSelfApprove) {
         const selfApproveExit = await Effect.runPromiseExit(
           deps.readSelfApprove(
