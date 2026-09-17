@@ -29,29 +29,41 @@ do not install it. When it is present:
    application, capture to `/tmp/<slug>-before.png`, then `git switch -` to
    return to the ticket branch. Omit the before capture when the change adds a
    surface that did not previously exist.
-5. Upload each file and embed the URL it returns. There is no documented GitHub
-   API for this; the endpoint below is undocumented but accepts the token
-   already present in your environment:
+5. Compose the PR body with Markdown image references using the captured local
+   absolute paths, then invoke `gh pr create` or `gh pr edit` with `--attach`
+   for each file. Use Markdown image syntax —
+   `![before](/tmp/<slug>-before.png)` and `![after](/tmp/<slug>-after.png)` —
+   not HTML `<img>` tags. The path in each Markdown reference must be the exact
+   absolute path passed to the corresponding `--attach` flag; `gh` rewrites each
+   matching reference in the body to the uploaded GitHub URL. Insertion order in
+   the body determines which URL replaces which reference.
 
-```
-REPO_ID=$(gh api repos/<owner>/<repo> --jq .id)
-curl -s -X POST \
-  -H "Authorization: Bearer $GH_TOKEN" \
-  -H "Accept: application/json" \
-  --data-binary "@/tmp/<slug>-after.png" \
-  "https://uploads.github.com/user-attachments/assets?name=after.png&content_type=image/png&repository_id=$REPO_ID"
-```
+   **On the create path** (`gh pr create`):
 
-The response is `{"url":"https://github.com/user-attachments/assets/<uuid>"}`.
-Embed an image as `<img src="<url>" width="900" alt="<what it shows>" />` and a
-video as the bare URL on a line of its own. If the response is not a URL, do not
-retry with a different endpoint — treat capture as unavailable and fall back.
+   ```
+   gh pr create --body "<body with local-path img references>" \
+     --attach /tmp/<slug>-before.png \
+     --attach /tmp/<slug>-after.png
+   ```
+
+   **On the revision path** (`gh pr edit`):
+
+   ```
+   gh pr edit <pr-url> \
+     --body "<body with local-path img references>" \
+     --attach /tmp/<slug>-before.png \
+     --attach /tmp/<slug>-after.png
+   ```
+
+   `--body` and `--attach` are combined in one call. The `--attach` flag
+   rewrites local-path references in the new body string, not in the existing PR
+   body.
 
 An uploaded asset is readable by everyone who can read the repository. Never
 capture real customer data; use synthetic or test data only.
 
-Fall back when the tool is absent, the application cannot be served here, the
-upload fails, or the change has no user-visible effect: write a single line in
-that section stating that, and delete any before/after table the template
-provides. Never substitute prose for the artifact — a table holding sentences
-where images belong reads as a fabricated screenshot.
+Fall back when the tool is absent, the application cannot be served here, or the
+change has no user-visible effect: write a single line in that section stating
+that, and delete any before/after table the template provides. Never substitute
+prose for the artifact — a table holding sentences where images belong reads as
+a fabricated screenshot.
