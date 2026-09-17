@@ -69,9 +69,17 @@ export const update: Command = {
   name: "update",
   description: "pull latest urras source",
   async run(_args) {
-    const config = await loadConfig();
     const selfOutcome = await runUpdate(lazboyDir);
-    await updateExtensionsIfRemote(config.extensions.dir);
+    let extensionsDir: string | undefined;
+    try {
+      const config = await loadConfig();
+      extensionsDir = config.extensions.dir;
+    } catch {
+      // No config file; skip extensions update.
+    }
+    if (extensionsDir !== undefined) {
+      await updateExtensionsIfRemote(extensionsDir);
+    }
     Deno.exit(outcomeExitCode(selfOutcome));
   },
 };
