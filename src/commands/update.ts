@@ -1,3 +1,4 @@
+import { loadConfig } from "../config.ts";
 import { runGit } from "../worktree.ts";
 import type { Command } from "./types.ts";
 
@@ -55,10 +56,22 @@ export function outcomeExitCode(outcome: UpdateOutcome): number {
   return 1;
 }
 
+export async function updateExtensionsIfRemote(
+  dir: string,
+  runGitFn: typeof runGit = runGit,
+): Promise<UpdateOutcome | null> {
+  const { code } = await runGitFn(["remote", "get-url", "origin"], dir);
+  if (code !== 0) return null;
+  return runUpdate(dir, runGitFn);
+}
+
 export const update: Command = {
   name: "update",
   description: "pull latest urras source",
   async run(_args) {
-    Deno.exit(outcomeExitCode(await runUpdate(lazboyDir)));
+    const config = await loadConfig();
+    const selfOutcome = await runUpdate(lazboyDir);
+    await updateExtensionsIfRemote(config.extensions.dir);
+    Deno.exit(outcomeExitCode(selfOutcome));
   },
 };

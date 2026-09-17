@@ -1,5 +1,5 @@
 import { assertEquals } from "@std/assert";
-import { runUpdate } from "./update.ts";
+import { runUpdate, updateExtensionsIfRemote } from "./update.ts";
 
 function makeRunGit(
   responses: Array<{ code: number; stdout: string; stderr: string }>,
@@ -102,5 +102,33 @@ Deno.test(
       { code: 0, stdout: "4\t0", stderr: "" },
     ]);
     assertEquals(await runUpdate("/repo", fn), { status: "failed", code: 1 });
+  },
+);
+
+Deno.test(
+  "updateExtensionsIfRemote: no remote returns null without further calls",
+  async () => {
+    const { fn, calls } = makeRunGit([
+      { code: 128, stdout: "", stderr: "error: No such remote 'origin'" },
+    ]);
+    const result = await updateExtensionsIfRemote("/ext", fn);
+    assertEquals(result, null);
+    assertEquals(calls, [["remote", "get-url", "origin"]]);
+  },
+);
+
+Deno.test(
+  "updateExtensionsIfRemote: remote present delegates to runUpdate",
+  async () => {
+    const sha = "abc123";
+    const { fn } = makeRunGit([
+      { code: 0, stdout: "git@github.com:user/repo.git", stderr: "" },
+      { code: 0, stdout: "", stderr: "" },
+      { code: 0, stdout: sha, stderr: "" },
+      { code: 0, stdout: "Already up to date.", stderr: "" },
+      { code: 0, stdout: sha, stderr: "" },
+    ]);
+    const result = await updateExtensionsIfRemote("/ext", fn);
+    assertEquals(result, { status: "current" });
   },
 );

@@ -2,7 +2,7 @@ import { loadConfig } from "../config.ts";
 import { composeTickDeps } from "../compose.ts";
 import { TickService } from "../tick.ts";
 import { appendTickLog } from "../logger.ts";
-import { runUpdate } from "./update.ts";
+import { runUpdate, updateExtensionsIfRemote } from "./update.ts";
 import type { Divergence, UpdateOutcome } from "./update.ts";
 import {
   makeDivergenceNotifier,
@@ -18,6 +18,7 @@ export type TickUpdateDeps = {
   log: typeof appendTickLog;
   reexec: (indexPath: string) => Promise<void>;
   notifyDivergence: (divergence: Divergence | null) => Promise<void>;
+  updateExtensions: () => Promise<UpdateOutcome | null>;
 };
 
 export async function performTickUpdate(
@@ -32,13 +33,9 @@ export async function performTickUpdate(
   }
   if (outcome.status === "current") {
     await deps.notifyDivergence(null);
-    return true;
-  }
-  if (outcome.status === "dirty") {
+  } else if (outcome.status === "dirty") {
     await deps.log({ event: "update-skipped", reason: "dirty" });
-    return true;
-  }
-  if (outcome.status === "diverged") {
+  } else if (outcome.status === "diverged") {
     const { ahead, behind } = outcome.divergence;
     await deps.log({
       event: "update-skipped",
@@ -47,9 +44,32 @@ export async function performTickUpdate(
       behind,
     });
     await deps.notifyDivergence(outcome.divergence);
-    return true;
+  } else {
+    await deps.log({ event: "update-failed", code: outcome.code });
   }
-  await deps.log({ event: "update-failed", code: outcome.code });
+  const extOutcome = await deps.updateExtensions();
+  if (extOutcome?.status === "dirty") {
+    await deps.log({
+      event: "update-skipped",
+      reason: "dirty",
+      target: "extensions",
+    });
+  } else if (extOutcome?.status === "diverged") {
+    const { ahead, behind } = extOutcome.divergence;
+    await deps.log({
+      event: "update-skipped",
+      reason: "diverged",
+      ahead,
+      behind,
+      target: "extensions",
+    });
+  } else if (extOutcome?.status === "failed") {
+    await deps.log({
+      event: "update-failed",
+      code: extOutcome.code,
+      target: "extensions",
+    });
+  }
   return true;
 }
 
@@ -68,6 +88,7 @@ export const tick: Command = {
   name: "tick",
   description: "advance all active tickets",
   async run(_args) {
+    const config = await loadConfig();
     if (
       !(await performTickUpdate({
         update: runUpdate,
@@ -78,9 +99,9 @@ export const tick: Command = {
           readLast: readLastDivergence,
           writeLast: writeLastDivergence,
         }),
+        updateExtensions: () => updateExtensionsIfRemote(config.extensions.dir),
       }))
     ) return;
-    const config = await loadConfig();
     const deps = composeTickDeps(config);
     await new TickService(deps).run();
   },
