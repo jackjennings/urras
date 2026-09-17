@@ -639,7 +639,9 @@ export function composeTickDeps(
         const prompt = `You are resolving git rebase conflicts. ` +
           `Examine the conflicted files listed in the context, resolve all merge conflicts, ` +
           `then run \`git rebase --continue\` until the rebase completes. ` +
-          `After a successful rebase, run \`git push --force-with-lease origin ${opts.branch}\`.`;
+          `After a successful rebase, run \`git push --force-with-lease origin ${opts.branch}\`. ` +
+          `Write commit messages as a human contributor would; do not mention automation, urras, ` +
+          `lazyboy, or internal tooling in commit messages.`;
         const branchParsed = parseTicketId(opts.branch);
         const branchSlug = branchParsed
           ? `${branchParsed.org}/${branchParsed.repo}`
@@ -851,7 +853,9 @@ export function composeTickDeps(
               `UNFIXABLE\` and describe the signing failure instead.\n\n` +
               `Commit your work, but do not push — the tick loop force-pushes the branch for you. ` +
               `Do not create pull requests and do not create issues.\n\n` +
-              `urras reads only the output file below — nothing you say in your final reply is ` +
+              `Write commit messages as a human contributor would. Do not name urras, lazyboy, ` +
+              `agent-browser, or any other internal tooling in commit messages.\n\n` +
+              `Only the output file below is read by the pipeline — nothing you say in your final reply is ` +
               `seen. The last line written to that file, via the Write or Edit tool, must be ` +
               `exactly one of: \`VERDICT: FIXED\`, \`VERDICT: INFRA\`, or \`VERDICT: UNFIXABLE\`, ` +
               `with no markdown formatting (no bold, no heading, no bullet). Use INFRA only for an ` +

@@ -125,6 +125,8 @@ pull request using the `gh` CLI. Always create pull requests in draft mode —
 lazyboy automatically promotes them to ready-for-review when the implementation
 phase is approved.
 
+{{no-self-reference}}
+
 {{pr-description}}
 
 {{pr-media}}
