@@ -213,6 +213,23 @@ export async function loadConfig(path?: string): Promise<Config> {
     learnings = { repos: reposRaw as string[] };
   }
 
+  const reposRaw = parsed.repos as
+    | Record<string, Record<string, unknown>>
+    | undefined;
+  let repos: Config["repos"];
+  if (reposRaw !== undefined) {
+    repos = {};
+    for (const [slug, entry] of Object.entries(reposRaw)) {
+      const verifyRaw = entry.verify;
+      if (verifyRaw !== undefined && typeof verifyRaw !== "string") {
+        throw new Error(
+          `config.toml: [repos."${slug}"].verify must be a string`,
+        );
+      }
+      repos[slug] = { verify: verifyRaw as string | undefined };
+    }
+  }
+
   const extensionsRaw = parsed.extensions as
     | Record<string, unknown>
     | undefined;
@@ -297,6 +314,7 @@ export async function loadConfig(path?: string): Promise<Config> {
     learnings,
     ceremonies,
     codegraph,
+    repos,
     phases: phasesDefaults !== undefined
       ? { defaults: phasesDefaults }
       : undefined,
