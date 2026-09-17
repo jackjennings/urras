@@ -1415,3 +1415,94 @@ Deno.test("loadConfig: [learnings] with non-string repo entry throws", async () 
   );
   await Deno.remove(dir, { recursive: true });
 });
+
+Deno.test("loadConfig parses [repos.*] verify command", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `
+[github]
+repos = []
+
+[state]
+dir = "~/code"
+
+[tick]
+concurrency = 1
+
+[repos."jackjennings/lazyboy"]
+verify = "deno test"
+`,
+  );
+  const cfg = await loadConfig(join(dir, "config.toml"));
+  assertEquals(cfg.repos?.["jackjennings/lazyboy"]?.verify, "deno test");
+  await Deno.remove(dir, { recursive: true });
+});
+
+Deno.test("loadConfig: [repos.*] without verify is valid", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `
+[github]
+repos = []
+
+[state]
+dir = "~/code"
+
+[tick]
+concurrency = 1
+
+[repos."jackjennings/lazyboy"]
+`,
+  );
+  const cfg = await loadConfig(join(dir, "config.toml"));
+  assertEquals(cfg.repos?.["jackjennings/lazyboy"]?.verify, undefined);
+  await Deno.remove(dir, { recursive: true });
+});
+
+Deno.test("loadConfig: absent [repos] leaves config.repos undefined", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `
+[github]
+repos = []
+
+[state]
+dir = "~/code"
+
+[tick]
+concurrency = 1
+`,
+  );
+  const cfg = await loadConfig(join(dir, "config.toml"));
+  assertEquals(cfg.repos, undefined);
+  await Deno.remove(dir, { recursive: true });
+});
+
+Deno.test("loadConfig: [repos.*] with non-string verify throws", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `
+[github]
+repos = []
+
+[state]
+dir = "~/code"
+
+[tick]
+concurrency = 1
+
+[repos."jackjennings/lazyboy"]
+verify = 42
+`,
+  );
+  await assertRejects(
+    () => loadConfig(join(dir, "config.toml")),
+    Error,
+    `config.toml: [repos."jackjennings/lazyboy"].verify must be a string`,
+  );
+  await Deno.remove(dir, { recursive: true });
+});

@@ -214,4 +214,5 @@ export interface Config {
   };
   ollama?: { models: string[]; url?: string };
   learnings?: { repos: string[] };
+  repos?: Record<string, { verify?: string }>;
 }
