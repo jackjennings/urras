@@ -185,7 +185,7 @@ export async function advancePhase(
     let sessionId: string | undefined;
     if (isImplementationRevision) {
       const stored = ticket.phaseSessionIds?.["implementation"];
-      if (stored) sessionId = stored;
+      if (stored && Object.keys(ticket.worktrees).length > 0) sessionId = stored;
     }
     await deps.spawn({
       phase: activePhase,
@@ -337,6 +337,8 @@ export async function advancePhase(
             model: resumeCritiqueModel,
             thinking: resumeCritiqueThinking,
           } = deps.resolveModelConfig("critique", ticket);
+          const canResume = resumePhase !== "implementation" ||
+            Object.keys(ticket.worktrees).length > 0;
           await deps.spawn({
             phase: resumePhase,
             ticketDir: join(stateDir, ticket.id),
@@ -349,8 +351,8 @@ export async function advancePhase(
             thinking: resumeThinking,
             critiqueModel: resumeCritiqueModel,
             critiqueThinking: resumeCritiqueThinking,
-            sessionId,
-            resume: true,
+            sessionId: canResume ? sessionId : undefined,
+            resume: canResume,
           });
           await deps.writeTicket(stateDir, {
             ...ticket,

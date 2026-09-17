@@ -1197,6 +1197,75 @@ Deno.test(
 );
 
 Deno.test(
+  "advancePhase: merge revision with empty worktrees spawns fresh session without resume",
+  async () => {
+    const ticket = makeTicket({
+      phase: "merge",
+      status: "revising",
+      worktrees: {},
+      phaseSessionIds: { implementation: "sess-stale" },
+    });
+    let spawnedSessionId: string | undefined = "sentinel";
+    let spawnedResume: boolean | undefined = true;
+    const spawnSpy = spy((opts: SpawnOpts) => {
+      spawnedSessionId = opts.sessionId;
+      spawnedResume = opts.resume;
+      return Promise.resolve();
+    });
+    await advancePhase(
+      ticket,
+      "/state",
+      makeTickDeps({
+        spawn: spawnSpy,
+        resolveModelConfig: () => ({
+          model: "claude-sonnet-4-6",
+          thinking: "off",
+        }),
+      }),
+    );
+    assertSpyCall(spawnSpy, 0);
+    assertEquals(spawnedSessionId, undefined);
+    assertFalse(spawnedResume);
+  },
+);
+
+Deno.test(
+  "advancePhase: implementation crash-recovery with empty worktrees spawns fresh session without resume",
+  async () => {
+    const ticket = makeTicket({
+      phase: "implementation",
+      status: "running",
+      worktrees: {},
+      phaseSessionIds: { implementation: "sess-stale" },
+    });
+    let spawnedSessionId: string | undefined = "sentinel";
+    let spawnedResume: boolean | undefined = true;
+    const spawnSpy = spy((opts: SpawnOpts) => {
+      spawnedSessionId = opts.sessionId;
+      spawnedResume = opts.resume;
+      return Promise.resolve();
+    });
+    await advancePhase(
+      ticket,
+      "/state",
+      makeTickDeps({
+        spawn: spawnSpy,
+        readPhaseExitCode: () => Promise.resolve(null),
+        readRunPidBootStamp: () => Promise.resolve("old-boot-id"),
+        currentBootId: () => "new-boot-id",
+        resolveModelConfig: () => ({
+          model: "claude-sonnet-4-6",
+          thinking: "off",
+        }),
+      }),
+    );
+    assertSpyCall(spawnSpy, 0);
+    assertEquals(spawnedSessionId, undefined);
+    assertFalse(spawnedResume);
+  },
+);
+
+Deno.test(
   "advancePhase: merge revision with no phaseSessionIds spawns without sessionId",
   async () => {
     const ticket = makeTicket({
