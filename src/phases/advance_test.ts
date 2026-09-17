@@ -3931,8 +3931,9 @@ Deno.test(
         },
         runVerification: () =>
           Promise.resolve({ exitCode: 1, output: "test failed" }),
-        writeVerificationContext: async (_dir, _content) => {
+        writeVerificationContext: (_dir, _content) => {
           contextWritten = true;
+          return Promise.resolve();
         },
         readSelfApprove: readSelfApproveSpy,
         config: { repos: { "org/repo": { verify: "deno test" } } },
