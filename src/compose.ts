@@ -1545,7 +1545,9 @@ export function composeTickDeps(
         }
       },
       writeVerificationContext: async (ticketDir, content) => {
-        const timestamp = compactTimestamp(Temporal.Now.zonedDateTimeISO("UTC"));
+        const timestamp = compactTimestamp(
+          Temporal.Now.zonedDateTimeISO("UTC"),
+        );
         await writeTextFile(
           join(ticketDir, `${timestamp}-verification-failure-context.md`),
           content,
