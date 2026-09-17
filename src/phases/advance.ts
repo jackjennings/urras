@@ -185,7 +185,9 @@ export async function advancePhase(
     let sessionId: string | undefined;
     if (isImplementationRevision) {
       const stored = ticket.phaseSessionIds?.["implementation"];
-      if (stored && Object.keys(ticket.worktrees).length > 0) sessionId = stored;
+      if (stored && Object.keys(ticket.worktrees).length > 0) {
+        sessionId = stored;
+      }
     }
     await deps.spawn({
       phase: activePhase,
