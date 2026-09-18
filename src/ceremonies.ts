@@ -16,6 +16,7 @@ import type { TicketState } from "./state/types.ts";
 import type { LanguageModel, LanguageModelRequest } from "./models/types.ts";
 
 export type { Ceremony } from "./ceremonies/types.ts";
+import { BUILT_IN_CEREMONY_NAMES } from "./ceremonies/built-ins.ts";
 
 const CEREMONY_TIMEOUT_MS = 300_000;
 
@@ -69,6 +70,168 @@ function parseTimestampPrefix(filename: string): Temporal.PlainDateTime | null {
   } catch {
     return null;
   }
+}
+
+export async function nextCeremonyRunTime(opts: {
+  config: Record<string, unknown>;
+  now: Temporal.ZonedDateTime;
+  outputDir: string;
+  name: string;
+}): Promise<Temporal.ZonedDateTime | null> {
+  const { config, now, outputDir, name } = opts;
+
+  const timeStr = config.time;
+  if (typeof timeStr !== "string" || !/^\d{2}:\d{2}$/.test(timeStr)) return null;
+  const hour = parseInt(timeStr.slice(0, 2), 10);
+  const minute = parseInt(timeStr.slice(3), 10);
+  if (hour > 23 || minute > 59) return null;
+
+  const intervalHours = typeof config.interval_hours === "number"
+    ? config.interval_hours
+    : null;
+  const workdaysOnly = config.workdays_only === true;
+
+  const threshold = now.with({
+    hour,
+    minute,
+    second: 0,
+    millisecond: 0,
+    microsecond: 0,
+    nanosecond: 0,
+  });
+
+  if (intervalHours !== null) {
+    if (workdaysOnly && now.dayOfWeek > 5) {
+      return threshold.add({ days: 8 - now.dayOfWeek });
+    }
+
+    let mostRecent: Temporal.PlainDateTime | null = null;
+    try {
+      for await (const entry of readDir(outputDir)) {
+        if (!entry.isFile || !entry.name.includes(name)) continue;
+        const dt = parseTimestampPrefix(entry.name);
+        if (
+          dt !== null &&
+          (mostRecent === null ||
+            Temporal.PlainDateTime.compare(dt, mostRecent) > 0)
+        ) {
+          mostRecent = dt;
+        }
+      }
+    } catch (e) {
+      if (!(e instanceof Deno.errors.NotFound)) throw e;
+    }
+
+    if (mostRecent === null) return threshold;
+    const eligible = mostRecent.add({
+      seconds: Math.round(intervalHours * 3600),
+    });
+    return eligible.toZonedDateTime(now.timeZoneId);
+  }
+
+  // Daily
+  if (workdaysOnly && now.dayOfWeek > 5) {
+    return threshold.add({ days: 8 - now.dayOfWeek });
+  }
+
+  const todayPrefix = String(now.year) +
+    String(now.month).padStart(2, "0") +
+    String(now.day).padStart(2, "0");
+
+  let todayFileExists = false;
+  try {
+    for await (const entry of readDir(outputDir)) {
+      if (entry.isFile && entry.name.startsWith(todayPrefix)) {
+        todayFileExists = true;
+        break;
+      }
+    }
+  } catch (e) {
+    if (!(e instanceof Deno.errors.NotFound)) throw e;
+  }
+
+  if (!todayFileExists) return threshold;
+
+  let next = threshold.add({ days: 1 });
+  if (workdaysOnly) {
+    while (next.dayOfWeek > 5) next = next.add({ days: 1 });
+  }
+  return next;
+}
+
+export interface CeremonyStatus {
+  name: string;
+  kind: "built-in" | "custom";
+  approval: string;
+  nextRun: string;
+}
+
+export async function listCeremonyStatuses(opts: {
+  extensionsDir: string;
+  stateDir: string;
+  now: Temporal.ZonedDateTime;
+}): Promise<CeremonyStatus[]> {
+  const { extensionsDir, stateDir, now } = opts;
+  const ceremoniesDir = join(extensionsDir, "ceremonies");
+
+  const builtInSet = new Set<string>(BUILT_IN_CEREMONY_NAMES);
+  const fsDirs = new Map<string, string>();
+
+  try {
+    for await (const entry of readDir(ceremoniesDir)) {
+      if (!entry.isDirectory) continue;
+      if (!isValidCeremonyName(entry.name)) continue;
+      fsDirs.set(entry.name, join(ceremoniesDir, entry.name));
+    }
+  } catch (e) {
+    if (!(e instanceof Deno.errors.NotFound)) throw e;
+  }
+
+  const nameSet = new Set<string>([...builtInSet, ...fsDirs.keys()]);
+  const results: CeremonyStatus[] = [];
+
+  for (const name of nameSet) {
+    const isBuiltIn = builtInSet.has(name);
+    const ceremonyDir = fsDirs.get(name);
+    const kind: "built-in" | "custom" = isBuiltIn ? "built-in" : "custom";
+
+    let approval: string;
+    if (isBuiltIn) {
+      approval = "—";
+    } else if (ceremonyDir !== undefined) {
+      try {
+        approval = (await isCeremonyApproved(name, ceremonyDir)) ? "yes" : "no";
+      } catch {
+        approval = "no";
+      }
+    } else {
+      approval = "no";
+    }
+
+    let nextRun: string;
+    if (ceremonyDir === undefined) {
+      nextRun = "no config";
+    } else {
+      let config: Record<string, unknown> | null = null;
+      try {
+        const raw = await readTextFile(join(ceremonyDir, "config.toml"));
+        config = parse(raw) as Record<string, unknown>;
+      } catch {
+        config = null;
+      }
+      if (config === null) {
+        nextRun = "no config";
+      } else {
+        const outputDir = join(stateDir, "ceremonies", name, "output");
+        const next = await nextCeremonyRunTime({ config, now, outputDir, name });
+        nextRun = next !== null ? compactTimestamp(next) : "no config";
+      }
+    }
+
+    results.push({ name, kind, approval, nextRun });
+  }
+
+  return results;
 }
 
 export class CeremonyRunner {
@@ -224,14 +387,6 @@ export class CeremonyRunner {
     const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const now = (this.#deps.now ??
       (() => Temporal.Now.zonedDateTimeISO(localTz)))();
-    const threshold = now.with({
-      hour,
-      minute,
-      second: 0,
-      millisecond: 0,
-      microsecond: 0,
-      nanosecond: 0,
-    });
 
     const outputDir = join(
       this.#deps.stateDir,
@@ -242,7 +397,6 @@ export class CeremonyRunner {
     const window = await this.#dueWindow({
       config,
       now,
-      threshold,
       outputDir,
       name: ceremony.name,
     });
@@ -315,61 +469,22 @@ export class CeremonyRunner {
   async #dueWindow(opts: {
     config: Record<string, unknown>;
     now: Temporal.ZonedDateTime;
-    threshold: Temporal.ZonedDateTime;
     outputDir: string;
     name: string;
   }): Promise<string | null> {
-    const { config, now, threshold, outputDir, name } = opts;
+    const { config, now, outputDir, name } = opts;
+    const next = await nextCeremonyRunTime({ config, now, outputDir, name });
+    if (next === null) return null;
+    if (Temporal.ZonedDateTime.compare(now, next) < 0) return null;
+
     const intervalHours = typeof config.interval_hours === "number"
       ? config.interval_hours
       : null;
-    const workdaysOnly = config.workdays_only === true;
-
     if (intervalHours !== null) {
-      if (workdaysOnly && now.dayOfWeek > 5) return null;
-      if (Temporal.ZonedDateTime.compare(now, threshold) < 0) return null;
-
-      let mostRecent: Temporal.PlainDateTime | null = null;
-      try {
-        for await (const entry of readDir(outputDir)) {
-          if (!entry.isFile || !entry.name.includes(name)) continue;
-          const dt = parseTimestampPrefix(entry.name);
-          if (
-            dt !== null &&
-            (mostRecent === null ||
-              Temporal.PlainDateTime.compare(dt, mostRecent) > 0)
-          ) {
-            mostRecent = dt;
-          }
-        }
-      } catch (e) {
-        if (!(e instanceof Deno.errors.NotFound)) throw e;
-      }
-
-      if (mostRecent === null) return compactTimestamp(threshold);
-      const eligible = mostRecent.add({
-        seconds: Math.round(intervalHours * 3600),
-      });
-      if (Temporal.PlainDateTime.compare(now.toPlainDateTime(), eligible) < 0) {
-        return null;
-      }
-      return compactTimestamp(eligible.toZonedDateTime(now.timeZoneId));
+      return compactTimestamp(next);
     }
-
-    if (Temporal.ZonedDateTime.compare(now, threshold) < 0) return null;
-
-    const todayPrefix = String(now.year) +
+    return String(now.year) +
       String(now.month).padStart(2, "0") +
       String(now.day).padStart(2, "0");
-
-    try {
-      for await (const entry of readDir(outputDir)) {
-        if (entry.isFile && entry.name.startsWith(todayPrefix)) return null;
-      }
-    } catch (e) {
-      if (!(e instanceof Deno.errors.NotFound)) throw e;
-    }
-
-    return todayPrefix;
   }
 }
