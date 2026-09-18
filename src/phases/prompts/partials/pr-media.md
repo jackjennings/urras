@@ -62,8 +62,9 @@ do not install it. When it is present:
 An uploaded asset is readable by everyone who can read the repository. Never
 capture real customer data; use synthetic or test data only.
 
-Fall back when the tool is absent, the application cannot be served here, or the
-change has no user-visible effect: write a single line in that section stating
-that, and delete any before/after table the template provides. Never substitute
-prose for the artifact — a table holding sentences where images belong reads as
-a fabricated screenshot.
+Fall back when the tool is absent, the application cannot be served here, the
+upload fails, or the change has no user-visible effect: leave the media section
+of the PR body exactly as the pull request template has it — cells unfilled,
+placeholder comments intact. If the template contains no before/after or media
+section, include none in the PR body. Never substitute prose for the artifact —
+a table holding sentences where images belong reads as a fabricated screenshot.
