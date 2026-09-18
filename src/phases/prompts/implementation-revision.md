@@ -59,6 +59,8 @@ gh pr edit <url> --body '<description>'
 If `ticket.prs` is absent, empty, or every entry has `merged: true` or
 `closed: true`, do nothing — skip this step entirely.
 
+{{no-self-reference}}
+
 {{pr-description}}
 
 {{pr-media}}
