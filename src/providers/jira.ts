@@ -9,6 +9,12 @@ import { ApfelLanguageModel } from "../models/apfel.ts";
 import { ClaudeLanguageModel } from "../models/claude.ts";
 import { FallbackLanguageModel } from "../models/fallback.ts";
 
+interface JiraIssueLink {
+  type: { inward: string; outward: string };
+  inwardIssue?: { key: string };
+  outwardIssue?: { key: string };
+}
+
 interface JiraIssue {
   id: string;
   key: string;
@@ -16,6 +22,7 @@ interface JiraIssue {
     summary: string;
     description: unknown;
     parent?: { key: string; fields: { summary: string } };
+    issuelinks?: JiraIssueLink[];
   };
 }
 
@@ -221,7 +228,7 @@ export class JiraProvider implements Provider {
       body: JSON.stringify({
         jql,
         maxResults: 50,
-        fields: ["key", "summary", "description", "parent"],
+        fields: ["key", "summary", "description", "parent", "issuelinks"],
       }),
     });
     if (!res.ok) throw new Error(`Jira API error: ${res.status} ${url}`);
@@ -229,6 +236,49 @@ export class JiraProvider implements Provider {
     const items: WorkItem[] = [];
     for (const issue of data.issues) {
       if (!issue.fields) continue;
+      const blockingKeys: string[] = [];
+      for (const link of issue.fields.issuelinks ?? []) {
+        if (link.type.inward === "is blocked by" && link.inwardIssue) {
+          blockingKeys.push(link.inwardIssue.key);
+        }
+        if (link.type.outward === "depends on" && link.outwardIssue) {
+          blockingKeys.push(link.outwardIssue.key);
+        }
+      }
+      if (blockingKeys.length > 0) {
+        let isBlocked = false;
+        for (const blockerKey of blockingKeys) {
+          const statusUrl =
+            `${this.baseUrl}/rest/api/3/issue/${blockerKey}?fields=status`;
+          let statusCategoryKey: string | undefined;
+          try {
+            const statusRes = await this.http.get(statusUrl, {
+              headers: {
+                Authorization: `Basic ${auth}`,
+                Accept: "application/json",
+              },
+            });
+            if (statusRes.ok) {
+              const statusData = (await statusRes.json()) as {
+                fields?: { status?: { statusCategory?: { key?: string } } };
+              };
+              statusCategoryKey = statusData.fields?.status?.statusCategory
+                ?.key;
+            }
+          } catch {
+            // treat as unresolved
+          }
+          if (statusCategoryKey?.toLowerCase() !== "done") {
+            console.log(
+              `JiraProvider.fetchNew: jira/${issue.key} is blocked by ${blockerKey} (statusCategory: ${
+                statusCategoryKey ?? "unknown"
+              }), skipping`,
+            );
+            isBlocked = true;
+          }
+        }
+        if (isBlocked) continue;
+      }
       const id = `jira/${issue.key}`;
       const legacyId = `jira-${issue.key}`;
       if (knownIds.has(legacyId)) {
