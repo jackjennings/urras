@@ -85,6 +85,7 @@ export function makeTickServiceDeps(
     notifyTickFailure: () => Promise.resolve(),
     preflightGitHubCredentials: () => Promise.resolve(),
     reconcileRepoIdentities: () => Promise.resolve(),
+    canonicalSlugFor: (slug) => slug,
     writeTickProgress: () => Promise.resolve(),
     ...overrides,
   };

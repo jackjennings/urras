@@ -1588,7 +1588,16 @@ export function composeTickDeps(
       }),
     processLearnings: () =>
       runLearnings({
-        listLearnings: () => listLearnings(stateDir),
+        listLearnings: async () => {
+          const entries = await listLearnings(stateDir);
+          return entries.map((e) => ({
+            ...e,
+            learning: {
+              ...e.learning,
+              repo: canonicalSlugFor(persistedTable, e.learning.repo),
+            },
+          }));
+        },
         writeLearning: (learning, intent) =>
           writeLearning(stateDir, learning, intent),
         prState: (url) => githubProvider.prState(url),
@@ -1657,6 +1666,7 @@ export function composeTickDeps(
         [...confirmed.entries()].map(([k, v]) => [k, v.currentSlug]),
       );
     },
+    canonicalSlugFor: (slug) => canonicalSlugFor(persistedTable, slug),
     notifyTickFailure: (error: string) =>
       desktopNotifier("Tick failed", error.slice(0, 200)),
     scaffoldStatePrompts: () =>
