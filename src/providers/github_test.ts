@@ -361,6 +361,279 @@ Deno.test("GitHubProvider.close propagates http.patch error", async () => {
   );
 });
 
+Deno.test(
+  "fetchNew: bare-org entry issues a GraphQL org-wide search query",
+  async () => {
+    let capturedBody:
+      | { query: string; variables: Record<string, unknown> }
+      | undefined;
+    const provider = new GitHubProvider({
+      repos: ["hellboxpy"],
+      accountResolver: fixedResolver("tok", "jack"),
+      resolveOrg: () => ({ canonical: "hellboxpy", currentLogin: "hellboxpy" }),
+      registerRepo: () => Promise.resolve(),
+      http: new HttpClient((_url, init) => {
+        capturedBody = JSON.parse(init?.body as string);
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: {
+                search: {
+                  nodes: [],
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                },
+              },
+            }),
+            { status: 200 },
+          ),
+        );
+      }),
+    });
+    await provider.fetchNew(new Set());
+    assert(capturedBody?.query.includes("search"));
+    assertStringIncludes(
+      capturedBody?.variables["q"] as string,
+      "org:hellboxpy",
+    );
+    assertStringIncludes(
+      capturedBody?.variables["q"] as string,
+      "assignee:jack",
+    );
+    assertStringIncludes(capturedBody?.variables["q"] as string, "is:issue");
+  },
+);
+
+Deno.test(
+  "fetchNew: org-wide search uses currentLogin from resolveOrg for the query",
+  async () => {
+    let capturedQuery = "";
+    const provider = new GitHubProvider({
+      repos: ["hellboxpy"],
+      accountResolver: fixedResolver("tok", "jack"),
+      resolveOrg: () => ({ canonical: "hellboxpy", currentLogin: "hellbox" }),
+      registerRepo: () => Promise.resolve(),
+      http: new HttpClient((_url, init) => {
+        const body = JSON.parse(init?.body as string);
+        capturedQuery = body.variables?.q ?? "";
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: {
+                search: {
+                  nodes: [],
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                },
+              },
+            }),
+            { status: 200 },
+          ),
+        );
+      }),
+    });
+    await provider.fetchNew(new Set());
+    assertStringIncludes(capturedQuery, "org:hellbox");
+  },
+);
+
+Deno.test(
+  "fetchNew: org-wide search returns WorkItems with id derived from repository.nameWithOwner",
+  async () => {
+    const provider = new GitHubProvider({
+      repos: ["hellboxpy"],
+      accountResolver: fixedResolver("tok", "jack"),
+      resolveOrg: () => ({ canonical: "hellboxpy", currentLogin: "hellboxpy" }),
+      registerRepo: () => Promise.resolve(),
+      http: new HttpClient(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: {
+                search: {
+                  nodes: [{
+                    number: 5,
+                    title: "Issue five",
+                    body: "desc",
+                    url: "https://github.com/hellboxpy/myrepo/issues/5",
+                    repository: {
+                      nameWithOwner: "hellboxpy/myrepo",
+                      databaseId: 111,
+                    },
+                  }],
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                },
+              },
+            }),
+            { status: 200 },
+          ),
+        )
+      ),
+    });
+    const items = await provider.fetchNew(new Set());
+    assertEquals(items.length, 1);
+    assertEquals(items[0].id, "github/hellboxpy/myrepo/5");
+    assertEquals(
+      items[0].url,
+      "https://github.com/hellboxpy/myrepo/issues/5",
+    );
+  },
+);
+
+Deno.test(
+  "fetchNew: org-wide search filters issues already in knownIds",
+  async () => {
+    const provider = new GitHubProvider({
+      repos: ["hellboxpy"],
+      accountResolver: fixedResolver("tok", "jack"),
+      resolveOrg: () => ({ canonical: "hellboxpy", currentLogin: "hellboxpy" }),
+      registerRepo: () => Promise.resolve(),
+      http: new HttpClient(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: {
+                search: {
+                  nodes: [
+                    {
+                      number: 1,
+                      title: "Known",
+                      body: "",
+                      url: "u1",
+                      repository: {
+                        nameWithOwner: "hellboxpy/r",
+                        databaseId: 1,
+                      },
+                    },
+                    {
+                      number: 2,
+                      title: "New",
+                      body: "",
+                      url: "u2",
+                      repository: {
+                        nameWithOwner: "hellboxpy/r",
+                        databaseId: 1,
+                      },
+                    },
+                  ],
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                },
+              },
+            }),
+            { status: 200 },
+          ),
+        )
+      ),
+    });
+    const items = await provider.fetchNew(
+      new Set(["github/hellboxpy/r/1"]),
+    );
+    assertEquals(items.length, 1);
+    assertEquals(items[0].id, "github/hellboxpy/r/2");
+  },
+);
+
+Deno.test(
+  "fetchNew: calls registerRepo for each unique repo encountered in org-wide search",
+  async () => {
+    const registered: Array<{ nameWithOwner: string; databaseId: number }> = [];
+    const provider = new GitHubProvider({
+      repos: ["hellboxpy"],
+      accountResolver: fixedResolver("tok", "jack"),
+      resolveOrg: () => ({ canonical: "hellboxpy", currentLogin: "hellboxpy" }),
+      registerRepo: (nameWithOwner, databaseId) => {
+        registered.push({ nameWithOwner, databaseId });
+        return Promise.resolve();
+      },
+      http: new HttpClient(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: {
+                search: {
+                  nodes: [
+                    {
+                      number: 1,
+                      title: "T",
+                      body: "",
+                      url: "u",
+                      repository: {
+                        nameWithOwner: "hellboxpy/newrepo",
+                        databaseId: 222,
+                      },
+                    },
+                    {
+                      number: 2,
+                      title: "T2",
+                      body: "",
+                      url: "u2",
+                      repository: {
+                        nameWithOwner: "hellboxpy/newrepo",
+                        databaseId: 222,
+                      },
+                    },
+                  ],
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                },
+              },
+            }),
+            { status: 200 },
+          ),
+        )
+      ),
+    });
+    await provider.fetchNew(new Set());
+    assertEquals(registered.length, 1);
+    assertEquals(registered[0].nameWithOwner, "hellboxpy/newrepo");
+    assertEquals(registered[0].databaseId, 222);
+  },
+);
+
+Deno.test(
+  "fetchNew: follows hasNextPage cursor for org-wide search until exhausted",
+  async () => {
+    let callCount = 0;
+    const provider = new GitHubProvider({
+      repos: ["hellboxpy"],
+      accountResolver: fixedResolver("tok", "jack"),
+      resolveOrg: () => ({ canonical: "hellboxpy", currentLogin: "hellboxpy" }),
+      registerRepo: () => Promise.resolve(),
+      http: new HttpClient((_url, init) => {
+        callCount++;
+        const body = JSON.parse(init?.body as string);
+        const isFirstPage = body.variables?.after === null ||
+          body.variables?.after === undefined;
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: {
+                search: {
+                  nodes: [{
+                    number: callCount,
+                    title: "T",
+                    body: "",
+                    url: "u",
+                    repository: {
+                      nameWithOwner: "hellboxpy/r",
+                      databaseId: 1,
+                    },
+                  }],
+                  pageInfo: {
+                    hasNextPage: isFirstPage,
+                    endCursor: isFirstPage ? "cursor1" : null,
+                  },
+                },
+              },
+            }),
+            { status: 200 },
+          ),
+        );
+      }),
+    });
+    const items = await provider.fetchNew(new Set());
+    assertEquals(callCount, 2);
+    assertEquals(items.length, 2);
+  },
+);
+
 Deno.test("toSortable: github/org/repo/3 returns [3]", () => {
   assertEquals(GitHubProvider.toSortable("github/jackjennings/lazyboy/3"), [3]);
 });

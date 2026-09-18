@@ -9,7 +9,11 @@ import {
   CorruptRepoIdentitiesError,
   type RepoIdentityTable,
 } from "./repo-identity.ts";
-import { reconcileRepoIdentities } from "./reconcile-identities.ts";
+import {
+  reconcileOrgIdentities,
+  reconcileRepoIdentities,
+} from "./reconcile-identities.ts";
+import type { OrgIdentityTable } from "./org-identity.ts";
 
 function makeHttp(handler: typeof fetch): HttpClient {
   return new HttpClient(handler);
@@ -371,3 +375,161 @@ Deno.test(
 // Suppress unused import lint warning
 const _unused = CorruptRepoIdentitiesError;
 assertFalse(_unused === undefined);
+
+function makeOrgDeps(
+  overrides: Partial<Parameters<typeof reconcileOrgIdentities>[0]> = {},
+): Parameters<typeof reconcileOrgIdentities>[0] {
+  return {
+    http: makeHttp(() => Promise.resolve(new Response("{}", { status: 404 }))),
+    accountResolver: () => ({ token: "tok", login: "user" }),
+    readTable: () => Promise.resolve({}),
+    writeTable: () => Promise.resolve(),
+    log: () => {},
+    notify: () => Promise.resolve(),
+    orgs: [],
+    ...overrides,
+  };
+}
+
+Deno.test(
+  "reconcileOrgIdentities: registers a new bare-org entry keyed by its login",
+  async () => {
+    const written: OrgIdentityTable[] = [];
+    await reconcileOrgIdentities(makeOrgDeps({
+      orgs: ["hellboxpy"],
+      writeTable: (t) => {
+        written.push(t);
+        return Promise.resolve();
+      },
+      http: makeHttp((_url, init) => {
+        const body = JSON.parse((init as RequestInit)?.body as string ?? "{}");
+        if (body.query?.includes("organization")) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                data: {
+                  organization: { databaseId: 99, login: "hellboxpy" },
+                },
+              }),
+              { status: 200 },
+            ),
+          );
+        }
+        return Promise.resolve(new Response("{}", { status: 404 }));
+      }),
+    }));
+    assertEquals(written.length, 1);
+    assertEquals(written[0]["hellboxpy"].orgId, 99);
+    assertEquals(written[0]["hellboxpy"].currentLogin, "hellboxpy");
+    assertArrayIncludes(written[0]["hellboxpy"].aliases, ["hellboxpy"]);
+  },
+);
+
+Deno.test(
+  "reconcileOrgIdentities: detects org rename via /organizations/<orgId>",
+  async () => {
+    const table: OrgIdentityTable = {
+      hellboxpy: {
+        orgId: 42,
+        currentLogin: "hellboxpy",
+        aliases: ["hellboxpy"],
+      },
+    };
+    const written: OrgIdentityTable[] = [];
+    const notifyTitles: string[] = [];
+    const loggedEvents: string[] = [];
+    await reconcileOrgIdentities(makeOrgDeps({
+      readTable: () => Promise.resolve({ ...table }),
+      writeTable: (t) => {
+        written.push(t);
+        return Promise.resolve();
+      },
+      notify: (title) => {
+        notifyTitles.push(title);
+        return Promise.resolve();
+      },
+      log: (event) => {
+        loggedEvents.push(event);
+      },
+      http: makeHttp((url) => {
+        if ((url as string).includes("/organizations/42")) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ login: "hellbox" }), { status: 200 }),
+          );
+        }
+        return Promise.resolve(new Response("{}", { status: 404 }));
+      }),
+    }));
+    assertEquals(written.length, 1);
+    assertEquals(written[0]["hellboxpy"].currentLogin, "hellbox");
+    assertArrayIncludes(written[0]["hellboxpy"].aliases, [
+      "hellboxpy",
+      "hellbox",
+    ]);
+    assertEquals(notifyTitles.length, 1);
+    assertArrayIncludes(loggedEvents, ["org-renamed"]);
+  },
+);
+
+Deno.test(
+  "reconcileOrgIdentities: non-ok response on refresh logs failure and leaves table unwritten",
+  async () => {
+    const table: OrgIdentityTable = {
+      hellboxpy: {
+        orgId: 42,
+        currentLogin: "hellboxpy",
+        aliases: ["hellboxpy"],
+      },
+    };
+    const loggedEvents: string[] = [];
+    const written: OrgIdentityTable[] = [];
+    await reconcileOrgIdentities(makeOrgDeps({
+      readTable: () => Promise.resolve({ ...table }),
+      writeTable: (t) => {
+        written.push(t);
+        return Promise.resolve();
+      },
+      log: (event) => {
+        loggedEvents.push(event);
+      },
+      http: makeHttp(() =>
+        Promise.resolve(new Response("{}", { status: 500 }))
+      ),
+    }));
+    assertEquals(written.length, 0);
+    assertArrayIncludes(loggedEvents, ["org-identity-reconcile-failed"]);
+  },
+);
+
+Deno.test(
+  "reconcileOrgIdentities: does not re-register an org already in the table",
+  async () => {
+    const table: OrgIdentityTable = {
+      hellboxpy: {
+        orgId: 42,
+        currentLogin: "hellboxpy",
+        aliases: ["hellboxpy"],
+      },
+    };
+    const orgLookupCalls: string[] = [];
+    await reconcileOrgIdentities(makeOrgDeps({
+      orgs: ["hellboxpy"],
+      readTable: () => Promise.resolve({ ...table }),
+      http: makeHttp((url, init) => {
+        const body = JSON.parse((init as RequestInit)?.body as string ?? "{}");
+        if (body.query?.includes("organization")) {
+          orgLookupCalls.push("org-lookup");
+        }
+        if ((url as string).includes("/organizations/42")) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ login: "hellboxpy" }), {
+              status: 200,
+            }),
+          );
+        }
+        return Promise.resolve(new Response("{}", { status: 404 }));
+      }),
+    }));
+    assertEquals(orgLookupCalls.length, 0);
+  },
+);
