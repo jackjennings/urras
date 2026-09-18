@@ -343,6 +343,7 @@ function colorizeStatus(status: string): string {
 }
 
 export function formatStatusRow(
+  marker: string,
   id: string,
   phase: string,
   status: string,
@@ -353,9 +354,9 @@ export function formatStatusRow(
   const last = approvals.at(-1);
   const approvedFor = last?.phase === phase ? last.actor : null;
   const approvedStr = approvedFor ?? "-";
-  return `${id.padEnd(36)} ${phase.padEnd(16)} ${colorizeStatus(status)} ${
-    approvedStr.padEnd(9)
-  } ${tokenStr.padStart(10)} ${title}`;
+  return `${marker} ${id.padEnd(36)} ${phase.padEnd(16)} ${
+    colorizeStatus(status)
+  } ${approvedStr.padEnd(9)} ${tokenStr.padStart(10)} ${title}`;
 }
 
 export function shouldHideTicket(phase: string, status: string): boolean {
@@ -375,7 +376,7 @@ function terminalWidth(fallback: number): number {
 }
 
 export function formatStatusHeader(): string {
-  const header = `${"ID".padEnd(36)} ${"PHASE".padEnd(16)} ${
+  const header = `  ${"ID".padEnd(36)} ${"PHASE".padEnd(16)} ${
     "STATUS".padEnd(17)
   } ${"APPROVED".padEnd(9)} ${"TOKENS".padStart(10)} TITLE`;
   return [header, "─".repeat(terminalWidth(header.length))].join("\n");
@@ -470,6 +471,7 @@ export const status: Command = {
       const t = visible[i];
       console.log(
         formatStatusRow(
+          t.held ? "~" : t.prioritized ? "!" : " ",
           t.id,
           t.phase,
           t.status,
