@@ -208,6 +208,7 @@ Deno.test("readTicketTokens: ignores non-usage json files", async () => {
 
 Deno.test("formatStatusRow: pads ID field to 36 characters", () => {
   const row = formatStatusRow(
+    " ",
     "github/jackjennings/lazyboy/23",
     "intake",
     "running",
@@ -215,13 +216,57 @@ Deno.test("formatStatusRow: pads ID field to 36 characters", () => {
     "0",
     "My ticket",
   );
-  assert(row.startsWith("github/jackjennings/lazyboy/23      "));
+  assert(row.startsWith("  github/jackjennings/lazyboy/23"));
+});
+
+Deno.test("formatStatusRow: held ticket shows tilde marker", () => {
+  const row = formatStatusRow(
+    "~",
+    "github/a/repo/1",
+    "intake",
+    "waiting",
+    [],
+    "0",
+    "t",
+  );
+  assert(row.startsWith("~ "));
+});
+
+Deno.test("formatStatusRow: prioritized ticket shows exclamation marker", () => {
+  const row = formatStatusRow(
+    "!",
+    "github/a/repo/1",
+    "intake",
+    "waiting",
+    [],
+    "0",
+    "t",
+  );
+  assert(row.startsWith("! "));
+});
+
+Deno.test("formatStatusRow: held-and-prioritized ticket shows tilde marker", () => {
+  const row = formatStatusRow(
+    "~",
+    "github/a/repo/1",
+    "intake",
+    "waiting",
+    [],
+    "0",
+    "t",
+  );
+  assert(row.startsWith("~ "));
 });
 
 Deno.test("formatStatusHeader: separator line is a full-width rule", () => {
   const lines = formatStatusHeader().split("\n");
   assertGreater(lines[1].length, 0);
   assertMatch(lines[1], /^─+$/);
+});
+
+Deno.test("formatStatusHeader: first line starts with two spaces for blank marker column", () => {
+  const lines = formatStatusHeader().split("\n");
+  assert(lines[0].startsWith("  "));
 });
 
 // ── shouldHideTicket ──────────────────────────────────────────────────────────
@@ -460,6 +505,7 @@ Deno.test(
       shortTitle: "Short label",
     });
     const row = formatStatusRow(
+      " ",
       ticket.id,
       ticket.phase,
       ticket.status,
@@ -477,6 +523,7 @@ Deno.test(
   () => {
     const ticket = makeTicket({ title: "Full title only" });
     const row = formatStatusRow(
+      " ",
       ticket.id,
       ticket.phase,
       ticket.status,
@@ -1355,6 +1402,7 @@ Deno.test(
 
 Deno.test("formatStatusRow: running status uses green foreground color", () => {
   const row = formatStatusRow(
+    " ",
     "github/a/repo/1",
     "intake",
     "running",
@@ -1368,6 +1416,7 @@ Deno.test("formatStatusRow: running status uses green foreground color", () => {
 
 Deno.test("formatStatusRow: waiting status uses yellow foreground color", () => {
   const row = formatStatusRow(
+    " ",
     "github/a/repo/1",
     "intake",
     "waiting",
@@ -1381,6 +1430,7 @@ Deno.test("formatStatusRow: waiting status uses yellow foreground color", () => 
 
 Deno.test("formatStatusRow: needs-attention status uses red foreground color", () => {
   const row = formatStatusRow(
+    " ",
     "github/a/repo/1",
     "intake",
     "needs-attention",
@@ -1394,7 +1444,15 @@ Deno.test("formatStatusRow: needs-attention status uses red foreground color", (
 
 Deno.test("formatStatusRow: new, revising, done statuses are not colored", () => {
   for (const s of ["new", "revising", "done"]) {
-    const row = formatStatusRow("github/a/repo/1", "intake", s, [], "0", "t");
+    const row = formatStatusRow(
+      " ",
+      "github/a/repo/1",
+      "intake",
+      s,
+      [],
+      "0",
+      "t",
+    );
     assertStringIncludes(row, s.padEnd(17));
     assertEquals(row, stripAnsiCode(row));
   }

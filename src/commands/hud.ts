@@ -372,6 +372,7 @@ async function buildStatusFromMap(
       const e = ticketMap.get(t.id);
       const tokens = e?.ok ? e.tokens : null;
       return formatStatusRow(
+        t.held ? "~" : t.prioritized ? "!" : " ",
         t.id,
         t.phase,
         t.status,
