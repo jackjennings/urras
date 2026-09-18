@@ -8,7 +8,7 @@ import {
   assertRejects,
   assertStringIncludes,
 } from "@std/assert";
-import { dim, stripAnsiCode } from "@std/fmt/colors";
+import { stripAnsiCode } from "@std/fmt/colors";
 import { assertSpyCalls, spy, stub } from "@std/testing/mock";
 import {
   answerQuestion,
@@ -22,7 +22,6 @@ import {
   findLatestSelfApprove,
   formatTimestamp,
   renderDiff,
-  renderTabBar,
   renderTicketTab,
   review,
   ReviewSession,
@@ -665,41 +664,6 @@ Deno.test("findLatestFeedback: returns null when only self-approve files exist",
   } finally {
     await Deno.remove(tempDir, { recursive: true });
   }
-});
-
-// ── renderTabBar ──────────────────────────────────────────────────────────────
-
-Deno.test("renderTabBar: single tab renders as [phaseName]", () => {
-  const result = renderTabBar([{ phaseName: "spec" }], 0);
-  assertEquals(stripAnsiCode(result), "[spec]");
-});
-
-Deno.test("renderTabBar: active tab is bracketed and inactive tabs are not", () => {
-  const result = stripAnsiCode(
-    renderTabBar([{ phaseName: "intake" }, { phaseName: "spec" }], 1),
-  );
-  assertStringIncludes(result, "[spec]");
-  assertFalse(result.includes("[intake]"));
-});
-
-Deno.test("renderTabBar: inactive tab text is dimmed", () => {
-  const result = renderTabBar(
-    [{ phaseName: "intake" }, { phaseName: "spec" }],
-    1,
-  );
-  assertStringIncludes(result, dim("intake"));
-});
-
-Deno.test("renderTabBar: tabs are separated by ' ─ '", () => {
-  const result = stripAnsiCode(
-    renderTabBar(
-      [{ phaseName: "intake" }, { phaseName: "enrichment" }, {
-        phaseName: "spec",
-      }],
-      2,
-    ),
-  );
-  assertStringIncludes(result, "intake ─ enrichment ─ [spec]");
 });
 
 // ── renderDiff ────────────────────────────────────────────────────────────────

@@ -51,6 +51,7 @@ import { CONTEXT_PHASE_SEQUENCE } from "./phases/types.ts";
 import { compactTimestamp } from "./timestamp.ts";
 import { diffLines } from "diff";
 import { ScrollPane } from "./ui/scroll-pane.ts";
+import { Tab, TabbedPane } from "./ui/tabbed-pane.ts";
 import {
   computeVisibleHeadingIndices,
   extractHeadings,
@@ -235,18 +236,6 @@ export async function findLatestFeedback(
   const newest = matches[matches.length - 1];
   const fullText = await readTextFile(join(ticketDir, newest));
   return { filename: newest, fullText };
-}
-
-export function renderTabBar(
-  tabs: Array<{ phaseName: string }>,
-  activeIndex: number,
-): string {
-  return tabs
-    .map((
-      tab,
-      i,
-    ) => (i === activeIndex ? `[${tab.phaseName}]` : dim(tab.phaseName)))
-    .join(" ─ ");
 }
 
 export async function classifyApproval(
@@ -569,7 +558,7 @@ export interface ReviewSessionOptions {
   ticket: TicketState;
   patchTicket: (patch: Partial<TicketState>) => Promise<void>;
   systemPrompt: string;
-  allTabs?: Array<{ phaseName: string }>;
+  allTabs?: Tab[];
   allTabContents?: TabContent[];
   tui: TUI;
   close: () => void;
@@ -607,9 +596,9 @@ export class ReviewSession implements Component, Focusable {
   private readonly errorHandle: OverlayHandle;
   private readonly questionOverlay: QuestionOverlay;
   private readonly errorOverlay: ErrorOverlay;
-  private readonly allTabs: Array<{ phaseName: string }>;
+  private readonly allTabs: Tab[];
   private readonly allTabContents: TabContent[];
-  private activeTabIndex: number;
+  private readonly tabbedPane: TabbedPane;
   private editorVisible: boolean;
   private headings: { level: number; title: string; sourceLine: number }[];
   private totalSourceLines: number;
@@ -671,13 +660,14 @@ export class ReviewSession implements Component, Focusable {
 
     this.allTabs = allTabsOpt ?? [{ phaseName: "ticket" }];
     this.allTabContents = allTabContentsOpt ?? [defaultTicketTabContent];
-    this.activeTabIndex = this.allTabs.length - 1;
-    this.editorVisible = this.activeTabIndex === this.allTabs.length - 1;
-    this.headings = this.allTabContents[this.activeTabIndex].headings;
+    this.tabbedPane = new TabbedPane(this.allTabs, this.allTabs.length - 1);
+    this.editorVisible =
+      this.tabbedPane.activeIndex === this.allTabs.length - 1;
+    this.headings = this.allTabContents[this.tabbedPane.activeIndex].headings;
     this.totalSourceLines =
-      this.allTabContents[this.activeTabIndex].totalSourceLines;
+      this.allTabContents[this.tabbedPane.activeIndex].totalSourceLines;
     this.currentOnInvalidate =
-      this.allTabContents[this.activeTabIndex].onInvalidate;
+      this.allTabContents[this.tabbedPane.activeIndex].onInvalidate;
 
     this.savedKb = getKeybindingsArg();
     const kb = new KeybindingsManager({
@@ -705,9 +695,9 @@ export class ReviewSession implements Component, Focusable {
     });
 
     this.scrollPane = new ScrollPane({
-      getLines: this.allTabContents[this.activeTabIndex].getLines,
+      getLines: this.allTabContents[this.tabbedPane.activeIndex].getLines,
       tui,
-      getTitle: () => renderTabBar(this.allTabs, this.activeTabIndex),
+      getTitle: () => this.tabbedPane.renderBar(),
       getHeight: () =>
         this.editorVisible
           ? Math.max(
@@ -803,9 +793,8 @@ export class ReviewSession implements Component, Focusable {
       if (
         matchesKey(data, "left") &&
         this.focusedElement === "content" &&
-        this.activeTabIndex > 0
+        this.tabbedPane.prev()
       ) {
-        this.activeTabIndex--;
         this.applyTabSwitch();
         tui.requestRender(true);
         return { consume: true };
@@ -813,9 +802,8 @@ export class ReviewSession implements Component, Focusable {
       if (
         matchesKey(data, "right") &&
         this.focusedElement === "content" &&
-        this.activeTabIndex < this.allTabs.length - 1
+        this.tabbedPane.next()
       ) {
-        this.activeTabIndex++;
         this.applyTabSwitch();
         tui.requestRender(true);
         return { consume: true };
@@ -952,12 +940,13 @@ export class ReviewSession implements Component, Focusable {
   }
 
   private applyTabSwitch(): void {
-    const tabContent = this.allTabContents[this.activeTabIndex];
+    const tabContent = this.allTabContents[this.tabbedPane.activeIndex];
     this.scrollPane.setContent(tabContent.getLines);
     this.headings = tabContent.headings;
     this.totalSourceLines = tabContent.totalSourceLines;
     this.currentOnInvalidate = tabContent.onInvalidate;
-    this.editorVisible = this.activeTabIndex === this.allTabs.length - 1;
+    this.editorVisible =
+      this.tabbedPane.activeIndex === this.allTabs.length - 1;
     if (this.editorVisible) {
       this.tui.addChild(this.editor);
     } else {
