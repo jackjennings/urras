@@ -81,7 +81,9 @@ export async function nextCeremonyRunTime(opts: {
   const { config, now, outputDir, name } = opts;
 
   const timeStr = config.time;
-  if (typeof timeStr !== "string" || !/^\d{2}:\d{2}$/.test(timeStr)) return null;
+  if (typeof timeStr !== "string" || !/^\d{2}:\d{2}$/.test(timeStr)) {
+    return null;
+  }
   const hour = parseInt(timeStr.slice(0, 2), 10);
   const minute = parseInt(timeStr.slice(3), 10);
   if (hour > 23 || minute > 59) return null;
@@ -223,7 +225,12 @@ export async function listCeremonyStatuses(opts: {
         nextRun = "no config";
       } else {
         const outputDir = join(stateDir, "ceremonies", name, "output");
-        const next = await nextCeremonyRunTime({ config, now, outputDir, name });
+        const next = await nextCeremonyRunTime({
+          config,
+          now,
+          outputDir,
+          name,
+        });
         nextRun = next !== null ? compactTimestamp(next) : "no config";
       }
     }

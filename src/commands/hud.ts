@@ -30,7 +30,11 @@ import type { TicketState } from "../state/types.ts";
 import { ScrollPane } from "../ui/scroll-pane.ts";
 import type { Command } from "./types.ts";
 import { mkdir, open, readTextFile } from "../filesystem.ts";
-import { findLatestPhaseOutput, renderTabBar, ReviewSession } from "../review.ts";
+import {
+  findLatestPhaseOutput,
+  renderTabBar,
+  ReviewSession,
+} from "../review.ts";
 import { listCeremonyStatuses } from "../ceremonies.ts";
 import type { CeremonyStatus } from "../ceremonies.ts";
 
@@ -133,13 +137,17 @@ export function logPaneLines(lines: string[]): string[] {
 export function renderCeremonyLines(statuses: CeremonyStatus[]): string[] {
   if (statuses.length === 0) return [dim("No ceremonies found.")];
   const header = dim(
-    `${"Name".padEnd(32)} ${"Kind".padEnd(10)} ${"Approval".padEnd(10)} Next Run`,
+    `${"Name".padEnd(32)} ${"Kind".padEnd(10)} ${
+      "Approval".padEnd(10)
+    } Next Run`,
   );
   return [
     header,
     ...statuses.map(
       (s) =>
-        `${s.name.padEnd(32)} ${s.kind.padEnd(10)} ${s.approval.padEnd(10)} ${s.nextRun}`,
+        `${s.name.padEnd(32)} ${s.kind.padEnd(10)} ${
+          s.approval.padEnd(10)
+        } ${s.nextRun}`,
     ),
   ];
 }
