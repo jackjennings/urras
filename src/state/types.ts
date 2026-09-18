@@ -119,6 +119,8 @@ export interface TicketState {
   lastSeenCommentTimestamp?: string;
   lastSeenPrCommentTimestamp?: string;
   lastUpstreamSyncTimestamp?: string;
+  held?: boolean;
+  prioritized?: boolean;
   providerDone?: boolean;
   providerPickedUp?: boolean;
   outputRetries?: number;
