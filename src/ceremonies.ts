@@ -29,9 +29,13 @@ export interface CeremonyRunnerDeps {
   notify?(title: string, message: string): Promise<void>;
   listTickets(): Promise<string[]>;
   readTicket(id: string): Promise<TicketState>;
-  generateText(request: LanguageModelRequest): Promise<string | null>;
+  generateText(
+    request: LanguageModelRequest,
+    callSite?: string,
+  ): Promise<string | null>;
   generateObject<T>(
     request: LanguageModelRequest & { schema: object },
+    callSite?: string,
   ): Promise<T | null>;
   runGit(
     args: string[],
@@ -43,7 +47,7 @@ export interface CeremonyRunnerDeps {
   commitState(): Promise<void>;
   pushTicket(ticket: { title: string; body: string }): Promise<void>;
   timeoutMs?: number;
-  getModel(chain: ModelChainEntry[]): LanguageModel;
+  getModel(chain: ModelChainEntry[], callSite?: string): LanguageModel;
 }
 
 function parseTimestampPrefix(filename: string): Temporal.PlainDateTime | null {
@@ -303,13 +307,15 @@ export class CeremonyRunner {
           appendTickLog: this.#deps.appendTickLog,
           listTickets: this.#deps.listTickets,
           readTicket: this.#deps.readTicket,
-          generateText: this.#deps.generateText,
-          generateObject: this.#deps.generateObject,
+          generateText: (request) =>
+            this.#deps.generateText(request, `ceremony:${name}`),
+          generateObject: (request) =>
+            this.#deps.generateObject(request, `ceremony:${name}`),
           runGit: this.#deps.runGit,
           runGh: this.#deps.runGh,
           commitState: this.#deps.commitState,
           notify: this.#deps.notify,
-          getModel: (chain) => this.#deps.getModel(chain),
+          getModel: (chain) => this.#deps.getModel(chain, `ceremony:${name}`),
           pushTicket: this.#deps.pushTicket,
         }),
         ceremonyDir,
