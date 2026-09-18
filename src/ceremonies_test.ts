@@ -1,14 +1,22 @@
 import {
   assert,
+  assertArrayIncludes,
   assertEquals,
+  assertExists,
   assertFalse,
+  assertMatch,
   assertNotEquals,
   assertStringIncludes,
 } from "@std/assert";
 import { assertSpyCalls, spy } from "@std/testing/mock";
 import { join } from "@std/path";
 import { existsSync } from "./filesystem.ts";
-import { CeremonyRunner } from "./ceremonies.ts";
+import {
+  CeremonyRunner,
+  listCeremonyStatuses,
+  nextCeremonyRunTime,
+} from "./ceremonies.ts";
+import { BUILT_IN_CEREMONY_NAMES } from "./ceremonies/built-ins.ts";
 import { DocumentationGapsCeremony } from "./ceremonies/documentation-gaps.ts";
 import {
   ceremonyHash,
@@ -24,6 +32,13 @@ import type { LanguageModelRequest } from "./models/types.ts";
 
 const TEST_NOW = Temporal.ZonedDateTime.from(
   "2026-07-27T10:00:00[America/New_York]",
+);
+
+const TEST_NOW_WEEKDAY = Temporal.ZonedDateTime.from(
+  "2026-07-27T10:00:00[America/New_York]", // Monday
+);
+const TEST_NOW_WEEKEND = Temporal.ZonedDateTime.from(
+  "2026-07-25T10:00:00[America/New_York]", // Saturday
 );
 
 function makeRunner(
@@ -1192,6 +1207,425 @@ Deno.test("CeremonyRunner: output written to stateDir/ceremonies/<name>/output w
   } finally {
     await Deno.remove(stateDir, { recursive: true });
     await Deno.remove(extensionsDir, { recursive: true });
+  }
+});
+
+// ── nextCeremonyRunTime ───────────────────────────────────────────────────────
+
+Deno.test("nextCeremonyRunTime: returns null for missing time field", async () => {
+  const outputDir = await Deno.makeTempDir();
+  try {
+    const result = await nextCeremonyRunTime({
+      config: {},
+      now: TEST_NOW_WEEKDAY,
+      outputDir,
+      name: "standup",
+    });
+    assertEquals(result, null);
+  } finally {
+    await Deno.remove(outputDir, { recursive: true });
+  }
+});
+
+Deno.test("nextCeremonyRunTime: returns null for invalid time format", async () => {
+  const outputDir = await Deno.makeTempDir();
+  try {
+    const result = await nextCeremonyRunTime({
+      config: { time: "9am" },
+      now: TEST_NOW_WEEKDAY,
+      outputDir,
+      name: "standup",
+    });
+    assertEquals(result, null);
+  } finally {
+    await Deno.remove(outputDir, { recursive: true });
+  }
+});
+
+Deno.test("nextCeremonyRunTime: daily, no output file — returns today threshold", async () => {
+  const outputDir = await Deno.makeTempDir();
+  try {
+    const result = await nextCeremonyRunTime({
+      config: { time: "09:00" },
+      now: TEST_NOW_WEEKDAY,
+      outputDir,
+      name: "standup",
+    });
+    assert(result !== null);
+    assertEquals(result.hour, 9);
+    assertEquals(result.minute, 0);
+    assertEquals(result.day, TEST_NOW_WEEKDAY.day);
+  } finally {
+    await Deno.remove(outputDir, { recursive: true });
+  }
+});
+
+Deno.test("nextCeremonyRunTime: daily, today output exists — returns next eligible day", async () => {
+  const outputDir = await Deno.makeTempDir();
+  try {
+    await Deno.writeTextFile(
+      join(outputDir, "20260727T090000-standup.md"),
+      "done",
+    );
+    const result = await nextCeremonyRunTime({
+      config: { time: "09:00" },
+      now: TEST_NOW_WEEKDAY,
+      outputDir,
+      name: "standup",
+    });
+    assert(result !== null);
+    assertEquals(result.day, TEST_NOW_WEEKDAY.day + 1);
+    assertEquals(result.hour, 9);
+  } finally {
+    await Deno.remove(outputDir, { recursive: true });
+  }
+});
+
+Deno.test("nextCeremonyRunTime: daily workdays_only, today output exists on Friday — skips to Monday", async () => {
+  const friday = Temporal.ZonedDateTime.from(
+    "2026-07-24T10:00:00[America/New_York]",
+  );
+  const outputDir = await Deno.makeTempDir();
+  try {
+    await Deno.writeTextFile(
+      join(outputDir, "20260724T090000-standup.md"),
+      "done",
+    );
+    const result = await nextCeremonyRunTime({
+      config: { time: "09:00", workdays_only: true },
+      now: friday,
+      outputDir,
+      name: "standup",
+    });
+    assert(result !== null);
+    assertEquals(result.dayOfWeek, 1); // Monday
+    assertEquals(result.hour, 9);
+  } finally {
+    await Deno.remove(outputDir, { recursive: true });
+  }
+});
+
+Deno.test("nextCeremonyRunTime: daily workdays_only, weekend, no today output — returns next Monday", async () => {
+  const outputDir = await Deno.makeTempDir();
+  try {
+    const result = await nextCeremonyRunTime({
+      config: { time: "09:00", workdays_only: true },
+      now: TEST_NOW_WEEKEND,
+      outputDir,
+      name: "standup",
+    });
+    assert(result !== null);
+    assertEquals(result.dayOfWeek, 1); // Monday
+  } finally {
+    await Deno.remove(outputDir, { recursive: true });
+  }
+});
+
+Deno.test("nextCeremonyRunTime: interval, no output — returns today threshold", async () => {
+  const outputDir = await Deno.makeTempDir();
+  try {
+    const result = await nextCeremonyRunTime({
+      config: { time: "09:00", interval_hours: 2 },
+      now: TEST_NOW_WEEKDAY,
+      outputDir,
+      name: "interval-test",
+    });
+    assert(result !== null);
+    assertEquals(result.hour, 9);
+    assertEquals(result.day, TEST_NOW_WEEKDAY.day);
+  } finally {
+    await Deno.remove(outputDir, { recursive: true });
+  }
+});
+
+Deno.test("nextCeremonyRunTime: interval, recent output — returns lastRun + intervalHours", async () => {
+  const outputDir = await Deno.makeTempDir();
+  try {
+    // Last run 1 hour ago
+    await Deno.writeTextFile(
+      join(outputDir, "20260727T090000-interval-test.md"),
+      "done",
+    );
+    const result = await nextCeremonyRunTime({
+      config: { time: "09:00", interval_hours: 2 },
+      now: TEST_NOW_WEEKDAY, // 10:00
+      outputDir,
+      name: "interval-test",
+    });
+    assert(result !== null);
+    // 09:00 + 2h = 11:00
+    assertEquals(result.hour, 11);
+    assertEquals(result.minute, 0);
+  } finally {
+    await Deno.remove(outputDir, { recursive: true });
+  }
+});
+
+Deno.test("nextCeremonyRunTime: interval workdays_only, weekend — returns next Monday at threshold", async () => {
+  const outputDir = await Deno.makeTempDir();
+  try {
+    const result = await nextCeremonyRunTime({
+      config: { time: "09:00", interval_hours: 2, workdays_only: true },
+      now: TEST_NOW_WEEKEND,
+      outputDir,
+      name: "interval-test",
+    });
+    assert(result !== null);
+    assertEquals(result.dayOfWeek, 1); // Monday
+    assertEquals(result.hour, 9);
+  } finally {
+    await Deno.remove(outputDir, { recursive: true });
+  }
+});
+
+// ── listCeremonyStatuses ──────────────────────────────────────────────────────
+
+Deno.test("listCeremonyStatuses: always includes built-in names", async () => {
+  const extensionsDir = await Deno.makeTempDir();
+  const stateDir = await Deno.makeTempDir();
+  try {
+    const statuses = await listCeremonyStatuses({
+      extensionsDir,
+      stateDir,
+      now: TEST_NOW,
+    });
+    const names = statuses.map((s) => s.name);
+    for (const builtIn of BUILT_IN_CEREMONY_NAMES) {
+      assertArrayIncludes(names, [builtIn]);
+    }
+  } finally {
+    await Deno.remove(extensionsDir, { recursive: true });
+    await Deno.remove(stateDir, { recursive: true });
+  }
+});
+
+Deno.test("listCeremonyStatuses: built-ins have kind built-in and approval dash", async () => {
+  const extensionsDir = await Deno.makeTempDir();
+  const stateDir = await Deno.makeTempDir();
+  try {
+    const statuses = await listCeremonyStatuses({
+      extensionsDir,
+      stateDir,
+      now: TEST_NOW,
+    });
+    for (const status of statuses.filter((s) => s.kind === "built-in")) {
+      assertEquals(status.approval, "—");
+    }
+  } finally {
+    await Deno.remove(extensionsDir, { recursive: true });
+    await Deno.remove(stateDir, { recursive: true });
+  }
+});
+
+Deno.test("listCeremonyStatuses: built-in with no directory shows no config", async () => {
+  const extensionsDir = await Deno.makeTempDir();
+  const stateDir = await Deno.makeTempDir();
+  try {
+    const statuses = await listCeremonyStatuses({
+      extensionsDir,
+      stateDir,
+      now: TEST_NOW,
+    });
+    for (const builtIn of BUILT_IN_CEREMONY_NAMES) {
+      const status = statuses.find((s) => s.name === builtIn);
+      assertExists(status);
+      assertEquals(status!.nextRun, "no config");
+    }
+  } finally {
+    await Deno.remove(extensionsDir, { recursive: true });
+    await Deno.remove(stateDir, { recursive: true });
+  }
+});
+
+Deno.test("listCeremonyStatuses: missing ceremonies dir, only built-ins appear", async () => {
+  const extensionsDir = await Deno.makeTempDir();
+  const stateDir = await Deno.makeTempDir();
+  try {
+    const statuses = await listCeremonyStatuses({
+      extensionsDir,
+      stateDir,
+      now: TEST_NOW,
+    });
+    assertEquals(statuses.length, BUILT_IN_CEREMONY_NAMES.length);
+  } finally {
+    await Deno.remove(extensionsDir, { recursive: true });
+    await Deno.remove(stateDir, { recursive: true });
+  }
+});
+
+Deno.test("listCeremonyStatuses: custom ceremony appears with kind custom", async () => {
+  const extensionsDir = await Deno.makeTempDir();
+  const stateDir = await Deno.makeTempDir();
+  try {
+    const customDir = join(extensionsDir, "ceremonies", "digest");
+    await Deno.mkdir(customDir, { recursive: true });
+    await Deno.writeTextFile(join(customDir, "config.toml"), 'time = "09:00"');
+    const statuses = await listCeremonyStatuses({
+      extensionsDir,
+      stateDir,
+      now: TEST_NOW,
+    });
+    const status = statuses.find((s) => s.name === "digest");
+    assertExists(status);
+    assertEquals(status!.kind, "custom");
+  } finally {
+    await Deno.remove(extensionsDir, { recursive: true });
+    await Deno.remove(stateDir, { recursive: true });
+  }
+});
+
+Deno.test("listCeremonyStatuses: built-in with directory appears once as built-in", async () => {
+  using _lazyboy = withUrrasDir();
+  const extensionsDir = await Deno.makeTempDir();
+  const stateDir = await Deno.makeTempDir();
+  try {
+    const builtInName = BUILT_IN_CEREMONY_NAMES[0];
+    const dir = join(extensionsDir, "ceremonies", builtInName);
+    await Deno.mkdir(dir, { recursive: true });
+    await Deno.writeTextFile(join(dir, "config.toml"), 'time = "09:00"');
+    const statuses = await listCeremonyStatuses({
+      extensionsDir,
+      stateDir,
+      now: TEST_NOW,
+    });
+    const matching = statuses.filter((s) => s.name === builtInName);
+    assertEquals(matching.length, 1);
+    assertEquals(matching[0].kind, "built-in");
+  } finally {
+    await Deno.remove(extensionsDir, { recursive: true });
+    await Deno.remove(stateDir, { recursive: true });
+  }
+});
+
+Deno.test("listCeremonyStatuses: invalid-name directory excluded", async () => {
+  const extensionsDir = await Deno.makeTempDir();
+  const stateDir = await Deno.makeTempDir();
+  try {
+    await Deno.mkdir(
+      join(extensionsDir, "ceremonies", "bad name!"),
+      { recursive: true },
+    );
+    const statuses = await listCeremonyStatuses({
+      extensionsDir,
+      stateDir,
+      now: TEST_NOW,
+    });
+    assertFalse(statuses.some((s) => s.name === "bad name!"));
+  } finally {
+    await Deno.remove(extensionsDir, { recursive: true });
+    await Deno.remove(stateDir, { recursive: true });
+  }
+});
+
+Deno.test("listCeremonyStatuses: directory with no config.toml shows no config", async () => {
+  const extensionsDir = await Deno.makeTempDir();
+  const stateDir = await Deno.makeTempDir();
+  try {
+    await Deno.mkdir(join(extensionsDir, "ceremonies", "digest"), {
+      recursive: true,
+    });
+    const statuses = await listCeremonyStatuses({
+      extensionsDir,
+      stateDir,
+      now: TEST_NOW,
+    });
+    const status = statuses.find((s) => s.name === "digest");
+    assertExists(status);
+    assertEquals(status!.nextRun, "no config");
+  } finally {
+    await Deno.remove(extensionsDir, { recursive: true });
+    await Deno.remove(stateDir, { recursive: true });
+  }
+});
+
+Deno.test("listCeremonyStatuses: unparseable config.toml shows no config", async () => {
+  const extensionsDir = await Deno.makeTempDir();
+  const stateDir = await Deno.makeTempDir();
+  try {
+    const customDir = join(extensionsDir, "ceremonies", "digest");
+    await Deno.mkdir(customDir, { recursive: true });
+    await Deno.writeTextFile(join(customDir, "config.toml"), "not [ toml");
+    const statuses = await listCeremonyStatuses({
+      extensionsDir,
+      stateDir,
+      now: TEST_NOW,
+    });
+    const status = statuses.find((s) => s.name === "digest");
+    assertExists(status);
+    assertEquals(status!.nextRun, "no config");
+  } finally {
+    await Deno.remove(extensionsDir, { recursive: true });
+    await Deno.remove(stateDir, { recursive: true });
+  }
+});
+
+Deno.test("listCeremonyStatuses: valid config shows compactTimestamp for next run", async () => {
+  const extensionsDir = await Deno.makeTempDir();
+  const stateDir = await Deno.makeTempDir();
+  try {
+    const customDir = join(extensionsDir, "ceremonies", "digest");
+    await Deno.mkdir(customDir, { recursive: true });
+    await Deno.writeTextFile(join(customDir, "config.toml"), 'time = "09:00"');
+    const statuses = await listCeremonyStatuses({
+      extensionsDir,
+      stateDir,
+      now: TEST_NOW, // 10:00, past threshold, no output file
+    });
+    const status = statuses.find((s) => s.name === "digest");
+    assertExists(status);
+    assertNotEquals(status!.nextRun, "no config");
+    assertMatch(status!.nextRun, /^\d{8}T\d{6}$/);
+  } finally {
+    await Deno.remove(extensionsDir, { recursive: true });
+    await Deno.remove(stateDir, { recursive: true });
+  }
+});
+
+Deno.test("listCeremonyStatuses: unapproved custom ceremony shows approval no", async () => {
+  using _lazyboy = withUrrasDir();
+  const extensionsDir = await Deno.makeTempDir();
+  const stateDir = await Deno.makeTempDir();
+  try {
+    const customDir = join(extensionsDir, "ceremonies", "digest");
+    await Deno.mkdir(customDir, { recursive: true });
+    await Deno.writeTextFile(join(customDir, "config.toml"), 'time = "09:00"');
+    const statuses = await listCeremonyStatuses({
+      extensionsDir,
+      stateDir,
+      now: TEST_NOW,
+    });
+    const status = statuses.find((s) => s.name === "digest");
+    assertExists(status);
+    assertEquals(status!.approval, "no");
+  } finally {
+    await Deno.remove(extensionsDir, { recursive: true });
+    await Deno.remove(stateDir, { recursive: true });
+  }
+});
+
+Deno.test("listCeremonyStatuses: approved custom ceremony shows approval yes", async () => {
+  using _lazyboy = withUrrasDir();
+  const extensionsDir = await Deno.makeTempDir();
+  const stateDir = await Deno.makeTempDir();
+  try {
+    const customDir = join(extensionsDir, "ceremonies", "digest");
+    await Deno.mkdir(customDir, { recursive: true });
+    await Deno.writeTextFile(
+      join(customDir, "config.toml"),
+      'time = "09:00"',
+    );
+    await writeApprovals({ digest: { hash: await ceremonyHash(customDir) } });
+    const statuses = await listCeremonyStatuses({
+      extensionsDir,
+      stateDir,
+      now: TEST_NOW,
+    });
+    const status = statuses.find((s) => s.name === "digest");
+    assertExists(status);
+    assertEquals(status!.approval, "yes");
+  } finally {
+    await Deno.remove(extensionsDir, { recursive: true });
+    await Deno.remove(stateDir, { recursive: true });
   }
 });
 

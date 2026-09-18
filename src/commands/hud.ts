@@ -30,7 +30,13 @@ import type { TicketState } from "../state/types.ts";
 import { ScrollPane } from "../ui/scroll-pane.ts";
 import type { Command } from "./types.ts";
 import { mkdir, open, readTextFile } from "../filesystem.ts";
-import { findLatestPhaseOutput, ReviewSession } from "../review.ts";
+import {
+  findLatestPhaseOutput,
+  renderTabBar,
+  ReviewSession,
+} from "../review.ts";
+import { listCeremonyStatuses } from "../ceremonies.ts";
+import type { CeremonyStatus } from "../ceremonies.ts";
 
 export type TicketEntry =
   | { ok: true; ticket: TicketState; tokens: number | null; alive: boolean }
@@ -128,12 +134,30 @@ export function logPaneLines(lines: string[]): string[] {
   return lines.length === 0 ? [dim("(no logs)")] : lines;
 }
 
+export function renderCeremonyLines(statuses: CeremonyStatus[]): string[] {
+  if (statuses.length === 0) return [dim("No ceremonies found.")];
+  const header = dim(
+    `${"Name".padEnd(32)} ${"Kind".padEnd(10)} ${
+      "Approval".padEnd(10)
+    } Next Run`,
+  );
+  return [
+    header,
+    ...statuses.map(
+      (s) =>
+        `${s.name.padEnd(32)} ${s.kind.padEnd(10)} ${
+          s.approval.padEnd(10)
+        } ${s.nextRun}`,
+    ),
+  ];
+}
+
 export async function openLogWatch(parentDir: string): Promise<Deno.FsWatcher> {
   await mkdir(parentDir, { recursive: true });
   return Deno.watchFs(parentDir);
 }
 
-export const HUD_CHROME_ROWS = 3;
+export const HUD_CHROME_ROWS = 4;
 
 export function paneHeights(
   { rows, inputRows }: { rows: number; inputRows: number },
@@ -467,10 +491,75 @@ export const hud: Command = {
       invalidate() {},
     };
 
+    const HUD_TABS = [{ phaseName: "Status" }, { phaseName: "Ceremonies" }];
+    let activeTabIndex = 0;
+
+    const tabBarComponent = {
+      render(_width: number): string[] {
+        return [renderTabBar(HUD_TABS, activeTabIndex)];
+      },
+      invalidate() {},
+    };
+
+    let currentCeremonyLines: string[] = [dim("Loading…")];
+
+    const ceremoniesPane = new ScrollPane({
+      getLines: (_w) => currentCeremonyLines,
+      tui,
+      title: "ceremonies",
+      getHeight: () =>
+        Math.max(
+          1,
+          tui.terminal.rows -
+            commandEditor.render(tui.terminal.columns).length -
+            HUD_CHROME_ROWS,
+        ),
+    });
+
+    async function loadCeremonyData() {
+      currentCeremonyLines = [dim("Loading…")];
+      ceremoniesPane.setContent((_w) => currentCeremonyLines);
+      tui.requestRender(true);
+      try {
+        const statuses = await listCeremonyStatuses({
+          extensionsDir: expandHome(config.extensions.dir),
+          stateDir,
+          now: Temporal.Now.zonedDateTimeISO(Temporal.Now.timeZoneId()),
+        });
+        currentCeremonyLines = renderCeremonyLines(statuses);
+      } catch {
+        currentCeremonyLines = [dim("Error loading ceremonies.")];
+      }
+      ceremoniesPane.setContent((_w) => currentCeremonyLines);
+      tui.requestRender(true);
+    }
+
+    function switchToTab(index: number) {
+      if (index === activeTabIndex) return;
+      if (activeTabIndex === 0) {
+        tui.removeChild(commandEditor);
+        tui.removeChild(logPane);
+        tui.removeChild(statusPane);
+        tui.addChild(ceremoniesPane);
+        tui.addChild(commandEditor);
+        activeTabIndex = 1;
+        void loadCeremonyData();
+      } else {
+        tui.removeChild(commandEditor);
+        tui.removeChild(ceremoniesPane);
+        tui.addChild(statusPane);
+        tui.addChild(logPane);
+        tui.addChild(commandEditor);
+        activeTabIndex = 0;
+      }
+      tui.requestRender(true);
+    }
+
     let commandRunning = false;
     let reviewSessionActive = false;
 
     tui.addChild(headerComponent);
+    tui.addChild(tabBarComponent);
     tui.addChild(statusPane);
     tui.addChild(logPane);
     tui.addChild(commandEditor);
@@ -676,25 +765,51 @@ export const hud: Command = {
           return { consume: true };
         }
       }
+      if (
+        matchesKey(data, "left") &&
+        !commandEditor.focused &&
+        activeTabIndex > 0
+      ) {
+        switchToTab(activeTabIndex - 1);
+        return { consume: true };
+      }
+      if (
+        matchesKey(data, "right") &&
+        !commandEditor.focused &&
+        activeTabIndex < HUD_TABS.length - 1
+      ) {
+        switchToTab(activeTabIndex + 1);
+        return { consume: true };
+      }
       if (matchesKey(data, "tab")) {
-        if (commandEditor.focused && commandEditor.getText() !== "") {
-          return;
-        }
-        if (statusPane.focused) {
-          statusPane.focused = false;
-          logPane.focused = true;
-          commandEditor.focused = false;
-          tui.setFocus(logPane);
-        } else if (logPane.focused) {
-          logPane.focused = false;
-          commandEditor.focused = true;
-          statusPane.focused = false;
-          tui.setFocus(commandEditor);
+        if (commandEditor.focused && commandEditor.getText() !== "") return;
+        if (activeTabIndex === 0) {
+          if (statusPane.focused) {
+            statusPane.focused = false;
+            logPane.focused = true;
+            commandEditor.focused = false;
+            tui.setFocus(logPane);
+          } else if (logPane.focused) {
+            logPane.focused = false;
+            commandEditor.focused = true;
+            statusPane.focused = false;
+            tui.setFocus(commandEditor);
+          } else {
+            commandEditor.focused = false;
+            statusPane.focused = true;
+            logPane.focused = false;
+            tui.setFocus(statusPane);
+          }
         } else {
-          commandEditor.focused = false;
-          statusPane.focused = true;
-          logPane.focused = false;
-          tui.setFocus(statusPane);
+          if (ceremoniesPane.focused) {
+            ceremoniesPane.focused = false;
+            commandEditor.focused = true;
+            tui.setFocus(commandEditor);
+          } else {
+            commandEditor.focused = false;
+            ceremoniesPane.focused = true;
+            tui.setFocus(ceremoniesPane);
+          }
         }
         tui.requestRender(true);
       }
