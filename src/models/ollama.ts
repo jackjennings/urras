@@ -1,6 +1,13 @@
+import type { AncillaryUsageRecord } from "../ancillary-usage.ts";
 import type { LanguageModel, LanguageModelRequest } from "./types.ts";
 
 const DEFAULT_URL = "http://localhost:11434";
+
+type OllamaResponse = {
+  response: string;
+  prompt_eval_count?: number;
+  eval_count?: number;
+};
 
 export class OllamaLanguageModel implements LanguageModel {
   readonly name = "ollama";
@@ -8,7 +15,13 @@ export class OllamaLanguageModel implements LanguageModel {
 
   constructor(
     private readonly _fetch: typeof fetch,
-    private readonly opts: { model: string; url?: string },
+    private readonly opts: {
+      model: string;
+      url?: string;
+      recordUsage?: (
+        record: Omit<AncillaryUsageRecord, "callSite">,
+      ) => Promise<void>;
+    },
   ) {
     this.url = opts.url ?? DEFAULT_URL;
   }
@@ -30,10 +43,11 @@ export class OllamaLanguageModel implements LanguageModel {
         signal: AbortSignal.timeout(30_000),
       });
       if (!response.ok) return null;
-      const data = await response.json() as { response: string };
+      const data = await response.json() as OllamaResponse;
       try {
         const parsed = JSON.parse(data.response) as T;
         if (parsed === null || parsed === undefined) return null;
+        await this.fireRecordUsage(data);
         return parsed;
       } catch {
         return null;
@@ -57,11 +71,31 @@ export class OllamaLanguageModel implements LanguageModel {
         signal: AbortSignal.timeout(30_000),
       });
       if (!response.ok) return null;
-      const data = await response.json() as { response: string };
+      const data = await response.json() as OllamaResponse;
       const trimmed = data.response.trim();
-      return trimmed.length > 0 ? trimmed : null;
+      if (trimmed.length === 0) return null;
+      await this.fireRecordUsage(data);
+      return trimmed;
     } catch {
       return null;
+    }
+  }
+
+  private async fireRecordUsage(data: OllamaResponse): Promise<void> {
+    if (!this.opts.recordUsage) return;
+    try {
+      const record: Omit<AncillaryUsageRecord, "callSite"> = {
+        ts: Temporal.Now.instant().toString(),
+        adapter: "ollama",
+        model: this.opts.model,
+        ...(data.prompt_eval_count !== undefined &&
+            data.eval_count !== undefined
+          ? { input: data.prompt_eval_count, output: data.eval_count }
+          : {}),
+      };
+      await this.opts.recordUsage(record);
+    } catch {
+      // ignore recordUsage errors
     }
   }
 }

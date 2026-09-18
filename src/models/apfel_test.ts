@@ -7,6 +7,7 @@ import {
 } from "@std/assert";
 import { spy } from "@std/testing/mock";
 import type { CommandRunner } from "../apfel.ts";
+import type { AncillaryUsageRecord } from "../ancillary-usage.ts";
 import { ApfelLanguageModel } from "./apfel.ts";
 
 function makeRunner(
@@ -139,4 +140,69 @@ Deno.test("ApfelLanguageModel.generateText: exception returns null", async () =>
   const model = new ApfelLanguageModel(run);
   const result = await model.generateText({ systemPrompt: "sys", prompt: "p" });
   assertFalse(result !== null);
+});
+
+Deno.test("ApfelLanguageModel.generateText: recordUsage fires with estimated token counts on success", async () => {
+  const records: Omit<AncillaryUsageRecord, "callSite">[] = [];
+  const recordUsage = (r: Omit<AncillaryUsageRecord, "callSite">) => {
+    records.push(r);
+    return Promise.resolve();
+  };
+  const run = makeRunner(() => ({ code: 0, stdout: "Short Title" }));
+  const model = new ApfelLanguageModel(run, { recordUsage });
+  const result = await model.generateText({ systemPrompt: "sys", prompt: "p" });
+  assertEquals(result, "Short Title");
+  assertEquals(records.length, 1);
+  assertEquals(records[0].adapter, "apfel");
+  assertEquals(records[0].model, "apfel");
+  assertEquals(records[0].estimated, true);
+  assert(typeof records[0].input === "number");
+  assert(typeof records[0].output === "number");
+});
+
+Deno.test("ApfelLanguageModel.generateText: recordUsage does not fire on null return", async () => {
+  const records: Omit<AncillaryUsageRecord, "callSite">[] = [];
+  const recordUsage = (r: Omit<AncillaryUsageRecord, "callSite">) => {
+    records.push(r);
+    return Promise.resolve();
+  };
+  const run = makeRunner(() => ({ code: 1, stdout: "" }));
+  const model = new ApfelLanguageModel(run, { recordUsage });
+  await model.generateText({ systemPrompt: "sys", prompt: "p" });
+  assertEquals(records.length, 0);
+});
+
+Deno.test("ApfelLanguageModel.generateObject: recordUsage fires with estimated token counts on success", async () => {
+  const records: Omit<AncillaryUsageRecord, "callSite">[] = [];
+  const recordUsage = (r: Omit<AncillaryUsageRecord, "callSite">) => {
+    records.push(r);
+    return Promise.resolve();
+  };
+  const run = makeRunner(() => ({ code: 0, stdout: '{"verdict":"KEEP"}' }));
+  const model = new ApfelLanguageModel(run, { recordUsage });
+  await model.generateObject<{ verdict: string }>({
+    systemPrompt: "sys",
+    prompt: "body",
+    schema: {},
+  });
+  assertEquals(records.length, 1);
+  assertEquals(records[0].estimated, true);
+  assert(typeof records[0].input === "number");
+  assert(typeof records[0].output === "number");
+});
+
+Deno.test("ApfelLanguageModel.generateObject: recordUsage does not fire on null return", async () => {
+  const records: Omit<AncillaryUsageRecord, "callSite">[] = [];
+  const recordUsage = (r: Omit<AncillaryUsageRecord, "callSite">) => {
+    records.push(r);
+    return Promise.resolve();
+  };
+  const run = makeRunner(() => ({ code: 0, stdout: "not json" }));
+  const model = new ApfelLanguageModel(run, { recordUsage });
+  await model.generateObject({
+    systemPrompt: "sys",
+    prompt: "body",
+    schema: {},
+  });
+  assertEquals(records.length, 0);
 });

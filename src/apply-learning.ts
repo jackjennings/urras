@@ -1,4 +1,5 @@
 import type { CommandRunner } from "./apfel.ts";
+import { appendAncillaryUsage } from "./ancillary-usage.ts";
 import { ClaudeLanguageModel } from "./models/claude.ts";
 import { renderPrompt } from "./filesystem.ts";
 
@@ -20,7 +21,10 @@ export async function applyLearning(
 ): Promise<string | null> {
   const userMessage =
     `## Learning to integrate\n\n${intent}\n\n## Current document\n\n${currentContent}`;
-  const model = new ClaudeLanguageModel(run, { model: "claude-sonnet-4-6" });
+  const model = new ClaudeLanguageModel(run, {
+    model: "claude-sonnet-4-6",
+    recordUsage: appendAncillaryUsage("applyLearning"),
+  });
   const text = await model.generateText({
     systemPrompt: await renderPrompt(
       new URL("./apply-learning.prompt.hbs", import.meta.url),

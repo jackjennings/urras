@@ -516,7 +516,11 @@ Deno.test("DocumentationGapsCeremony: LLM response written verbatim to output fi
     const llmResponse =
       "# Documentation Gap Report\n\n_1 cluster across 1 ticket_\n\n## Model Selection\n\n**Occurrences:** 1\n";
     const ceremony = makeDocumentationGaps(stateDir, outputDir, {
-      run: (_args) => Promise.resolve({ code: 0, stdout: llmResponse }),
+      run: (_args) =>
+        Promise.resolve({
+          code: 0,
+          stdout: JSON.stringify({ result: llmResponse }),
+        }),
     });
     await ceremony.run(TEST_NOW, outputDir);
     const files = await outputFiles(outputDir);
@@ -540,7 +544,11 @@ Deno.test("DocumentationGapsCeremony: LLM returning NO_GAPS writes no-gaps outpu
       "## Open Questions\n- Which model to use?\n",
     );
     const ceremony = makeDocumentationGaps(stateDir, outputDir, {
-      run: (_args) => Promise.resolve({ code: 0, stdout: "NO_GAPS" }),
+      run: (_args) =>
+        Promise.resolve({
+          code: 0,
+          stdout: JSON.stringify({ result: "NO_GAPS" }),
+        }),
     });
     await ceremony.run(TEST_NOW, outputDir);
     const files = await outputFiles(outputDir);

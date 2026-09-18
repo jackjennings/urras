@@ -1,4 +1,5 @@
 import { CeremonyRunner } from "./ceremonies.ts";
+import { appendAncillaryUsage } from "./ancillary-usage.ts";
 import { DocumentationGapsCeremony } from "./ceremonies/documentation-gaps.ts";
 import { AgentsMdConsolidationCeremony } from "./ceremonies/agents-md-consolidation.ts";
 import { dirname, join, relative } from "@std/path";
@@ -452,9 +453,12 @@ export function composeTickDeps(
 
   const shortTitleModel = new FallbackLanguageModel([
     ...ollamaModels,
-    new ApfelLanguageModel(captureCommandRunner()),
+    new ApfelLanguageModel(captureCommandRunner(), {
+      recordUsage: appendAncillaryUsage("generateShortTitle"),
+    }),
     new ClaudeLanguageModel(captureCommandRunner(), {
       model: "claude-haiku-4-5",
+      recordUsage: appendAncillaryUsage("generateShortTitle"),
     }),
   ]);
 
