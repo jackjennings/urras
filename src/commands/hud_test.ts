@@ -27,9 +27,11 @@ import {
   paneHeights,
   parseCommand,
   readTickLog,
+  renderCeremonyLines,
   TICK_LOG_TAIL_LINES,
   type TicketEntry,
 } from "./hud.ts";
+import type { CeremonyStatus } from "../ceremonies.ts";
 
 // ── formatTickLogLine ─────────────────────────────────────────────────────────
 
@@ -155,15 +157,18 @@ Deno.test("paneHeights: panes plus chrome and input fill the terminal exactly", 
 });
 
 Deno.test("paneHeights: splits the remaining rows evenly", () => {
-  assertEquals(paneHeights({ rows: 24, inputRows: 3 }), { status: 9, log: 9 });
+  // rows=24, inputRows=3 → available = 24-3-4 = 17 → status=9, log=8
+  assertEquals(paneHeights({ rows: 24, inputRows: 3 }), { status: 9, log: 8 });
 });
 
 Deno.test("paneHeights: gives the odd row to the status pane", () => {
-  assertEquals(paneHeights({ rows: 25, inputRows: 3 }), { status: 10, log: 9 });
+  // rows=25, inputRows=3 → available = 18 → status=9, log=9
+  assertEquals(paneHeights({ rows: 25, inputRows: 3 }), { status: 9, log: 9 });
 });
 
 Deno.test("paneHeights: shrinks the panes as the input grows", () => {
-  assertEquals(paneHeights({ rows: 24, inputRows: 6 }), { status: 8, log: 7 });
+  // rows=24, inputRows=6 → available = 14 → status=7, log=7
+  assertEquals(paneHeights({ rows: 24, inputRows: 6 }), { status: 7, log: 7 });
 });
 
 Deno.test("paneHeights: keeps both panes at least one row on a tiny terminal", () => {
@@ -719,3 +724,33 @@ Deno.test(
     }
   },
 );
+
+// ── renderCeremonyLines ───────────────────────────────────────────────────────
+
+Deno.test("renderCeremonyLines: returns placeholder for empty list", () => {
+  const lines = renderCeremonyLines([]);
+  assertEquals(lines.length, 1);
+  assertStringIncludes(stripAnsiCode(lines[0]), "No ceremonies");
+});
+
+Deno.test("renderCeremonyLines: renders header and one row per ceremony", () => {
+  const statuses: CeremonyStatus[] = [
+    {
+      name: "standup",
+      kind: "built-in",
+      approval: "—",
+      nextRun: "20260918T090000",
+    },
+    { name: "digest", kind: "custom", approval: "yes", nextRun: "no config" },
+  ];
+  const lines = renderCeremonyLines(statuses);
+  assertEquals(lines.length, 3); // header + 2 rows
+  assertStringIncludes(stripAnsiCode(lines[1]), "standup");
+  assertStringIncludes(stripAnsiCode(lines[1]), "built-in");
+  assertStringIncludes(stripAnsiCode(lines[1]), "—");
+  assertStringIncludes(stripAnsiCode(lines[1]), "20260918T090000");
+  assertStringIncludes(stripAnsiCode(lines[2]), "digest");
+  assertStringIncludes(stripAnsiCode(lines[2]), "custom");
+  assertStringIncludes(stripAnsiCode(lines[2]), "yes");
+  assertStringIncludes(stripAnsiCode(lines[2]), "no config");
+});
