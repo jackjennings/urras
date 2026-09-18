@@ -68,7 +68,7 @@ export function checkUpstreamEditsAction(
       const storedBody = ticket.body;
 
       const titleChanged = fetchedTitle !== ticket.title;
-      const bodyChanged = fetchedBody !== storedBody;
+      const bodyChanged = fetchedBody.trim() !== storedBody.trim();
 
       const now = Temporal.Now.instant().toString();
 
