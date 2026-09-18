@@ -1515,6 +1515,40 @@ export function composeTickDeps(
         });
       },
       maxPromptTokens: config.tick.maxPromptTokens,
+      runVerification: async (command, worktreePath) => {
+        const ac = new AbortController();
+        const timer = setTimeout(() => ac.abort(), 60_000);
+        try {
+          const result = await new Deno.Command("sh", {
+            args: ["-c", command],
+            cwd: worktreePath,
+            stdout: "piped",
+            stderr: "piped",
+            signal: ac.signal,
+          }).output();
+          const decoder = new TextDecoder();
+          const output = decoder.decode(result.stdout) +
+            decoder.decode(result.stderr);
+          return { exitCode: result.code, output };
+        } catch (e) {
+          if (e instanceof DOMException && e.name === "AbortError") {
+            return { exitCode: 1, output: "Verification timed out after 60s" };
+          }
+          throw e;
+        } finally {
+          clearTimeout(timer);
+        }
+      },
+      writeVerificationContext: async (ticketDir, content) => {
+        const timestamp = compactTimestamp(
+          Temporal.Now.zonedDateTimeISO("UTC"),
+        );
+        await writeTextFile(
+          join(ticketDir, `${timestamp}-verification-failure-context.md`),
+          content,
+        );
+      },
+      config: { repos: config.repos },
     },
     runMigrations: createMigrationRunner({
       listMigrationFiles: async () => {

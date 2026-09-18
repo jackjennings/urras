@@ -3871,3 +3871,257 @@ Deno.test(
     assertEquals(writtenTickets[0].approvals, []);
   },
 );
+
+Deno.test(
+  "advancePhase: runVerification called before readSelfApprove when verify configured",
+  async () => {
+    const ticket = makeTicket({
+      phase: "implementation",
+      status: "running",
+      worktrees: { "org/repo": { path: "/wt", branch: "b" } },
+    });
+    const callOrder: string[] = [];
+    const runVerificationSpy = spy(() => {
+      callOrder.push("verify");
+      return Promise.resolve({ exitCode: 0, output: "" });
+    });
+    const readSelfApproveSpy = spy(() => {
+      callOrder.push("selfApprove");
+      return Effect.succeed({ approved: false, reason: null });
+    });
+    await advancePhase(
+      ticket,
+      "/state",
+      makeTickDeps({
+        runVerification: runVerificationSpy,
+        readSelfApprove: readSelfApproveSpy,
+        config: { repos: { "org/repo": { verify: "deno test" } } },
+      }),
+    );
+    assertSpyCalls(runVerificationSpy, 1);
+    assert(callOrder.indexOf("verify") < callOrder.indexOf("selfApprove"));
+  },
+);
+
+Deno.test(
+  "advancePhase: verification failure sets revising, writes context, logs verification-failed, skips self-approve",
+  async () => {
+    const ticket = makeTicket({
+      phase: "implementation",
+      status: "running",
+      worktrees: { "org/repo": { path: "/wt", branch: "b" } },
+    });
+    const writtenTickets: TicketState[] = [];
+    const logs: object[] = [];
+    let contextWritten = false;
+    const readSelfApproveSpy = spy(() =>
+      Effect.succeed({ approved: false, reason: null })
+    );
+    await advancePhase(
+      ticket,
+      "/state",
+      makeTickDeps({
+        writeTicket: (_dir, t) => {
+          writtenTickets.push(t);
+          return Promise.resolve();
+        },
+        appendLog: (_dir, _id, entry) => {
+          logs.push(entry);
+          return Promise.resolve();
+        },
+        runVerification: () =>
+          Promise.resolve({ exitCode: 1, output: "test failed" }),
+        writeVerificationContext: (_dir, _content) => {
+          contextWritten = true;
+          return Promise.resolve();
+        },
+        readSelfApprove: readSelfApproveSpy,
+        config: { repos: { "org/repo": { verify: "deno test" } } },
+      }),
+    );
+    const final = writtenTickets[writtenTickets.length - 1];
+    assertEquals(final.status, "revising");
+    assert(contextWritten);
+    assert(
+      logs.some(
+        (e) =>
+          (e as Record<string, unknown>).event === "verification-failed" &&
+          (e as Record<string, unknown>).exitCode === 1,
+      ),
+    );
+    assertSpyCalls(readSelfApproveSpy, 0);
+  },
+);
+
+Deno.test(
+  "advancePhase: runVerification throwing sets needs-attention, logs verification-error, skips self-approve",
+  async () => {
+    const ticket = makeTicket({
+      phase: "implementation",
+      status: "running",
+      worktrees: { "org/repo": { path: "/wt", branch: "b" } },
+    });
+    const writtenTickets: TicketState[] = [];
+    const logs: object[] = [];
+    const readSelfApproveSpy = spy(() =>
+      Effect.succeed({ approved: false, reason: null })
+    );
+    await advancePhase(
+      ticket,
+      "/state",
+      makeTickDeps({
+        writeTicket: (_dir, t) => {
+          writtenTickets.push(t);
+          return Promise.resolve();
+        },
+        appendLog: (_dir, _id, entry) => {
+          logs.push(entry);
+          return Promise.resolve();
+        },
+        runVerification: () => Promise.reject(new Error("sh not found")),
+        readSelfApprove: readSelfApproveSpy,
+        config: { repos: { "org/repo": { verify: "deno test" } } },
+      }),
+    );
+    const final = writtenTickets[writtenTickets.length - 1];
+    assertEquals(final.status, "needs-attention");
+    assert(
+      logs.some(
+        (e) => (e as Record<string, unknown>).event === "verification-error",
+      ),
+    );
+    assertSpyCalls(readSelfApproveSpy, 0);
+  },
+);
+
+Deno.test(
+  "advancePhase: verification success proceeds to self-approve",
+  async () => {
+    const ticket = makeTicket({
+      phase: "implementation",
+      status: "running",
+      worktrees: { "org/repo": { path: "/wt", branch: "b" } },
+    });
+    const readSelfApproveSpy = spy(() =>
+      Effect.succeed({ approved: false, reason: null })
+    );
+    await advancePhase(
+      ticket,
+      "/state",
+      makeTickDeps({
+        runVerification: () => Promise.resolve({ exitCode: 0, output: "" }),
+        readSelfApprove: readSelfApproveSpy,
+        config: { repos: { "org/repo": { verify: "deno test" } } },
+      }),
+    );
+    assertSpyCalls(readSelfApproveSpy, 1);
+  },
+);
+
+Deno.test(
+  "advancePhase: no verify command in config skips runVerification and calls self-approve normally",
+  async () => {
+    const ticket = makeTicket({
+      phase: "implementation",
+      status: "running",
+      worktrees: { "org/repo": { path: "/wt", branch: "b" } },
+    });
+    const runVerificationSpy = spy(() =>
+      Promise.resolve({ exitCode: 0, output: "" })
+    );
+    const readSelfApproveSpy = spy(() =>
+      Effect.succeed({ approved: false, reason: null })
+    );
+    await advancePhase(
+      ticket,
+      "/state",
+      makeTickDeps({
+        runVerification: runVerificationSpy,
+        readSelfApprove: readSelfApproveSpy,
+        config: undefined,
+      }),
+    );
+    assertSpyCalls(runVerificationSpy, 0);
+    assertSpyCalls(readSelfApproveSpy, 1);
+  },
+);
+
+Deno.test(
+  "advancePhase: no worktree for project key skips runVerification",
+  async () => {
+    const ticket = makeTicket({
+      phase: "implementation",
+      status: "running",
+      worktrees: {},
+    });
+    const runVerificationSpy = spy(() =>
+      Promise.resolve({ exitCode: 0, output: "" })
+    );
+    await advancePhase(
+      ticket,
+      "/state",
+      makeTickDeps({
+        runVerification: runVerificationSpy,
+        config: { repos: { "org/repo": { verify: "deno test" } } },
+      }),
+    );
+    assertSpyCalls(runVerificationSpy, 0);
+  },
+);
+
+Deno.test(
+  "advancePhase: -verification-failure-context.md is picked up by revision prompt assembly",
+  async () => {
+    const stateDir = await Deno.makeTempDir();
+    try {
+      const ticket = makeTicket({
+        phase: "implementation",
+        status: "revising",
+      });
+      const ticketDir = join(stateDir, ticket.id);
+      await Deno.mkdir(ticketDir, { recursive: true });
+      await Deno.writeTextFile(
+        join(ticketDir, "20260101T100000-verification-failure-context.md"),
+        "VERIFICATION FAILURE OUTPUT",
+      );
+      let spawnedPrompt = "";
+      const spawnSpy = spy((opts: SpawnOpts) => {
+        spawnedPrompt = opts.prompt;
+        return Promise.resolve();
+      });
+      await advancePhase(ticket, stateDir, makeTickDeps({ spawn: spawnSpy }));
+      assertStringIncludes(spawnedPrompt, "VERIFICATION FAILURE OUTPUT");
+    } finally {
+      await Deno.remove(stateDir, { recursive: true });
+    }
+  },
+);
+
+Deno.test(
+  "advancePhase: verification is skipped for non-implementation phases",
+  async () => {
+    const ticket = makeTicket({
+      phase: "spec",
+      status: "running",
+      worktrees: { "org/repo": { path: "/wt", branch: "b" } },
+    });
+    const runVerificationSpy = spy(() =>
+      Promise.resolve({ exitCode: 1, output: "fail" })
+    );
+    const writtenTickets: TicketState[] = [];
+    await advancePhase(
+      ticket,
+      "/state",
+      makeTickDeps({
+        writeTicket: (_dir, t) => {
+          writtenTickets.push(t);
+          return Promise.resolve();
+        },
+        runVerification: runVerificationSpy,
+        config: { repos: { "org/repo": { verify: "deno test" } } },
+      }),
+    );
+    assertSpyCalls(runVerificationSpy, 0);
+    assertEquals(writtenTickets[writtenTickets.length - 1].status, "waiting");
+  },
+);
