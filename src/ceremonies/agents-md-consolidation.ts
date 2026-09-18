@@ -4,6 +4,7 @@ import type { Ceremony } from "./types.ts";
 import type { CommandRunner } from "../apfel.ts";
 import { mkdir, readTextFile, writeTextFile } from "../filesystem.ts";
 import { ClaudeLanguageModel } from "../models/claude.ts";
+import { appendAncillaryUsage } from "../ancillary-usage.ts";
 
 export interface AgentsMdConsolidationCeremonyDeps {
   repoDir: string;
@@ -77,6 +78,7 @@ export class AgentsMdConsolidationCeremony implements Ceremony {
     const systemPrompt = await loadSystemPrompt();
     const model = new ClaudeLanguageModel(this.#deps.run, {
       model: "claude-sonnet-4-6",
+      recordUsage: appendAncillaryUsage("ceremony:agents-md-consolidation"),
     });
     const result = await model.generateText({
       systemPrompt,

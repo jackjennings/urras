@@ -1154,15 +1154,17 @@ export function composeTickDeps(
       notify: desktopNotifier,
       listTickets: () => listTickets(stateDir),
       readTicket: (id) => readTicket(stateDir, id),
-      generateText: (request) =>
+      generateText: (request, callSite) =>
         new ClaudeLanguageModel(captureCommandRunner(), {
           model: "claude-sonnet-4-6",
+          recordUsage: callSite ? appendAncillaryUsage(callSite) : undefined,
         }).generateText(request),
-      generateObject: (request) =>
+      generateObject: (request, callSite) =>
         new ClaudeLanguageModel(captureCommandRunner(), {
           model: "claude-sonnet-4-6",
+          recordUsage: callSite ? appendAncillaryUsage(callSite) : undefined,
         }).generateObject(request),
-      getModel: (chain) => {
+      getModel: (chain, callSite) => {
         if (chain.length === 0) {
           throw new Error("getModel requires at least one chain entry");
         }
@@ -1170,6 +1172,9 @@ export function composeTickDeps(
           if (entry.provider === "claude") {
             return new ClaudeLanguageModel(captureCommandRunner(), {
               model: entry.model,
+              recordUsage: callSite
+                ? appendAncillaryUsage(callSite)
+                : undefined,
             });
           } else if (entry.provider === "ollama") {
             return new OllamaLanguageModel(fetch, {
