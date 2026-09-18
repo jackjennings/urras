@@ -18,8 +18,9 @@ export class ClaudeLanguageModel implements LanguageModel {
     private readonly run: CommandRunner,
     private readonly opts: {
       model: string;
-      callSite?: string;
-      recordUsage?: (record: AncillaryUsageRecord) => Promise<void>;
+      recordUsage?: (
+        record: Omit<AncillaryUsageRecord, "callSite">,
+      ) => Promise<void>;
     },
   ) {}
 
@@ -96,11 +97,10 @@ export class ClaudeLanguageModel implements LanguageModel {
   }
 
   private async fireRecordUsage(envelope: ClaudeEnvelope): Promise<void> {
-    if (!this.opts.recordUsage || !this.opts.callSite) return;
+    if (!this.opts.recordUsage) return;
     try {
-      const record: AncillaryUsageRecord = {
+      const record: Omit<AncillaryUsageRecord, "callSite"> = {
         ts: Temporal.Now.instant().toString(),
-        callSite: this.opts.callSite,
         adapter: "claude",
         model: this.opts.model,
         ...(envelope.usage !== undefined

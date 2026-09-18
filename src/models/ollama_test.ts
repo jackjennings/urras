@@ -128,8 +128,8 @@ Deno.test("checkOllamaAvailable: fetch throws returns false", async () => {
 });
 
 Deno.test("OllamaLanguageModel.generateText: recordUsage fires with token counts when present", async () => {
-  const records: AncillaryUsageRecord[] = [];
-  const recordUsage = (r: AncillaryUsageRecord) => {
+  const records: Omit<AncillaryUsageRecord, "callSite">[] = [];
+  const recordUsage = (r: Omit<AncillaryUsageRecord, "callSite">) => {
     records.push(r);
     return Promise.resolve();
   };
@@ -143,13 +143,11 @@ Deno.test("OllamaLanguageModel.generateText: recordUsage fires with token counts
   }));
   const model = new OllamaLanguageModel(_fetch, {
     model: "qwen2.5:7b",
-    callSite: "generateShortTitle",
     recordUsage,
   });
   const result = await model.generateText({ systemPrompt: "s", prompt: "p" });
   assertEquals(result, "Short Title");
   assertEquals(records.length, 1);
-  assertEquals(records[0].callSite, "generateShortTitle");
   assertEquals(records[0].adapter, "ollama");
   assertEquals(records[0].model, "qwen2.5:7b");
   assertEquals(records[0].input, 42);
@@ -158,8 +156,8 @@ Deno.test("OllamaLanguageModel.generateText: recordUsage fires with token counts
 });
 
 Deno.test("OllamaLanguageModel.generateText: recordUsage omits token fields when absent", async () => {
-  const records: AncillaryUsageRecord[] = [];
-  const recordUsage = (r: AncillaryUsageRecord) => {
+  const records: Omit<AncillaryUsageRecord, "callSite">[] = [];
+  const recordUsage = (r: Omit<AncillaryUsageRecord, "callSite">) => {
     records.push(r);
     return Promise.resolve();
   };
@@ -169,7 +167,6 @@ Deno.test("OllamaLanguageModel.generateText: recordUsage omits token fields when
   }));
   const model = new OllamaLanguageModel(_fetch, {
     model: "qwen2.5:7b",
-    callSite: "test",
     recordUsage,
   });
   await model.generateText({ systemPrompt: "s", prompt: "p" });
@@ -179,15 +176,14 @@ Deno.test("OllamaLanguageModel.generateText: recordUsage omits token fields when
 });
 
 Deno.test("OllamaLanguageModel.generateText: recordUsage does not fire on null return", async () => {
-  const records: AncillaryUsageRecord[] = [];
-  const recordUsage = (r: AncillaryUsageRecord) => {
+  const records: Omit<AncillaryUsageRecord, "callSite">[] = [];
+  const recordUsage = (r: Omit<AncillaryUsageRecord, "callSite">) => {
     records.push(r);
     return Promise.resolve();
   };
   const _fetch = makeFetch(() => ({ status: 500 }));
   const model = new OllamaLanguageModel(_fetch, {
     model: "qwen2.5:7b",
-    callSite: "test",
     recordUsage,
   });
   await model.generateText({ systemPrompt: "s", prompt: "p" });
@@ -195,8 +191,8 @@ Deno.test("OllamaLanguageModel.generateText: recordUsage does not fire on null r
 });
 
 Deno.test("OllamaLanguageModel.generateObject: recordUsage fires with token counts when present", async () => {
-  const records: AncillaryUsageRecord[] = [];
-  const recordUsage = (r: AncillaryUsageRecord) => {
+  const records: Omit<AncillaryUsageRecord, "callSite">[] = [];
+  const recordUsage = (r: Omit<AncillaryUsageRecord, "callSite">) => {
     records.push(r);
     return Promise.resolve();
   };
@@ -210,7 +206,6 @@ Deno.test("OllamaLanguageModel.generateObject: recordUsage fires with token coun
   }));
   const model = new OllamaLanguageModel(_fetch, {
     model: "qwen2.5:7b",
-    callSite: "judgePrinciples",
     recordUsage,
   });
   await model.generateObject<{ verdict: string }>({

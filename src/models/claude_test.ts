@@ -142,8 +142,8 @@ Deno.test("ClaudeLanguageModel.generateObject: passes --output-format json", asy
 });
 
 Deno.test("ClaudeLanguageModel.generateObject: recordUsage fires on non-null return", async () => {
-  const records: AncillaryUsageRecord[] = [];
-  const recordUsage = (r: AncillaryUsageRecord) => {
+  const records: Omit<AncillaryUsageRecord, "callSite">[] = [];
+  const recordUsage = (r: Omit<AncillaryUsageRecord, "callSite">) => {
     records.push(r);
     return Promise.resolve();
   };
@@ -155,18 +155,13 @@ Deno.test("ClaudeLanguageModel.generateObject: recordUsage fires on non-null ret
       output_tokens: 5,
     }),
   }));
-  const model = new ClaudeLanguageModel(run, {
-    model: MODEL,
-    callSite: "test",
-    recordUsage,
-  });
+  const model = new ClaudeLanguageModel(run, { model: MODEL, recordUsage });
   await model.generateObject({
     systemPrompt: "sys",
     prompt: "body",
     schema: {},
   });
   assertEquals(records.length, 1);
-  assertEquals(records[0].callSite, "test");
   assertEquals(records[0].adapter, "claude");
   assertEquals(records[0].model, MODEL);
   assertEquals(records[0].input, 10);
@@ -176,17 +171,13 @@ Deno.test("ClaudeLanguageModel.generateObject: recordUsage fires on non-null ret
 });
 
 Deno.test("ClaudeLanguageModel.generateObject: recordUsage does not fire on null return", async () => {
-  const records: AncillaryUsageRecord[] = [];
-  const recordUsage = (r: AncillaryUsageRecord) => {
+  const records: Omit<AncillaryUsageRecord, "callSite">[] = [];
+  const recordUsage = (r: Omit<AncillaryUsageRecord, "callSite">) => {
     records.push(r);
     return Promise.resolve();
   };
   const run = makeRunner(() => ({ code: 1, stdout: "" }));
-  const model = new ClaudeLanguageModel(run, {
-    model: MODEL,
-    callSite: "test",
-    recordUsage,
-  });
+  const model = new ClaudeLanguageModel(run, { model: MODEL, recordUsage });
   await model.generateObject({
     systemPrompt: "sys",
     prompt: "body",
@@ -266,8 +257,8 @@ Deno.test("ClaudeLanguageModel.generateText: passes --output-format json", async
 });
 
 Deno.test("ClaudeLanguageModel.generateText: recordUsage fires on non-null return", async () => {
-  const records: AncillaryUsageRecord[] = [];
-  const recordUsage = (r: AncillaryUsageRecord) => {
+  const records: Omit<AncillaryUsageRecord, "callSite">[] = [];
+  const recordUsage = (r: Omit<AncillaryUsageRecord, "callSite">) => {
     records.push(r);
     return Promise.resolve();
   };
@@ -279,18 +270,13 @@ Deno.test("ClaudeLanguageModel.generateText: recordUsage fires on non-null retur
       output_tokens: 3,
     }),
   }));
-  const model = new ClaudeLanguageModel(run, {
-    model: MODEL,
-    callSite: "executeReview",
-    recordUsage,
-  });
+  const model = new ClaudeLanguageModel(run, { model: MODEL, recordUsage });
   const result = await model.generateText({
     systemPrompt: "sys",
     prompt: "p",
   });
   assertEquals(result, "APPROVE");
   assertEquals(records.length, 1);
-  assertEquals(records[0].callSite, "executeReview");
   assertEquals(records[0].adapter, "claude");
   assertEquals(records[0].input, 20);
   assertEquals(records[0].output, 3);
@@ -298,17 +284,13 @@ Deno.test("ClaudeLanguageModel.generateText: recordUsage fires on non-null retur
 });
 
 Deno.test("ClaudeLanguageModel.generateText: recordUsage does not fire on null return", async () => {
-  const records: AncillaryUsageRecord[] = [];
-  const recordUsage = (r: AncillaryUsageRecord) => {
+  const records: Omit<AncillaryUsageRecord, "callSite">[] = [];
+  const recordUsage = (r: Omit<AncillaryUsageRecord, "callSite">) => {
     records.push(r);
     return Promise.resolve();
   };
   const run = makeRunner(() => ({ code: 1, stdout: "" }));
-  const model = new ClaudeLanguageModel(run, {
-    model: MODEL,
-    callSite: "test",
-    recordUsage,
-  });
+  const model = new ClaudeLanguageModel(run, { model: MODEL, recordUsage });
   await model.generateText({ systemPrompt: "sys", prompt: "p" });
   assertEquals(records.length, 0);
 });

@@ -4,8 +4,9 @@ import type { AncillaryUsageRecord } from "../ancillary-usage.ts";
 import type { LanguageModel, LanguageModelRequest } from "./types.ts";
 
 type ApfelOpts = {
-  callSite?: string;
-  recordUsage?: (record: AncillaryUsageRecord) => Promise<void>;
+  recordUsage?: (
+    record: Omit<AncillaryUsageRecord, "callSite">,
+  ) => Promise<void>;
 };
 
 export class ApfelLanguageModel implements LanguageModel {
@@ -86,11 +87,10 @@ export class ApfelLanguageModel implements LanguageModel {
     request: LanguageModelRequest,
     stdout: string,
   ): Promise<void> {
-    if (!this.opts.recordUsage || !this.opts.callSite) return;
+    if (!this.opts.recordUsage) return;
     try {
-      const record: AncillaryUsageRecord = {
+      const record: Omit<AncillaryUsageRecord, "callSite"> = {
         ts: Temporal.Now.instant().toString(),
-        callSite: this.opts.callSite,
         adapter: "apfel",
         model: "apfel",
         input: estimateTokenCount(request.systemPrompt + "\n" + request.prompt),

@@ -7,51 +7,72 @@ import {
 } from "./ancillary-usage.ts";
 import { withUrrasDir } from "./test-support.ts";
 
-Deno.test("appendAncillaryUsage: writes record as NDJSON to ancillary-usage.ndjson", async () => {
+Deno.test("appendAncillaryUsage: writes record as NDJSON with callSite to ancillary-usage.ndjson", async () => {
   using dir = withUrrasDir();
-  const record: AncillaryUsageRecord = {
+  await appendAncillaryUsage("test")({
     ts: "2026-01-01T00:00:00Z",
-    callSite: "test",
     adapter: "claude",
     model: "claude-haiku-4-5",
     input: 10,
     output: 5,
     cost: 0.01,
-  };
-  await appendAncillaryUsage(record);
+  });
   const content = await Deno.readTextFile(
     join(dir.path, "ancillary-usage.ndjson"),
   );
-  assertEquals(JSON.parse(content.trim()), record);
+  const expected: AncillaryUsageRecord = {
+    ts: "2026-01-01T00:00:00Z",
+    adapter: "claude",
+    model: "claude-haiku-4-5",
+    input: 10,
+    output: 5,
+    cost: 0.01,
+    callSite: "test",
+  };
+  assertEquals(JSON.parse(content.trim()), expected);
 });
 
 Deno.test("appendAncillaryUsage: appends multiple records as separate lines", async () => {
   using dir = withUrrasDir();
-  const r1: AncillaryUsageRecord = {
+  await appendAncillaryUsage("judgePrinciples")({
     ts: "2026-01-01T00:00:00Z",
-    callSite: "judgePrinciples",
     adapter: "apfel",
     model: "apfel",
     input: 5,
     output: 2,
     estimated: true,
-  };
-  const r2: AncillaryUsageRecord = {
+  });
+  await appendAncillaryUsage("applyLearning")({
     ts: "2026-01-01T00:01:00Z",
-    callSite: "applyLearning",
     adapter: "claude",
     model: "claude-sonnet-4-6",
     input: 100,
     output: 50,
     cost: 0.05,
-  };
-  await appendAncillaryUsage(r1);
-  await appendAncillaryUsage(r2);
+  });
   const content = await Deno.readTextFile(
     join(dir.path, "ancillary-usage.ndjson"),
   );
   const lines = content.trim().split("\n");
   assertEquals(lines.length, 2);
+  const r1: AncillaryUsageRecord = {
+    ts: "2026-01-01T00:00:00Z",
+    adapter: "apfel",
+    model: "apfel",
+    input: 5,
+    output: 2,
+    estimated: true,
+    callSite: "judgePrinciples",
+  };
+  const r2: AncillaryUsageRecord = {
+    ts: "2026-01-01T00:01:00Z",
+    adapter: "claude",
+    model: "claude-sonnet-4-6",
+    input: 100,
+    output: 50,
+    cost: 0.05,
+    callSite: "applyLearning",
+  };
   assertEquals(JSON.parse(lines[0]), r1);
   assertEquals(JSON.parse(lines[1]), r2);
 });

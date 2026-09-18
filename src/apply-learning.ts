@@ -23,8 +23,7 @@ export async function applyLearning(
     `## Learning to integrate\n\n${intent}\n\n## Current document\n\n${currentContent}`;
   const model = new ClaudeLanguageModel(run, {
     model: "claude-sonnet-4-6",
-    callSite: "applyLearning",
-    recordUsage: appendAncillaryUsage,
+    recordUsage: appendAncillaryUsage("applyLearning"),
   });
   const text = await model.generateText({
     systemPrompt: await renderPrompt(

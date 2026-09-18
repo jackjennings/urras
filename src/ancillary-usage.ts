@@ -13,14 +13,16 @@ export type AncillaryUsageRecord = {
   estimated?: true;
 };
 
-export async function appendAncillaryUsage(
-  record: AncillaryUsageRecord,
-): Promise<void> {
-  await writeTextFile(
-    join(urrasDir(), "ancillary-usage.ndjson"),
-    JSON.stringify(record) + "\n",
-    { append: true },
-  );
+export function appendAncillaryUsage(
+  callSite: string,
+): (record: Omit<AncillaryUsageRecord, "callSite">) => Promise<void> {
+  return async (record) => {
+    await writeTextFile(
+      join(urrasDir(), "ancillary-usage.ndjson"),
+      JSON.stringify({ ...record, callSite }) + "\n",
+      { append: true },
+    );
+  };
 }
 
 export async function readAncillaryUsageFile(): Promise<

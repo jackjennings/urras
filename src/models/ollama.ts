@@ -18,8 +18,9 @@ export class OllamaLanguageModel implements LanguageModel {
     private readonly opts: {
       model: string;
       url?: string;
-      callSite?: string;
-      recordUsage?: (record: AncillaryUsageRecord) => Promise<void>;
+      recordUsage?: (
+        record: Omit<AncillaryUsageRecord, "callSite">,
+      ) => Promise<void>;
     },
   ) {
     this.url = opts.url ?? DEFAULT_URL;
@@ -81,11 +82,10 @@ export class OllamaLanguageModel implements LanguageModel {
   }
 
   private async fireRecordUsage(data: OllamaResponse): Promise<void> {
-    if (!this.opts.recordUsage || !this.opts.callSite) return;
+    if (!this.opts.recordUsage) return;
     try {
-      const record: AncillaryUsageRecord = {
+      const record: Omit<AncillaryUsageRecord, "callSite"> = {
         ts: Temporal.Now.instant().toString(),
-        callSite: this.opts.callSite,
         adapter: "ollama",
         model: this.opts.model,
         ...(data.prompt_eval_count !== undefined &&

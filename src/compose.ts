@@ -454,13 +454,11 @@ export function composeTickDeps(
   const shortTitleModel = new FallbackLanguageModel([
     ...ollamaModels,
     new ApfelLanguageModel(captureCommandRunner(), {
-      callSite: "generateShortTitle",
-      recordUsage: appendAncillaryUsage,
+      recordUsage: appendAncillaryUsage("generateShortTitle"),
     }),
     new ClaudeLanguageModel(captureCommandRunner(), {
       model: "claude-haiku-4-5",
-      callSite: "generateShortTitle",
-      recordUsage: appendAncillaryUsage,
+      recordUsage: appendAncillaryUsage("generateShortTitle"),
     }),
   ]);
 
