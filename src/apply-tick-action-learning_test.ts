@@ -3,7 +3,8 @@ import { assertSpyCalls, spy } from "@std/testing/mock";
 import { applyTickActionLearning } from "./apply-tick-action-learning.ts";
 import type { CommandRunner } from "./apfel.ts";
 
-function runnerReturning(stdout: string, code = 0): CommandRunner {
+function runnerReturning(result: string, code = 0): CommandRunner {
+  const stdout = code !== 0 ? result : JSON.stringify({ result });
   return spy((_args: string[]) => Promise.resolve({ code, stdout }));
 }
 
