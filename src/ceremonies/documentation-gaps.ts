@@ -10,6 +10,7 @@ import {
   writeTextFile,
 } from "../filesystem.ts";
 import { ClaudeLanguageModel } from "../models/claude.ts";
+import { appendAncillaryUsage } from "../ancillary-usage.ts";
 
 export interface DocumentationGapsCeremonyDeps {
   stateDir: string;
@@ -126,7 +127,10 @@ async function callLlm(
     `## Required Output Format\n\`\`\`\n${outputFormat}\n\`\`\`\nwhere \`N clusters across M tickets\` are computed from the surviving clusters.`,
   ].join("\n\n");
 
-  const model = new ClaudeLanguageModel(run, { model: "claude-sonnet-4-6" });
+  const model = new ClaudeLanguageModel(run, {
+    model: "claude-sonnet-4-6",
+    recordUsage: appendAncillaryUsage("ceremony:documentation-gaps"),
+  });
   const systemPrompt = await renderPrompt(
     new URL("./documentation-gaps.prompt.hbs", import.meta.url),
   );
