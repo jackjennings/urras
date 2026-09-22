@@ -125,6 +125,7 @@ export interface TicketState {
   providerPickedUp?: boolean;
   outputRetries?: number;
   resumeRetries?: number;
+  scopeRetries?: number;
   phaseSessionIds?: Partial<Record<string, string>>;
   notifiedNeedsAttention?: boolean;
   created: string;

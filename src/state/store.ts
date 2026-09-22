@@ -1,6 +1,7 @@
 import matter from "gray-matter";
 import { join } from "@std/path";
 import { urrasDir } from "../paths.ts";
+import { compactTimestamp } from "../timestamp.ts";
 import {
   type ApprovalEntry,
   type ArtifactType,
@@ -211,6 +212,10 @@ const FIELDS: { [K in keyof TicketState]-?: Field<K> } = {
     write: (t) => t.resumeRetries,
     read: (d) => d.resumeRetries as number | undefined,
   },
+  scopeRetries: {
+    write: (t) => t.scopeRetries,
+    read: (d) => d.scopeRetries as number | undefined,
+  },
   phaseSessionIds: {
     write: (t) => {
       if (t.phaseSessionIds === undefined) return undefined;
@@ -420,6 +425,32 @@ export async function writePhaseOutput(
   content: string,
 ): Promise<void> {
   await writeTextFile(join(stateDir, id, filename), content);
+}
+
+export async function submitFeedback({
+  stateDir,
+  id,
+  phase,
+  content,
+  patchTicket,
+  extraPatch,
+}: {
+  stateDir: string;
+  id: string;
+  phase: string;
+  content: string;
+  patchTicket: (attrs: Partial<TicketState>) => Promise<void>;
+  extraPatch?: Partial<TicketState>;
+}): Promise<void> {
+  const filename = `${
+    compactTimestamp(Temporal.Now.zonedDateTimeISO("UTC"))
+  }-${phase}-feedback.md`;
+  await writePhaseOutput(stateDir, id, filename, content);
+  await patchTicket({
+    status: "revising",
+    updated: Temporal.Now.instant().toString(),
+    ...extraPatch,
+  });
 }
 
 export function readPhaseOutput(
