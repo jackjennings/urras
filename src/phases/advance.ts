@@ -2,6 +2,7 @@ import { join } from "@std/path";
 import { Effect, Exit } from "effect";
 import { estimateTokenCount } from "tokenx";
 import { deleteRunPid } from "../executor.ts";
+import { glossaryPath } from "../glossary.ts";
 import { extractPrinciples } from "../run-phase.ts";
 import {
   loadArtifactPrompt,
@@ -94,6 +95,11 @@ export interface TickDeps {
   ) => Promise<{ model: string; thinking: string } | null>;
   readRunPidBootStamp: (ticketDir: string) => Promise<string | null>;
   currentBootId: () => string;
+  bootstrapGlossaryEntry: (
+    stateDir: string,
+    org: string,
+    repo: string,
+  ) => Promise<void>;
 }
 
 export async function advancePhase(
@@ -229,12 +235,23 @@ export async function advancePhase(
       ticket.artifacts,
     );
     const corpusText = await deps.buildRepoCorpusText();
-    const intakeStatePrompt = await loadStatePrompt(
+    const rawIntakeStatePrompt = await loadStatePrompt(
       "intake",
       stateDir,
       ticket.provider,
       ticket.id,
     );
+    const idParts = ticket.id.split("/");
+    const [, org, repo] = idParts;
+    if (org && repo) {
+      await deps.bootstrapGlossaryEntry(stateDir, org, repo);
+    }
+    const intakeStatePrompt = (org && repo)
+      ? rawIntakeStatePrompt.replaceAll(
+        "{glossaryPath}",
+        glossaryPath(stateDir, org, repo),
+      )
+      : rawIntakeStatePrompt;
     const prompt = [
       intakeBase,
       intakeSupplement,
