@@ -368,8 +368,8 @@ and `event`. Events: `tick-start`, `tick-end`, `tick-already-running`,
 `repo-renamed`, `repo-identity-collision`, `repo-identity-reconcile-failed`,
 `repo-identity-unavailable`, `repo-org-unmapped`, `pricing-fetch-failed`,
 `learning-processing-failed`, `org-renamed`, `org-identity-reconcile-failed`.
-`appendTickLog` (`src/tick.ts`) writes it directly; it is not
-`appendTicketLog` (`src/state/store.ts`).
+`appendTickLog` (`src/tick.ts`) writes it directly; it is not `appendTicketLog`
+(`src/state/store.ts`).
 
 | Event                            | Trigger                                                                                                                                                                                                                                               |
 | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
