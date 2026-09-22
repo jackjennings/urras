@@ -30,11 +30,8 @@ import type { TicketState } from "../state/types.ts";
 import { ScrollPane } from "../ui/scroll-pane.ts";
 import type { Command } from "./types.ts";
 import { mkdir, open, readTextFile } from "../filesystem.ts";
-import {
-  findLatestPhaseOutput,
-  renderTabBar,
-  ReviewSession,
-} from "../review.ts";
+import { findLatestPhaseOutput, ReviewSession } from "../review.ts";
+import { TabbedPane } from "../ui/tabbed-pane.ts";
 import { listCeremonyStatuses } from "../ceremonies.ts";
 import type { CeremonyStatus } from "../ceremonies.ts";
 
@@ -491,12 +488,14 @@ export const hud: Command = {
       invalidate() {},
     };
 
-    const HUD_TABS = [{ phaseName: "Status" }, { phaseName: "Ceremonies" }];
-    let activeTabIndex = 0;
+    const tabbedPane = new TabbedPane([
+      { phaseName: "Status" },
+      { phaseName: "Ceremonies" },
+    ]);
 
     const tabBarComponent = {
       render(_width: number): string[] {
-        return [renderTabBar(HUD_TABS, activeTabIndex)];
+        return [tabbedPane.renderBar()];
       },
       invalidate() {},
     };
@@ -531,27 +530,6 @@ export const hud: Command = {
         currentCeremonyLines = [dim("Error loading ceremonies.")];
       }
       ceremoniesPane.setContent((_w) => currentCeremonyLines);
-      tui.requestRender(true);
-    }
-
-    function switchToTab(index: number) {
-      if (index === activeTabIndex) return;
-      if (activeTabIndex === 0) {
-        tui.removeChild(commandEditor);
-        tui.removeChild(logPane);
-        tui.removeChild(statusPane);
-        tui.addChild(ceremoniesPane);
-        tui.addChild(commandEditor);
-        activeTabIndex = 1;
-        void loadCeremonyData();
-      } else {
-        tui.removeChild(commandEditor);
-        tui.removeChild(ceremoniesPane);
-        tui.addChild(statusPane);
-        tui.addChild(logPane);
-        tui.addChild(commandEditor);
-        activeTabIndex = 0;
-      }
       tui.requestRender(true);
     }
 
@@ -766,24 +744,31 @@ export const hud: Command = {
         }
       }
       if (
-        matchesKey(data, "left") &&
-        !commandEditor.focused &&
-        activeTabIndex > 0
+        matchesKey(data, "left") && !commandEditor.focused && tabbedPane.prev()
       ) {
-        switchToTab(activeTabIndex - 1);
+        tui.removeChild(commandEditor);
+        tui.removeChild(ceremoniesPane);
+        tui.addChild(statusPane);
+        tui.addChild(logPane);
+        tui.addChild(commandEditor);
+        tui.requestRender(true);
         return { consume: true };
       }
       if (
-        matchesKey(data, "right") &&
-        !commandEditor.focused &&
-        activeTabIndex < HUD_TABS.length - 1
+        matchesKey(data, "right") && !commandEditor.focused && tabbedPane.next()
       ) {
-        switchToTab(activeTabIndex + 1);
+        tui.removeChild(commandEditor);
+        tui.removeChild(logPane);
+        tui.removeChild(statusPane);
+        tui.addChild(ceremoniesPane);
+        tui.addChild(commandEditor);
+        void loadCeremonyData();
+        tui.requestRender(true);
         return { consume: true };
       }
       if (matchesKey(data, "tab")) {
         if (commandEditor.focused && commandEditor.getText() !== "") return;
-        if (activeTabIndex === 0) {
+        if (tabbedPane.activeIndex === 0) {
           if (statusPane.focused) {
             statusPane.focused = false;
             logPane.focused = true;
