@@ -40,10 +40,50 @@ export function isProcessAlive(pid: number): boolean {
 
 export function buildPhaseArgs(opts: ExecutorOptions): string[] {
   const runPhaseScript = new URL("./run-phase.ts", import.meta.url).pathname;
+  const lazyboySrcRoot = new URL("../", import.meta.url).pathname;
+  const home = Deno.env.get("HOME")!;
+  const denoDir = Deno.env.get("DENO_DIR") ?? `${home}/Library/Caches/deno`;
+
+  const readPaths = [
+    opts.stateDir,
+    opts.ticketDir,
+    ...opts.scopeDirs.filter((p) => p.length > 0),
+    ...Object.values(opts.worktrees).map((w) => w.path).filter((p) =>
+      p.length > 0
+    ),
+    `${home}/.urras/`,
+    lazyboySrcRoot,
+    denoDir,
+  ];
+
+  const writePaths = [
+    opts.ticketDir,
+    `${home}/.urras/pi/`,
+    `${home}/.urras/claude-code/`,
+  ];
+
   const phase = opts.outputFile.replace(/\.md$/, "");
-  const args = [
+  const args: string[] = [
     "run",
-    "--allow-all",
+    `--allow-read=${readPaths.join(",")}`,
+    `--allow-write=${writePaths.join(",")}`,
+    "--allow-run=claude,pi,apfel",
+    "--allow-env",
+  ];
+
+  if (opts.ollamaModels && opts.ollamaModels.length > 0) {
+    const hosts = opts.ollamaModels.map((m) => {
+      if (!m.url) return "localhost:11434";
+      try {
+        return new URL(m.url).host;
+      } catch {
+        return "localhost:11434";
+      }
+    });
+    args.push(`--allow-net=${hosts.join(",")}`);
+  }
+
+  args.push(
     runPhaseScript,
     "--ticket-dir",
     opts.ticketDir,
@@ -57,7 +97,7 @@ export function buildPhaseArgs(opts: ExecutorOptions): string[] {
     opts.prompt,
     "--worktrees",
     JSON.stringify(opts.worktrees),
-  ];
+  );
   args.push(
     "--provider",
     opts.provider,

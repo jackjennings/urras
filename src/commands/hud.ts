@@ -632,6 +632,7 @@ export const hud: Command = {
       headerLine = `Running: ${label}`;
       tui.requestRender(true);
       const scriptPath = new URL("../index.ts", import.meta.url).pathname;
+      // Intentional exception: HUD runs arbitrary interactive commands with the full tick surface; per-command enumeration is fragile as new commands are added.
       const proc = new Deno.Command("deno", {
         args: ["run", "--allow-all", scriptPath, name, ...args],
         stdin: "null",
