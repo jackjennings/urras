@@ -28,8 +28,19 @@ const isRebaseStatePath = (path: string) =>
 function makeAction(
   overrides: Partial<Parameters<typeof resolveConflictsAction>[0]> = {},
 ) {
+  const { runGit: runGitOverride, ...rest } = overrides;
+  const baseRunGit = runGitOverride ??
+    (() => Promise.resolve({ code: 0, stdout: "", stderr: "" }));
   return resolveConflictsAction({
-    runGit: () => Promise.resolve({ code: 0, stdout: "", stderr: "" }),
+    runGit: (args, cwd) => {
+      if (args[0] === "symbolic-ref") {
+        return baseRunGit(args, cwd).then((result) => {
+          if (result.code !== 0 || result.stdout.trim()) return result;
+          return { code: 0, stdout: "gh-7\n", stderr: "" };
+        });
+      }
+      return baseRunGit(args, cwd);
+    },
     isProcessAlive: () => false,
     writeTicket: () => Promise.resolve(),
     appendLog: () => Promise.resolve(),
@@ -37,7 +48,7 @@ function makeAction(
     readDir: async function* () {},
     remove: () => Promise.resolve(),
     readPhaseSessionId: () => Promise.resolve(null),
-    ...overrides,
+    ...rest,
   });
 }
 
@@ -159,6 +170,9 @@ Deno.test(
         gitCalls.push({ args, cwd });
         if (args[0] === "rev-parse") {
           return Promise.resolve({ code: 0, stdout: "/wt/.git\n", stderr: "" });
+        }
+        if (args[0] === "symbolic-ref" && cwd === "/wt/a/repo") {
+          return Promise.resolve({ code: 0, stdout: "a-repo\n", stderr: "" });
         }
         return Promise.resolve({ code: 0, stdout: "", stderr: "" });
       },
@@ -339,6 +353,110 @@ Deno.test(
     assertNotEquals(failed, undefined);
     assertEquals(failed!.reason, "push-failed");
     assertEquals(failed!.sessionId, "sess_push_failed");
+  },
+);
+
+// ── branch mismatch ──────────────────────────────────────────────────────────
+
+Deno.test(
+  "resolveConflictsAction: branch mismatch before push → parks as needs-attention",
+  async () => {
+    const logged: object[] = [];
+    const written: TicketState[] = [];
+    const gitCalls: string[][] = [];
+
+    const result = await makeAction({
+      runGit: (args) => {
+        gitCalls.push(args);
+        if (args[0] === "rev-parse") {
+          return Promise.resolve({ code: 0, stdout: "/wt/.git\n", stderr: "" });
+        }
+        if (args[0] === "symbolic-ref") {
+          return Promise.resolve({
+            code: 0,
+            stdout: "fix/other-branch\n",
+            stderr: "",
+          });
+        }
+        return Promise.resolve({ code: 0, stdout: "", stderr: "" });
+      },
+      stat: (path) => Promise.resolve(!isRebaseStatePath(path)),
+      readDir: async function* () {
+        yield {
+          name: "20260101T000000-conflict-context-gh-7.md",
+          isFile: true,
+        };
+      },
+      remove: () => Promise.resolve(),
+      writeTicket: (_dir, t) => {
+        written.push(t);
+        return Promise.resolve();
+      },
+      appendLog: (_dir, _id, entry) => {
+        logged.push(entry);
+        return Promise.resolve();
+      },
+    }).run(makeTicket(BASE), "/state");
+
+    assertEquals(result?.status, "needs-attention");
+    assertFalse(gitCalls.some((a) => a[0] === "push"));
+
+    const logEntry = (logged as Record<string, unknown>[]).find(
+      (e) => e.event === "needs-attention",
+    );
+    assertNotEquals(logEntry, undefined);
+    assertEquals(logEntry!.reason, "worktree-branch-mismatch");
+    assertEquals(logEntry!.worktreePath, "/wt/myorg/myrepo");
+    assertEquals(logEntry!.expected, "gh-7");
+    assertEquals(logEntry!.found, "fix/other-branch");
+  },
+);
+
+Deno.test(
+  "resolveConflictsAction: detached HEAD before push → parks as needs-attention with found '(detached)'",
+  async () => {
+    const logged: object[] = [];
+    const written: TicketState[] = [];
+
+    const result = await makeAction({
+      runGit: (args) => {
+        if (args[0] === "rev-parse") {
+          return Promise.resolve({ code: 0, stdout: "/wt/.git\n", stderr: "" });
+        }
+        if (args[0] === "symbolic-ref") {
+          return Promise.resolve({
+            code: 128,
+            stdout: "",
+            stderr: "fatal: ref HEAD is not a symbolic ref",
+          });
+        }
+        return Promise.resolve({ code: 0, stdout: "", stderr: "" });
+      },
+      stat: (path) => Promise.resolve(!isRebaseStatePath(path)),
+      readDir: async function* () {
+        yield {
+          name: "20260101T000000-conflict-context-gh-7.md",
+          isFile: true,
+        };
+      },
+      remove: () => Promise.resolve(),
+      writeTicket: (_dir, t) => {
+        written.push(t);
+        return Promise.resolve();
+      },
+      appendLog: (_dir, _id, entry) => {
+        logged.push(entry);
+        return Promise.resolve();
+      },
+    }).run(makeTicket(BASE), "/state");
+
+    assertEquals(result?.status, "needs-attention");
+    const logEntry = (logged as Record<string, unknown>[]).find(
+      (e) => e.event === "needs-attention",
+    );
+    assertNotEquals(logEntry, undefined);
+    assertEquals(logEntry!.reason, "worktree-branch-mismatch");
+    assertEquals(logEntry!.found, "(detached)");
   },
 );
 
