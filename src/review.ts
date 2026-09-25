@@ -1151,12 +1151,14 @@ export async function review(
     stateDir: stateDirOverride,
     readTicket = readTicketWithPatch,
     commit = commitTicket,
+    classifyApproval: classifyApprovalFn = classifyApproval,
   }: {
     isTerminal?: () => boolean;
     readStdin?: () => Promise<string>;
     stateDir?: string;
     readTicket?: typeof readTicketWithPatch;
     commit?: typeof commitTicket;
+    classifyApproval?: (text: string) => Promise<boolean>;
   } = {},
 ): Promise<void> {
   const stateDir = stateDirOverride ??
@@ -1203,6 +1205,11 @@ export async function review(
       );
     }
     const now = Temporal.Now.zonedDateTimeISO("UTC");
+    const isApproval = await classifyApprovalFn(text);
+    if (isApproval) {
+      await applyApproval(stateDir, id, now, { readTicket, commit });
+      Deno.exit(0);
+    }
     const timestamp = formatTimestamp(now);
     const feedbackFile = `${timestamp}-${ticket.phase}-feedback.md`;
     await writePhaseOutput(stateDir, id, feedbackFile, text);
