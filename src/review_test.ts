@@ -11,9 +11,7 @@ import {
 import { stripAnsiCode } from "@std/fmt/colors";
 import { assertSpyCalls, spy, stub } from "@std/testing/mock";
 import {
-  answerQuestion,
   applyApproval,
-  buildQuestionSystemPrompt,
   classifyApproval,
   ErrorOverlay,
   findAllPhaseOutputs,
@@ -720,186 +718,6 @@ Deno.test("wrapDiffLines: short diff lines produce identical output to renderDif
   assertEquals(result, diffLines);
 });
 
-// ── buildQuestionSystemPrompt ────────────────────────────────────────────────
-
-Deno.test("buildQuestionSystemPrompt: includes fixed framing sentence", async () => {
-  const readFile = spy((_path: string | URL) => Promise.resolve("content"));
-  const result = await buildQuestionSystemPrompt(
-    ["@/ticket/meta.md"],
-    readFile,
-  );
-  assert(
-    result.startsWith(
-      "You are a helpful assistant answering questions about a ticket's phase output.",
-    ),
-  );
-});
-
-Deno.test("buildQuestionSystemPrompt: strips leading @ when reading file", async () => {
-  const readFile = spy((_path: string | URL) => Promise.resolve("content"));
-  await buildQuestionSystemPrompt(["@/ticket/meta.md"], readFile);
-  assertSpyCalls(readFile, 1);
-  assertEquals(readFile.calls[0].args[0] as string, "/ticket/meta.md");
-});
-
-Deno.test("buildQuestionSystemPrompt: includes file content in output", async () => {
-  const readFile = spy((_path: string | URL) =>
-    Promise.resolve("# Phase Output\n\nSome content.")
-  );
-  const result = await buildQuestionSystemPrompt(
-    ["@/ticket/spec.md"],
-    readFile,
-  );
-  assertStringIncludes(result, "# Phase Output");
-  assertStringIncludes(result, "Some content.");
-});
-
-Deno.test("buildQuestionSystemPrompt: silently skips unreadable files", async () => {
-  const readFile = spy((_path: string | URL) =>
-    Promise.reject(new Error("ENOENT"))
-  );
-  const result = await buildQuestionSystemPrompt(["@/missing.md"], readFile);
-  assertEquals(typeof result, "string");
-  assertSpyCalls(readFile, 1);
-  assertFalse(result.includes("ENOENT"));
-});
-
-Deno.test("buildQuestionSystemPrompt: separates multiple files with headings", async () => {
-  const readFile = spy((_path: string | URL) => Promise.resolve("body"));
-  const result = await buildQuestionSystemPrompt(
-    ["@/ticket/meta.md", "@/ticket/spec.md"],
-    readFile,
-  );
-  assertSpyCalls(readFile, 2);
-  assertStringIncludes(result, "/ticket/meta.md");
-  assertStringIncludes(result, "/ticket/spec.md");
-});
-
-// ── answerQuestion ────────────────────────────────────────────────────────────
-
-Deno.test(
-  "answerQuestion: appends user then assistant message on success",
-  async () => {
-    const messages: Array<{ role: "user" | "assistant"; content: string }> = [];
-    const fetcher = spy(
-      (_url: string | URL | Request, _init?: RequestInit) =>
-        Promise.resolve(
-          new Response(
-            JSON.stringify({
-              content: [{ type: "text", text: "Here is the answer." }],
-            }),
-            { status: 200 },
-          ),
-        ),
-    );
-    await answerQuestion(messages, "What does this do?", "System.", fetcher);
-    assertEquals(messages.length, 2);
-    assertEquals(messages[0], { role: "user", content: "What does this do?" });
-    assertEquals(messages[1], {
-      role: "assistant",
-      content: "Here is the answer.",
-    });
-  },
-);
-
-Deno.test(
-  "answerQuestion: appends error message on non-2xx response",
-  async () => {
-    const messages: Array<{ role: "user" | "assistant"; content: string }> = [];
-    const fetcher = spy(
-      (_url: string | URL | Request, _init?: RequestInit) =>
-        Promise.resolve(new Response("Unauthorized", { status: 401 })),
-    );
-    await answerQuestion(messages, "What?", "System.", fetcher);
-    assertEquals(messages.length, 2);
-    assertEquals(messages[1].content, "Error: could not get a response.");
-  },
-);
-
-Deno.test(
-  "answerQuestion: appends error message when fetch throws",
-  async () => {
-    const messages: Array<{ role: "user" | "assistant"; content: string }> = [];
-    const fetcher = spy(
-      (_url: string | URL | Request, _init?: RequestInit) =>
-        Promise.reject(new Error("network error")),
-    );
-    await answerQuestion(messages, "What?", "System.", fetcher);
-    assertEquals(messages.length, 2);
-    assertEquals(messages[1].content, "Error: could not get a response.");
-  },
-);
-
-Deno.test(
-  "answerQuestion: sends full conversation history on each call",
-  async () => {
-    const messages: Array<{ role: "user" | "assistant"; content: string }> = [
-      { role: "user", content: "First question" },
-      { role: "assistant", content: "First answer" },
-    ];
-    const fetcher = spy(
-      (_url: string | URL | Request, _init?: RequestInit) =>
-        Promise.resolve(
-          new Response(
-            JSON.stringify({
-              content: [{ type: "text", text: "Second answer." }],
-            }),
-            { status: 200 },
-          ),
-        ),
-    );
-    await answerQuestion(messages, "Second question", "System.", fetcher);
-    assertSpyCalls(fetcher, 1);
-    const body = JSON.parse(fetcher.calls[0].args[1]!.body as string);
-    assertEquals(body.messages.length, 3);
-    assertEquals(body.messages[0], {
-      role: "user",
-      content: "First question",
-    });
-    assertEquals(body.messages[1], {
-      role: "assistant",
-      content: "First answer",
-    });
-    assertEquals(body.messages[2], {
-      role: "user",
-      content: "Second question",
-    });
-    assertEquals(messages.length, 4);
-  },
-);
-
-Deno.test("answerQuestion: uses model claude-haiku-4-5", async () => {
-  const messages: Array<{ role: "user" | "assistant"; content: string }> = [];
-  const fetcher = spy(
-    (_url: string | URL | Request, _init?: RequestInit) =>
-      Promise.resolve(
-        new Response(
-          JSON.stringify({ content: [{ type: "text", text: "ok" }] }),
-          { status: 200 },
-        ),
-      ),
-  );
-  await answerQuestion(messages, "hi", "System.", fetcher);
-  const body = JSON.parse(fetcher.calls[0].args[1]!.body as string);
-  assertEquals(body.model, "claude-haiku-4-5");
-});
-
-Deno.test("answerQuestion: sends system prompt in request body", async () => {
-  const messages: Array<{ role: "user" | "assistant"; content: string }> = [];
-  const fetcher = spy(
-    (_url: string | URL | Request, _init?: RequestInit) =>
-      Promise.resolve(
-        new Response(
-          JSON.stringify({ content: [{ type: "text", text: "ok" }] }),
-          { status: 200 },
-        ),
-      ),
-  );
-  await answerQuestion(messages, "hi", "Custom system prompt.", fetcher);
-  const body = JSON.parse(fetcher.calls[0].args[1]!.body as string);
-  assertEquals(body.system, "Custom system prompt.");
-});
-
 // ── formatTimestamp ───────────────────────────────────────────────────────────
 
 Deno.test("formatTimestamp: returns YYYYMMDDTHHMMSS with no hyphens in the date portion", () => {
@@ -1165,6 +983,7 @@ Deno.test(
           await review(ticketId, {
             isTerminal: () => false,
             readStdin: () => Promise.resolve("needs work on section 3"),
+            classifyApproval: () => Promise.resolve(false),
           });
         } catch {
           // expected
@@ -1198,6 +1017,7 @@ Deno.test(
           await review(ticketId, {
             isTerminal: () => false,
             readStdin: () => Promise.resolve("fix the tests"),
+            classifyApproval: () => Promise.resolve(false),
           });
         } catch {
           // expected
@@ -1228,6 +1048,7 @@ Deno.test(
           await review(ticketId, {
             isTerminal: () => false,
             readStdin: () => Promise.resolve("fix the tests"),
+            classifyApproval: () => Promise.resolve(false),
           });
         } catch {
           // expected
@@ -1259,6 +1080,7 @@ Deno.test(
           await review(ticketId, {
             isTerminal: () => false,
             readStdin: () => Promise.resolve("fix the tests"),
+            classifyApproval: () => Promise.resolve(false),
           });
         } catch {
           // expected
@@ -1290,6 +1112,7 @@ Deno.test(
           await review(ticketId, {
             isTerminal: () => false,
             readStdin: () => Promise.resolve("fix the tests"),
+            classifyApproval: () => Promise.resolve(false),
           });
         } catch {
           // expected
@@ -1444,6 +1267,7 @@ Deno.test(
           await review(ticketId, {
             isTerminal: () => false,
             readStdin: () => Promise.resolve("feedback text"),
+            classifyApproval: () => Promise.resolve(false),
           });
         } catch {
           // expected: exitStub throws
@@ -1461,6 +1285,79 @@ Deno.test(
         assert(entries.some((e) => e.endsWith("-merge-feedback.md")));
         const updated = await readTicket(stateDir, ticketId);
         assertEquals(updated.status, "revising");
+      });
+    } finally {
+      await Deno.remove(stateDir, { recursive: true });
+    }
+  },
+);
+
+Deno.test(
+  "review: piped approval text appends human approval entry and exits 0",
+  async () => {
+    const stateDir = await Deno.makeTempDir();
+    try {
+      const ticketId = "github/test/repo/60";
+      await setupPipedReviewState(stateDir, ticketId);
+      await withReviewConfig(stateDir, async () => {
+        const exitStub = stub(Deno, "exit", (_code?: number) => {
+          throw new Error(`exit:${_code}`);
+        });
+        try {
+          await review(ticketId, {
+            isTerminal: () => false,
+            readStdin: () => Promise.resolve("LGTM"),
+            classifyApproval: () => Promise.resolve(true),
+          });
+        } catch {
+          // expected
+        } finally {
+          exitStub.restore();
+        }
+        assertSpyCalls(exitStub, 1);
+        assertEquals(exitStub.calls[0].args[0], 0);
+        const ticket = await readTicket(stateDir, ticketId);
+        assertEquals(ticket.approvals.length, 1);
+        assertEquals(ticket.approvals[0].actor, "human");
+        const entries: string[] = [];
+        for await (const entry of Deno.readDir(join(stateDir, ticketId))) {
+          entries.push(entry.name);
+        }
+        assertFalse(entries.some((e) => e.endsWith("-feedback.md")));
+      });
+    } finally {
+      await Deno.remove(stateDir, { recursive: true });
+    }
+  },
+);
+
+Deno.test(
+  "review: piped feedback text writes feedback file when classifyApproval returns false",
+  async () => {
+    const stateDir = await Deno.makeTempDir();
+    try {
+      const ticketId = "github/test/repo/61";
+      await setupPipedReviewState(stateDir, ticketId);
+      await withReviewConfig(stateDir, async () => {
+        const exitStub = stub(Deno, "exit", (_code?: number) => {
+          throw new Error(`exit:${_code}`);
+        });
+        try {
+          await review(ticketId, {
+            isTerminal: () => false,
+            readStdin: () => Promise.resolve("needs more tests"),
+            classifyApproval: () => Promise.resolve(false),
+          });
+        } catch {
+          // expected
+        } finally {
+          exitStub.restore();
+        }
+        const entries: string[] = [];
+        for await (const entry of Deno.readDir(join(stateDir, ticketId))) {
+          entries.push(entry.name);
+        }
+        assert(entries.some((e) => /^\d{8}T\d{6}-spec-feedback\.md$/.test(e)));
       });
     } finally {
       await Deno.remove(stateDir, { recursive: true });
@@ -1683,7 +1580,6 @@ function makeReviewSession(
     stateDir: "/fake/state",
     ticket: makeTicket({ id: "github/test/repo/1" }),
     patchTicket: () => Promise.resolve(),
-    systemPrompt: "system prompt",
     tui: tui as unknown as TUI,
     close: closeSpy,
     getKeybindings,
@@ -1742,7 +1638,7 @@ Deno.test("ReviewSession: ctrl+c does not write any state files", () => {
   assertSpyCalls(writePhaseOutputSpy, 0);
 });
 
-Deno.test("ReviewSession: close() hides question and error overlays", () => {
+Deno.test("ReviewSession: close() hides error overlay", () => {
   const { session, tui } = makeReviewSession();
   session.close();
   for (const { handle } of tui.overlays) {
@@ -1817,6 +1713,7 @@ Deno.test(
         close: () => {},
         getKeybindings: () => savedKb,
         setKeybindings: () => {},
+        spawnAgentSession: () => Promise.resolve(),
       });
 
       const lines = session.render(80).map(stripAnsiCode);
@@ -1863,6 +1760,7 @@ Deno.test(
         close: () => {},
         getKeybindings: () => savedKb,
         setKeybindings: () => {},
+        spawnAgentSession: () => Promise.resolve(),
       });
 
       const lines = session.render(80).map(stripAnsiCode);
@@ -1870,6 +1768,129 @@ Deno.test(
     } finally {
       await Deno.remove(stateDir, { recursive: true });
     }
+  },
+);
+
+// ── alt+shift+/ hotkey (agent session) ───────────────────────────────────────
+
+Deno.test(
+  "ReviewSession: alt+shift+/ with no worktrees calls spawnAgentSession with undefined path",
+  async () => {
+    const spawnSpy = spy(
+      (_t: TicketState, _id: string, _path: string | undefined) =>
+        Promise.resolve(),
+    );
+    const { tui } = makeReviewSession({
+      ticket: makeTicket({ id: "github/test/repo/1", worktrees: {} }),
+      spawnAgentSession: spawnSpy,
+    });
+    const handler = tui.inputListeners[0];
+    handler("\x1b[47;4u"); // alt+shift+/
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assertSpyCalls(spawnSpy, 1);
+    assertEquals(spawnSpy.calls[0].args[2], undefined);
+  },
+);
+
+Deno.test(
+  "ReviewSession: alt+shift+/ with one worktree calls spawnAgentSession with its path",
+  async () => {
+    const spawnSpy = spy(
+      (_t: TicketState, _id: string, _path: string | undefined) =>
+        Promise.resolve(),
+    );
+    const { tui } = makeReviewSession({
+      ticket: makeTicket({
+        id: "github/test/repo/1",
+        worktrees: { "org/repo": { path: "/some/path", branch: "main" } },
+      }),
+      spawnAgentSession: spawnSpy,
+    });
+    const handler = tui.inputListeners[0];
+    handler("\x1b[47;4u");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assertSpyCalls(spawnSpy, 1);
+    assertEquals(spawnSpy.calls[0].args[2], "/some/path");
+  },
+);
+
+Deno.test(
+  "ReviewSession: alt+shift+/ with multiple worktrees shows SelectList picker",
+  async () => {
+    const { tui } = makeReviewSession({
+      ticket: makeTicket({
+        id: "github/test/repo/1",
+        worktrees: {
+          "org/repo-a": { path: "/path/a", branch: "main" },
+          "org/repo-b": { path: "/path/b", branch: "main" },
+        },
+      }),
+      spawnAgentSession: () => Promise.resolve(),
+    });
+    const overlayCountBefore = tui.overlays.length;
+    const handler = tui.inputListeners[0];
+    handler("\x1b[47;4u");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assertGreater(tui.overlays.length, overlayCountBefore);
+  },
+);
+
+Deno.test(
+  "ReviewSession: alt+shift+/ picker onSelect calls spawnAgentSession with selected path",
+  async () => {
+    const spawnSpy = spy(
+      (_t: TicketState, _id: string, _path: string | undefined) =>
+        Promise.resolve(),
+    );
+    const { tui } = makeReviewSession({
+      ticket: makeTicket({
+        id: "github/test/repo/1",
+        worktrees: {
+          "org/repo-a": { path: "/path/a", branch: "main" },
+          "org/repo-b": { path: "/path/b", branch: "main" },
+        },
+      }),
+      spawnAgentSession: spawnSpy,
+    });
+    const overlaysBefore = tui.overlays.length;
+    const handler = tui.inputListeners[0];
+    handler("\x1b[47;4u");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const { component: picker } = tui.overlays[overlaysBefore];
+    const selectList = picker as {
+      onSelect?: (item: { value: string; label: string }) => void;
+    };
+    await selectList.onSelect?.({ value: "/path/b", label: "org/repo-b" });
+    assertSpyCalls(spawnSpy, 1);
+    assertEquals(spawnSpy.calls[0].args[2], "/path/b");
+  },
+);
+
+Deno.test(
+  "ReviewSession: alt+shift+/ picker onCancel does not call spawnAgentSession",
+  async () => {
+    const spawnSpy = spy(
+      (_t: TicketState, _id: string, _path: string | undefined) =>
+        Promise.resolve(),
+    );
+    const { tui } = makeReviewSession({
+      ticket: makeTicket({
+        id: "github/test/repo/1",
+        worktrees: {
+          "org/repo-a": { path: "/path/a", branch: "main" },
+          "org/repo-b": { path: "/path/b", branch: "main" },
+        },
+      }),
+      spawnAgentSession: spawnSpy,
+    });
+    const overlaysBefore = tui.overlays.length;
+    const handler = tui.inputListeners[0];
+    handler("\x1b[47;4u");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const { component: picker } = tui.overlays[overlaysBefore];
+    const selectList = picker as { onCancel?: () => void };
+    selectList.onCancel?.();
+    assertSpyCalls(spawnSpy, 0);
   },
 );
 
@@ -1906,7 +1927,7 @@ Deno.test(
     });
     const handler = tui.inputListeners[0];
     handler("r");
-    const errorHandle = tui.overlays[1].handle;
+    const errorHandle = tui.overlays[0].handle;
     assertFalse(errorHandle.setHidden.calls.every((c) => c.args[0] === true));
   },
 );
@@ -1920,7 +1941,7 @@ Deno.test(
     void session;
     const handler = tui.inputListeners[0];
     handler("r");
-    const errorOverlay = tui.overlays[1].component as ErrorOverlay;
+    const errorOverlay = tui.overlays[0].component as ErrorOverlay;
     const lines = errorOverlay.render(80);
     assertStringIncludes(
       lines.join(" "),
@@ -1949,7 +1970,7 @@ Deno.test(
     void session;
     const handler = tui.inputListeners[0];
     handler("r");
-    const errorOverlay = tui.overlays[1].component as ErrorOverlay;
+    const errorOverlay = tui.overlays[0].component as ErrorOverlay;
     const lines = errorOverlay.render(80);
     assertStringIncludes(
       lines.join(" "),
@@ -1968,7 +1989,7 @@ Deno.test(
     const handler = tui.inputListeners[0];
     handler("r");
     await new Promise((resolve) => setTimeout(resolve, 0));
-    const errorOverlay = tui.overlays[1].component as ErrorOverlay;
+    const errorOverlay = tui.overlays[0].component as ErrorOverlay;
     const lines = errorOverlay.render(80);
     assertStringIncludes(
       lines.join(" "),
@@ -2002,7 +2023,7 @@ Deno.test(
     const handler = tui.inputListeners[0];
     handler("r");
     await new Promise((resolve) => setTimeout(resolve, 0));
-    const errorHandle = tui.overlays[1].handle;
+    const errorHandle = tui.overlays[0].handle;
     assertFalse(errorHandle.setHidden.calls.some((c) => c.args[0] === false));
   },
 );

@@ -46,7 +46,6 @@ import {
   writePhaseOutput,
 } from "./state/store.ts";
 import type { TicketState } from "./state/types.ts";
-import { buildContextFiles } from "./run-phase.ts";
 import { CONTEXT_PHASE_SEQUENCE } from "./phases/types.ts";
 import { compactTimestamp } from "./timestamp.ts";
 import { diffLines } from "diff";
@@ -300,153 +299,6 @@ export function formatTimestamp(now: Temporal.ZonedDateTime): string {
   return compactTimestamp(now);
 }
 
-export async function buildQuestionSystemPrompt(
-  contextFiles: string[],
-  readFile: (path: string | URL) => Promise<string> = readTextFile,
-): Promise<string> {
-  const preamble = await renderPrompt(
-    new URL("./review-question.prompt.hbs", import.meta.url),
-  );
-  const parts: string[] = [preamble];
-  for (const contextFile of contextFiles) {
-    const path = contextFile.startsWith("@")
-      ? contextFile.slice(1)
-      : contextFile;
-    try {
-      const content = await readFile(path);
-      parts.push(`\n---\n\n## ${path}\n\n${content}`);
-    } catch {
-      /* unreadable, skip */
-    }
-  }
-  return parts.join("\n");
-}
-
-export async function answerQuestion(
-  messages: Array<{ role: "user" | "assistant"; content: string }>,
-  userText: string,
-  systemPrompt: string,
-  fetcher: typeof fetch,
-): Promise<void> {
-  messages.push({ role: "user", content: userText });
-  try {
-    const response = await fetcher("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": Deno.env.get("ANTHROPIC_API_KEY") ?? "",
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "claude-haiku-4-5",
-        max_tokens: 1024,
-        system: systemPrompt,
-        messages,
-      }),
-    });
-    if (!response.ok) {
-      messages.push({
-        role: "assistant",
-        content: "Error: could not get a response.",
-      });
-      return;
-    }
-    const data = await response.json();
-    const text = (data?.content?.[0]?.text ?? "").trim();
-    messages.push({ role: "assistant", content: text });
-  } catch {
-    messages.push({
-      role: "assistant",
-      content: "Error: could not get a response.",
-    });
-  }
-}
-
-class QuestionOverlay implements Component, Focusable {
-  private _focused = false;
-  private messages: Array<{ role: "user" | "assistant"; content: string }> = [];
-  private pending = false;
-  private editor: Editor;
-  private handle: OverlayHandle | null = null;
-  private onDismiss: (() => void) | null = null;
-
-  constructor(
-    private systemPrompt: string,
-    private fetcher: typeof fetch,
-    tui: TUI,
-  ) {
-    this.editor = new Editor(tui, {
-      borderColor: (s) => s,
-      selectList: {
-        selectedPrefix: (s) => s,
-        selectedText: (s) => s,
-        description: (s) => s,
-        scrollInfo: (s) => s,
-        noMatch: (s) => s,
-      },
-    });
-    this.editor.onSubmit = async (text: string) => {
-      const trimmed = text.trim();
-      if (!trimmed) return;
-      this.editor.setText("");
-      this.pending = true;
-      tui.requestRender(true);
-      await answerQuestion(
-        this.messages,
-        trimmed,
-        this.systemPrompt,
-        this.fetcher,
-      );
-      this.pending = false;
-      tui.requestRender(true);
-    };
-  }
-
-  get focused(): boolean {
-    return this._focused;
-  }
-
-  set focused(value: boolean) {
-    this._focused = value;
-    this.editor.focused = value;
-  }
-
-  setHandle(handle: OverlayHandle, onDismiss: () => void): void {
-    this.handle = handle;
-    this.onDismiss = onDismiss;
-  }
-
-  handleInput(data: string): void {
-    if (matchesKey(data, "escape")) {
-      this.handle?.setHidden(true);
-      this.onDismiss?.();
-      return;
-    }
-    this.editor.handleInput?.(data);
-  }
-
-  invalidate(): void {
-    this.editor.invalidate();
-  }
-
-  render(width: number): string[] {
-    const lines: string[] = [];
-    for (const msg of this.messages) {
-      const label = msg.role === "user" ? dim("You:") : dim("Assistant:");
-      lines.push(label);
-      for (const line of wrapTextWithAnsi(msg.content, width - 2)) {
-        lines.push(`  ${line}`);
-      }
-      lines.push("");
-    }
-    if (this.pending) {
-      lines.push(dim("…"));
-    }
-    lines.push(...this.editor.render(width));
-    return lines;
-  }
-}
-
 export class ErrorOverlay implements Component, Focusable {
   private _focused = false;
   private message = "";
@@ -557,14 +409,17 @@ export interface ReviewSessionOptions {
   stateDir: string;
   ticket: TicketState;
   patchTicket: (patch: Partial<TicketState>) => Promise<void>;
-  systemPrompt: string;
+  spawnAgentSession?: (
+    ticket: TicketState,
+    id: string,
+    worktreePath: string | undefined,
+  ) => Promise<void>;
   allTabs?: Tab[];
   allTabContents?: TabContent[];
   tui: TUI;
   close: () => void;
   readTicket?: typeof readTicketWithPatch;
   commit?: typeof commitTicket;
-  fetch?: typeof fetch;
   getKeybindings?: () => KeybindingsManager;
   setKeybindings?: (kb: KeybindingsManager) => void;
   checkTuicr?: () => Promise<boolean>;
@@ -577,11 +432,15 @@ export interface ReviewSessionCreateOptions {
   ticketDir: string;
   ticket?: TicketState;
   patchTicket?: (patch: Partial<TicketState>) => Promise<void>;
+  spawnAgentSession?: (
+    ticket: TicketState,
+    id: string,
+    worktreePath: string | undefined,
+  ) => Promise<void>;
   tui: TUI;
   close: () => void;
   readTicket?: typeof readTicketWithPatch;
   commit?: typeof commitTicket;
-  fetch?: typeof fetch;
   getKeybindings?: () => KeybindingsManager;
   setKeybindings?: (kb: KeybindingsManager) => void;
 }
@@ -592,9 +451,7 @@ export class ReviewSession implements Component, Focusable {
   private readonly savedKb: KeybindingsManager;
   private readonly scrollPane: ScrollPane;
   private readonly editor: Editor;
-  private readonly questionHandle: OverlayHandle;
   private readonly errorHandle: OverlayHandle;
-  private readonly questionOverlay: QuestionOverlay;
   private readonly errorOverlay: ErrorOverlay;
   private readonly allTabs: Tab[];
   private readonly allTabContents: TabContent[];
@@ -612,7 +469,11 @@ export class ReviewSession implements Component, Focusable {
   private readonly onClose: () => void;
   private readonly readTicket: typeof readTicketWithPatch;
   private readonly commit: typeof commitTicket;
-  private readonly fetcher: typeof fetch;
+  private readonly spawnAgentSession: (
+    ticket: TicketState,
+    id: string,
+    worktreePath: string | undefined,
+  ) => Promise<void>;
   private readonly setKeybindings: (kb: KeybindingsManager) => void;
   private readonly checkTuicr: () => Promise<boolean>;
   private readonly spawnTuicr: (
@@ -625,14 +486,13 @@ export class ReviewSession implements Component, Focusable {
     stateDir,
     ticket,
     patchTicket,
-    systemPrompt,
+    spawnAgentSession: spawnAgentSessionArg,
     allTabs: allTabsOpt,
     allTabContents: allTabContentsOpt,
     tui,
     close,
     readTicket = readTicketWithPatch,
     commit = commitTicket,
-    fetch: fetcher = fetch,
     getKeybindings: getKeybindingsArg = getKeybindings,
     setKeybindings: setKeybindingsArg = setKeybindings,
     checkTuicr: checkTuicrArg,
@@ -646,7 +506,7 @@ export class ReviewSession implements Component, Focusable {
     this.onClose = close;
     this.readTicket = readTicket;
     this.commit = commit;
-    this.fetcher = fetcher;
+    this.spawnAgentSession = spawnAgentSessionArg ?? (() => Promise.resolve());
     this.setKeybindings = setKeybindingsArg;
 
     const ticketContent = renderTicketTab(ticket);
@@ -725,21 +585,6 @@ export class ReviewSession implements Component, Focusable {
     if (this.editorVisible) tui.addChild(this.editor);
     tui.setFocus(this.scrollPane);
 
-    this.questionOverlay = new QuestionOverlay(systemPrompt, fetcher, tui);
-    this.questionHandle = tui.showOverlay(this.questionOverlay, {
-      width: "80%",
-      minWidth: 60,
-      maxHeight: "80%",
-      margin: 1,
-    });
-    this.questionHandle.setHidden(true);
-    this.questionOverlay.setHandle(this.questionHandle, () => {
-      tui.setFocus(
-        this.focusedElement === "content" ? this.scrollPane : this.editor,
-      );
-      tui.requestRender(true);
-    });
-
     this.errorOverlay = new ErrorOverlay(tui);
     this.errorHandle = tui.showOverlay(this.errorOverlay, {
       width: "80%",
@@ -784,10 +629,46 @@ export class ReviewSession implements Component, Focusable {
         return;
       }
       if (matchesKey(data, "alt+shift+/")) {
-        if (this.questionHandle.isHidden()) {
-          this.questionHandle.setHidden(false);
-          this.questionHandle.focus();
-        }
+        (async () => {
+          const worktreeCount = Object.keys(this.ticket.worktrees).length;
+          if (worktreeCount <= 1) {
+            const worktreePath = worktreeCount === 0
+              ? undefined
+              : Object.values(this.ticket.worktrees)[0].path;
+            tui.stop();
+            await this.spawnAgentSession(this.ticket, this.id, worktreePath);
+            tui.start();
+          } else {
+            const items: SelectItem[] = Object.entries(this.ticket.worktrees)
+              .map(([key, info]) => ({ value: info.path, label: key }));
+            const picker = new SelectList(items, 10, {
+              selectedPrefix: (s) => s,
+              selectedText: (s) => s,
+              description: (s) => s,
+              scrollInfo: (s) => s,
+              noMatch: (s) => s,
+            });
+            const pickerHandle = tui.showOverlay(picker, {
+              width: "80%",
+              minWidth: 60,
+              maxHeight: "80%",
+              margin: 1,
+            });
+            pickerHandle.focus();
+            picker.onSelect = async (item) => {
+              pickerHandle.setHidden(true);
+              tui.setFocus(this.scrollPane);
+              tui.stop();
+              await this.spawnAgentSession(this.ticket, this.id, item.value);
+              tui.start();
+            };
+            picker.onCancel = () => {
+              pickerHandle.setHidden(true);
+              tui.setFocus(this.scrollPane);
+              tui.requestRender(true);
+            };
+          }
+        })();
         return { consume: true };
       }
       if (
@@ -957,7 +838,6 @@ export class ReviewSession implements Component, Focusable {
   close(): void {
     if (this.closed) return;
     this.closed = true;
-    this.questionHandle.hide();
     this.errorHandle.hide();
     this.tui.removeChild(this.scrollPane);
     if (this.editorVisible) this.tui.removeChild(this.editor);
@@ -1009,7 +889,7 @@ export class ReviewSession implements Component, Focusable {
       close,
       readTicket = readTicketWithPatch,
       commit = commitTicket,
-      fetch: fetcher = fetch,
+      spawnAgentSession,
       getKeybindings: getKeybindingsArg = getKeybindings,
       setKeybindings: setKeybindingsArg = setKeybindings,
     } = opts;
@@ -1121,22 +1001,62 @@ export class ReviewSession implements Component, Focusable {
     const allTabs = [{ phaseName: "ticket" }, ...tabs];
     const allTabContents = [ticketTabContent, ...tabContents];
 
-    const { contextFiles } = await buildContextFiles({ ticketDir, stateDir });
-    const systemPrompt = await buildQuestionSystemPrompt(contextFiles);
+    let resolvedSpawnAgentSession: (
+      ticket: TicketState,
+      id: string,
+      worktreePath: string | undefined,
+    ) => Promise<void>;
+
+    if (spawnAgentSession !== undefined) {
+      resolvedSpawnAgentSession = spawnAgentSession;
+    } else {
+      const config = await loadConfig();
+      resolvedSpawnAgentSession = async (t, ticketId, worktreePath) => {
+        const prompt = await renderPrompt(
+          new URL("./review-agent.prompt.hbs", import.meta.url),
+          { id: ticketId, phase: t.phase },
+        );
+        const cmdOpts = worktreePath !== undefined ? { cwd: worktreePath } : {};
+        if (config.agent.type === "pi") {
+          const child = new Deno.Command("pi", {
+            args: [
+              "--system-prompt",
+              prompt,
+              "--approve",
+              "--provider",
+              config.pi.provider,
+            ],
+            stdin: "inherit",
+            stdout: "inherit",
+            stderr: "inherit",
+            ...cmdOpts,
+          }).spawn();
+          await child.status;
+        } else {
+          const child = new Deno.Command("claude", {
+            args: [prompt, "--dangerously-skip-permissions"],
+            stdin: "inherit",
+            stdout: "inherit",
+            stderr: "inherit",
+            ...cmdOpts,
+          }).spawn();
+          await child.status;
+        }
+      };
+    }
 
     return new ReviewSession({
       id,
       stateDir,
       ticket,
       patchTicket,
-      systemPrompt,
+      spawnAgentSession: resolvedSpawnAgentSession,
       allTabs,
       allTabContents,
       tui,
       close,
       readTicket,
       commit,
-      fetch: fetcher,
       getKeybindings: getKeybindingsArg,
       setKeybindings: setKeybindingsArg,
     });
@@ -1151,12 +1071,14 @@ export async function review(
     stateDir: stateDirOverride,
     readTicket = readTicketWithPatch,
     commit = commitTicket,
+    classifyApproval: classifyApprovalFn = classifyApproval,
   }: {
     isTerminal?: () => boolean;
     readStdin?: () => Promise<string>;
     stateDir?: string;
     readTicket?: typeof readTicketWithPatch;
     commit?: typeof commitTicket;
+    classifyApproval?: (text: string) => Promise<boolean>;
   } = {},
 ): Promise<void> {
   const stateDir = stateDirOverride ??
@@ -1203,6 +1125,11 @@ export async function review(
       );
     }
     const now = Temporal.Now.zonedDateTimeISO("UTC");
+    const isApproval = await classifyApprovalFn(text);
+    if (isApproval) {
+      await applyApproval(stateDir, id, now, { readTicket, commit });
+      Deno.exit(0);
+    }
     const timestamp = formatTimestamp(now);
     const feedbackFile = `${timestamp}-${ticket.phase}-feedback.md`;
     await writePhaseOutput(stateDir, id, feedbackFile, text);
