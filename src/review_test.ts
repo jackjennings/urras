@@ -1165,6 +1165,7 @@ Deno.test(
           await review(ticketId, {
             isTerminal: () => false,
             readStdin: () => Promise.resolve("needs work on section 3"),
+            classifyApproval: () => Promise.resolve(false),
           });
         } catch {
           // expected
@@ -1198,6 +1199,7 @@ Deno.test(
           await review(ticketId, {
             isTerminal: () => false,
             readStdin: () => Promise.resolve("fix the tests"),
+            classifyApproval: () => Promise.resolve(false),
           });
         } catch {
           // expected
@@ -1228,6 +1230,7 @@ Deno.test(
           await review(ticketId, {
             isTerminal: () => false,
             readStdin: () => Promise.resolve("fix the tests"),
+            classifyApproval: () => Promise.resolve(false),
           });
         } catch {
           // expected
@@ -1259,6 +1262,7 @@ Deno.test(
           await review(ticketId, {
             isTerminal: () => false,
             readStdin: () => Promise.resolve("fix the tests"),
+            classifyApproval: () => Promise.resolve(false),
           });
         } catch {
           // expected
@@ -1290,6 +1294,7 @@ Deno.test(
           await review(ticketId, {
             isTerminal: () => false,
             readStdin: () => Promise.resolve("fix the tests"),
+            classifyApproval: () => Promise.resolve(false),
           });
         } catch {
           // expected
@@ -1444,6 +1449,7 @@ Deno.test(
           await review(ticketId, {
             isTerminal: () => false,
             readStdin: () => Promise.resolve("feedback text"),
+            classifyApproval: () => Promise.resolve(false),
           });
         } catch {
           // expected: exitStub throws
@@ -1461,6 +1467,79 @@ Deno.test(
         assert(entries.some((e) => e.endsWith("-merge-feedback.md")));
         const updated = await readTicket(stateDir, ticketId);
         assertEquals(updated.status, "revising");
+      });
+    } finally {
+      await Deno.remove(stateDir, { recursive: true });
+    }
+  },
+);
+
+Deno.test(
+  "review: piped approval text appends human approval entry and exits 0",
+  async () => {
+    const stateDir = await Deno.makeTempDir();
+    try {
+      const ticketId = "github/test/repo/60";
+      await setupPipedReviewState(stateDir, ticketId);
+      await withReviewConfig(stateDir, async () => {
+        const exitStub = stub(Deno, "exit", (_code?: number) => {
+          throw new Error(`exit:${_code}`);
+        });
+        try {
+          await review(ticketId, {
+            isTerminal: () => false,
+            readStdin: () => Promise.resolve("LGTM"),
+            classifyApproval: () => Promise.resolve(true),
+          });
+        } catch {
+          // expected
+        } finally {
+          exitStub.restore();
+        }
+        assertSpyCalls(exitStub, 1);
+        assertEquals(exitStub.calls[0].args[0], 0);
+        const ticket = await readTicket(stateDir, ticketId);
+        assertEquals(ticket.approvals.length, 1);
+        assertEquals(ticket.approvals[0].actor, "human");
+        const entries: string[] = [];
+        for await (const entry of Deno.readDir(join(stateDir, ticketId))) {
+          entries.push(entry.name);
+        }
+        assertFalse(entries.some((e) => e.endsWith("-feedback.md")));
+      });
+    } finally {
+      await Deno.remove(stateDir, { recursive: true });
+    }
+  },
+);
+
+Deno.test(
+  "review: piped feedback text writes feedback file when classifyApproval returns false",
+  async () => {
+    const stateDir = await Deno.makeTempDir();
+    try {
+      const ticketId = "github/test/repo/61";
+      await setupPipedReviewState(stateDir, ticketId);
+      await withReviewConfig(stateDir, async () => {
+        const exitStub = stub(Deno, "exit", (_code?: number) => {
+          throw new Error(`exit:${_code}`);
+        });
+        try {
+          await review(ticketId, {
+            isTerminal: () => false,
+            readStdin: () => Promise.resolve("needs more tests"),
+            classifyApproval: () => Promise.resolve(false),
+          });
+        } catch {
+          // expected
+        } finally {
+          exitStub.restore();
+        }
+        const entries: string[] = [];
+        for await (const entry of Deno.readDir(join(stateDir, ticketId))) {
+          entries.push(entry.name);
+        }
+        assert(entries.some((e) => /^\d{8}T\d{6}-spec-feedback\.md$/.test(e)));
       });
     } finally {
       await Deno.remove(stateDir, { recursive: true });
