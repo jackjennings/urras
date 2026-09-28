@@ -219,6 +219,26 @@ export async function loadConfig(path?: string): Promise<Config> {
     ? expandHome(extensionsRaw.dir)
     : join(urrasDir(), "extensions");
 
+  const ceremoniesRaw = parsed.ceremonies as
+    | Record<string, unknown>
+    | undefined;
+  let ceremonies: Config["ceremonies"];
+  if (ceremoniesRaw !== undefined) {
+    const timeoutSecondsRaw = ceremoniesRaw.timeout_seconds;
+    if (timeoutSecondsRaw !== undefined) {
+      if (
+        typeof timeoutSecondsRaw !== "number" ||
+        !Number.isInteger(timeoutSecondsRaw) ||
+        timeoutSecondsRaw < 0
+      ) {
+        throw new Error(
+          "config.toml: [ceremonies].timeout_seconds must be a non-negative integer",
+        );
+      }
+      ceremonies = { timeoutSeconds: timeoutSecondsRaw };
+    }
+  }
+
   return {
     github: {
       repos: githubRaw.repos as string[],
@@ -245,6 +265,7 @@ export async function loadConfig(path?: string): Promise<Config> {
     todoTxt,
     ollama,
     learnings,
+    ceremonies,
     phases: phasesDefaults !== undefined
       ? { defaults: phasesDefaults }
       : undefined,

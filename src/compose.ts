@@ -1185,6 +1185,9 @@ export function composeTickDeps(
     {
       stateDir,
       extensionsDir: config.extensions.dir,
+      timeoutMs: config.ceremonies?.timeoutSeconds !== undefined
+        ? config.ceremonies.timeoutSeconds * 1000
+        : undefined,
       appendTickLog,
       notify: desktopNotifier,
       listTickets: () => listTickets(stateDir),
