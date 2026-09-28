@@ -1,5 +1,7 @@
 import { HttpClient } from "../../http-client.ts";
 import { canonicalSlugFor, type RepoIdentityTable } from "./repo-identity.ts";
+import { githubGraphQL } from "./graphql.ts";
+import { canonicalLoginFor, type OrgIdentityTable } from "./org-identity.ts";
 
 export interface ReconcileRepoIdentitiesDeps {
   http: HttpClient;
@@ -236,4 +238,104 @@ export async function reconcileRepoIdentities(
   }
 
   return { confirmed };
+}
+
+export interface ReconcileOrgIdentitiesDeps {
+  http: HttpClient;
+  accountResolver: (slug: string) => { token: string; login: string };
+  readTable: () => Promise<OrgIdentityTable>;
+  writeTable: (table: OrgIdentityTable) => Promise<void>;
+  log: (event: string, data?: unknown) => void;
+  notify: (title: string, body: string) => Promise<void>;
+  orgs: string[];
+}
+
+const ORG_LOOKUP_QUERY =
+  `query($login: String!) { organization(login: $login) { databaseId login } }`;
+
+export async function reconcileOrgIdentities(
+  deps: ReconcileOrgIdentitiesDeps,
+): Promise<void> {
+  const table = await deps.readTable();
+  let dirty = false;
+
+  for (const [canonical, entry] of Object.entries(table)) {
+    try {
+      const { token } = deps.accountResolver(canonical);
+      const res = await deps.http.get(
+        `https://api.github.com/organizations/${entry.orgId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/vnd.github+json",
+          },
+        },
+      );
+      if (!res.ok) {
+        deps.log("org-identity-reconcile-failed", {
+          org: canonical,
+          status: res.status,
+        });
+        continue;
+      }
+      const data = await res.json() as { login: string };
+      if (data.login !== entry.currentLogin) {
+        const newAliases = entry.aliases.includes(data.login)
+          ? entry.aliases
+          : [...entry.aliases, data.login];
+        table[canonical] = {
+          ...entry,
+          currentLogin: data.login,
+          aliases: newAliases,
+        };
+        dirty = true;
+        await deps.notify("Org renamed", `${canonical} → ${data.login}`).catch(
+          () => {},
+        );
+        deps.log("org-renamed", {
+          canonical,
+          from: entry.currentLogin,
+          to: data.login,
+        });
+      }
+    } catch (e) {
+      deps.log("org-identity-reconcile-failed", {
+        org: canonical,
+        error: String(e),
+      });
+    }
+  }
+
+  for (const org of deps.orgs) {
+    if (table[canonicalLoginFor(table, org)]) continue;
+    try {
+      const { token } = deps.accountResolver(org);
+      const data = await githubGraphQL(deps.http, token, ORG_LOOKUP_QUERY, {
+        login: org,
+      }) as { organization: { databaseId: number; login: string } | null };
+      if (!data.organization) {
+        deps.log("org-identity-reconcile-failed", { org, reason: "not-found" });
+        continue;
+      }
+      table[org] = {
+        orgId: data.organization.databaseId,
+        currentLogin: data.organization.login,
+        aliases: [data.organization.login],
+      };
+      dirty = true;
+    } catch (e) {
+      deps.log("org-identity-reconcile-failed", { org, error: String(e) });
+    }
+  }
+
+  if (dirty) {
+    try {
+      await deps.writeTable(table);
+    } catch (e) {
+      deps.log("org-identity-reconcile-failed", {
+        context: "write",
+        error: String(e),
+      });
+    }
+  }
 }
