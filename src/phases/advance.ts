@@ -108,113 +108,115 @@ export async function advancePhase(
   const mergeStatus: "waiting" | "done" = requiresPRs ? "waiting" : "done";
 
   if (ticket.status === "revising") {
-    const isMergeRevision = ticket.phase === "merge";
-    const activePhase = isMergeRevision
-      ? "implementation"
-      : ticket.phase as ActivePhase;
-    const outputFile = `${compactTimestamp(zonedNow)}-${
-      isMergeRevision ? "merge" : activePhase
-    }.md`;
-    const isImplementationRevision = activePhase === "implementation";
-    const revisionPrompt = await loadRevisionPrompt(activePhase);
-    const basePrompt = revisionPrompt || await loadPrompt(activePhase);
-    const revisingSupplement = await loadProviderPrompt(
-      activePhase,
-      ticket.provider,
-    );
-    const revisingArtifactSupplement = await loadArtifactPrompt(
-      activePhase,
-      ticket.artifacts,
-    );
-    const revisingStatePrompt = await loadStatePrompt(
-      activePhase,
-      stateDir,
-      ticket.provider,
-      ticket.id,
-    );
-    const revisingStateRevisionPrompt = await loadStatePrompt(
-      `${activePhase}-revision`,
-      stateDir,
-      ticket.provider,
-      ticket.id,
-    );
-    let commentContext = "";
-    try {
-      const contextFiles: string[] = [];
-      for await (const entry of readDir(join(stateDir, ticket.id))) {
-        if (
-          entry.isFile &&
-          (entry.name.endsWith("-comment-context.md") ||
-            entry.name.endsWith("-upstream-edit-context.md"))
-        ) {
-          contextFiles.push(entry.name);
+    if (!deps.isProcessAlive(ticket.id)) {
+      const isMergeRevision = ticket.phase === "merge";
+      const activePhase = isMergeRevision
+        ? "implementation"
+        : ticket.phase as ActivePhase;
+      const outputFile = `${compactTimestamp(zonedNow)}-${
+        isMergeRevision ? "merge" : activePhase
+      }.md`;
+      const isImplementationRevision = activePhase === "implementation";
+      const revisionPrompt = await loadRevisionPrompt(activePhase);
+      const basePrompt = revisionPrompt || await loadPrompt(activePhase);
+      const revisingSupplement = await loadProviderPrompt(
+        activePhase,
+        ticket.provider,
+      );
+      const revisingArtifactSupplement = await loadArtifactPrompt(
+        activePhase,
+        ticket.artifacts,
+      );
+      const revisingStatePrompt = await loadStatePrompt(
+        activePhase,
+        stateDir,
+        ticket.provider,
+        ticket.id,
+      );
+      const revisingStateRevisionPrompt = await loadStatePrompt(
+        `${activePhase}-revision`,
+        stateDir,
+        ticket.provider,
+        ticket.id,
+      );
+      let commentContext = "";
+      try {
+        const contextFiles: string[] = [];
+        for await (const entry of readDir(join(stateDir, ticket.id))) {
+          if (
+            entry.isFile &&
+            (entry.name.endsWith("-comment-context.md") ||
+              entry.name.endsWith("-upstream-edit-context.md"))
+          ) {
+            contextFiles.push(entry.name);
+          }
+        }
+        contextFiles.sort();
+        const last = contextFiles.at(-1);
+        if (last) {
+          commentContext = await readTextFile(join(stateDir, ticket.id, last));
+        }
+      } catch {
+        // directory missing or unreadable — proceed without comment context
+      }
+      const prompt = [
+        basePrompt,
+        revisingSupplement,
+        revisingArtifactSupplement,
+        revisingStatePrompt,
+        revisingStateRevisionPrompt,
+        commentContext,
+      ]
+        .filter((part) => part.length > 0)
+        .join("\n\n");
+      const threshold = deps.maxPromptTokens ?? DEFAULT_MAX_PROMPT_TOKENS;
+      const tokens = estimateTokenCount(prompt);
+      if (tokens > threshold) {
+        await deps.appendLog(stateDir, ticket.id, {
+          event: "prompt-too-long",
+          phase: activePhase,
+          tokens,
+          maxTokens: threshold,
+        });
+      }
+      const { model: revisingModel, thinking: revisingThinking } = deps
+        .resolveModelConfig(activePhase, ticket);
+      const { model: critiqueModel, thinking: critiqueThinking } = deps
+        .resolveModelConfig("critique", ticket);
+      let sessionId: string | undefined;
+      if (isImplementationRevision) {
+        const stored = ticket.phaseSessionIds?.["implementation"];
+        if (stored && Object.keys(ticket.worktrees).length > 0) {
+          sessionId = stored;
         }
       }
-      contextFiles.sort();
-      const last = contextFiles.at(-1);
-      if (last) {
-        commentContext = await readTextFile(join(stateDir, ticket.id, last));
-      }
-    } catch {
-      // directory missing or unreadable — proceed without comment context
-    }
-    const prompt = [
-      basePrompt,
-      revisingSupplement,
-      revisingArtifactSupplement,
-      revisingStatePrompt,
-      revisingStateRevisionPrompt,
-      commentContext,
-    ]
-      .filter((part) => part.length > 0)
-      .join("\n\n");
-    const threshold = deps.maxPromptTokens ?? DEFAULT_MAX_PROMPT_TOKENS;
-    const tokens = estimateTokenCount(prompt);
-    if (tokens > threshold) {
-      await deps.appendLog(stateDir, ticket.id, {
-        event: "prompt-too-long",
+      await deps.spawn({
         phase: activePhase,
-        tokens,
-        maxTokens: threshold,
+        ticketDir: join(stateDir, ticket.id),
+        prompt,
+        scope: ticket.scope,
+        worktrees: isImplementationRevision ? ticket.worktrees : {},
+        outputFile,
+        model: revisingModel,
+        thinking: revisingThinking,
+        critiqueModel,
+        critiqueThinking,
+        sessionId,
+        resume: sessionId !== undefined,
+      });
+      await deps.writeTicket(stateDir, {
+        ...ticket,
+        status: "running",
+        updated: now,
+        notifiedNeedsAttention: false,
+      });
+      await deps.appendLog(stateDir, ticket.id, {
+        event: "status-transition",
+        phase: ticket.phase,
+        from: "revising",
+        to: "running",
       });
     }
-    const { model: revisingModel, thinking: revisingThinking } = deps
-      .resolveModelConfig(activePhase, ticket);
-    const { model: critiqueModel, thinking: critiqueThinking } = deps
-      .resolveModelConfig("critique", ticket);
-    let sessionId: string | undefined;
-    if (isImplementationRevision) {
-      const stored = ticket.phaseSessionIds?.["implementation"];
-      if (stored && Object.keys(ticket.worktrees).length > 0) {
-        sessionId = stored;
-      }
-    }
-    await deps.spawn({
-      phase: activePhase,
-      ticketDir: join(stateDir, ticket.id),
-      prompt,
-      scope: ticket.scope,
-      worktrees: isImplementationRevision ? ticket.worktrees : {},
-      outputFile,
-      model: revisingModel,
-      thinking: revisingThinking,
-      critiqueModel,
-      critiqueThinking,
-      sessionId,
-      resume: sessionId !== undefined,
-    });
-    await deps.writeTicket(stateDir, {
-      ...ticket,
-      status: "running",
-      updated: now,
-      notifiedNeedsAttention: false,
-    });
-    await deps.appendLog(stateDir, ticket.id, {
-      event: "status-transition",
-      phase: ticket.phase,
-      from: "revising",
-      to: "running",
-    });
     return;
   }
 

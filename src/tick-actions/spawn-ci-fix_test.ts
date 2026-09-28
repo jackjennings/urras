@@ -113,6 +113,14 @@ Deno.test("spawnCIFixAction: does not apply to a running ticket whose process di
   );
 });
 
+Deno.test("spawnCIFixAction: does not apply when status is revising", () => {
+  assertFalse(
+    spawnCIFixAction(makeDeps()).applies(
+      makeTicket({ ...BASE, status: "revising" }),
+    ),
+  );
+});
+
 Deno.test("spawnCIFixAction: no CI result returns null", async () => {
   assertEquals(
     await spawnCIFixAction(makeDeps()).run(makeTicket(BASE), "/state"),
