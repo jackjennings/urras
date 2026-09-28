@@ -40,8 +40,19 @@ const BASE = {
 function makeAction(
   overrides: Partial<Parameters<typeof checkConflictsAction>[0]> = {},
 ) {
+  const { runGit: runGitOverride, ...rest } = overrides;
+  const baseRunGit = runGitOverride ??
+    (() => Promise.resolve({ code: 0, stdout: "", stderr: "" }));
   return checkConflictsAction({
-    runGit: () => Promise.resolve({ code: 0, stdout: "", stderr: "" }),
+    runGit: (args, cwd) => {
+      if (args[0] === "symbolic-ref") {
+        return baseRunGit(args, cwd).then((result) => {
+          if (result.code !== 0 || result.stdout.trim()) return result;
+          return { code: 0, stdout: "gh-7\n", stderr: "" };
+        });
+      }
+      return baseRunGit(args, cwd);
+    },
     isProcessAlive: () => false,
     worktreeExists: () => true,
     writeTicket: () => Promise.resolve(),
@@ -49,7 +60,7 @@ function makeAction(
     spawn: () => Promise.resolve(),
     writeContextFile: () => Promise.resolve(""),
     resolveModelConfig: () => ({ model: "claude-opus-4-7", thinking: "high" }),
-    ...overrides,
+    ...rest,
   });
 }
 
@@ -175,6 +186,9 @@ Deno.test("checkConflictsAction: clean rebase and push → null, logs branch-pus
   const result = await makeAction({
     runGit: (args) => {
       calls.push(args);
+      if (args[0] === "symbolic-ref") {
+        return Promise.resolve({ code: 0, stdout: "gh-7\n", stderr: "" });
+      }
       return Promise.resolve({ code: 0, stdout: "up to date", stderr: "" });
     },
     appendLog: (_dir, _id, entry) => {
@@ -209,6 +223,9 @@ Deno.test("checkConflictsAction: clean rebase with no prs → null, no push, no 
   const result = await makeAction({
     runGit: (args) => {
       calls.push(args);
+      if (args[0] === "symbolic-ref") {
+        return Promise.resolve({ code: 0, stdout: "gh-7\n", stderr: "" });
+      }
       return Promise.resolve({ code: 0, stdout: "up to date", stderr: "" });
     },
     appendLog: (_dir, _id, entry) => {
@@ -847,6 +864,109 @@ Deno.test(
 
     Object.values(resolvers).forEach((r) => r());
     await Promise.all([runA, runB]);
+  },
+);
+
+// ── branch mismatch ──────────────────────────────────────────────────────────
+
+Deno.test(
+  "checkConflictsAction: branch mismatch → parks as needs-attention, no fetch called",
+  async () => {
+    const logged: object[] = [];
+    const written: TicketState[] = [];
+    const calls: string[][] = [];
+
+    const result = await makeAction({
+      runGit: (args) => {
+        calls.push(args);
+        if (args[0] === "symbolic-ref") {
+          return Promise.resolve({
+            code: 0,
+            stdout: "fix/other-branch\n",
+            stderr: "",
+          });
+        }
+        return Promise.resolve({ code: 0, stdout: "", stderr: "" });
+      },
+      writeTicket: (_dir, t) => {
+        written.push(t);
+        return Promise.resolve();
+      },
+      appendLog: (_dir, _id, entry) => {
+        logged.push(entry);
+        return Promise.resolve();
+      },
+    }).run(makeTicket(BASE), "/state");
+
+    assertEquals(result?.status, "needs-attention");
+    assertEquals(written.length, 1);
+    assertEquals(written[0].status, "needs-attention");
+    assertFalse(calls.some((a) => a[0] === "fetch"));
+
+    const logEntry = (logged as Record<string, unknown>[]).find(
+      (e) => e.event === "needs-attention",
+    );
+    assertNotEquals(logEntry, undefined);
+    assertEquals(logEntry!.reason, "worktree-branch-mismatch");
+    assertEquals(logEntry!.worktreePath, "/wt/myorg/myrepo");
+    assertEquals(logEntry!.expected, "gh-7");
+    assertEquals(logEntry!.found, "fix/other-branch");
+  },
+);
+
+Deno.test(
+  "checkConflictsAction: detached HEAD → parks as needs-attention with found '(detached)'",
+  async () => {
+    const logged: object[] = [];
+    const written: TicketState[] = [];
+
+    const result = await makeAction({
+      runGit: (args) => {
+        if (args[0] === "symbolic-ref") {
+          return Promise.resolve({
+            code: 128,
+            stdout: "",
+            stderr: "fatal: ref HEAD is not a symbolic ref",
+          });
+        }
+        return Promise.resolve({ code: 0, stdout: "", stderr: "" });
+      },
+      writeTicket: (_dir, t) => {
+        written.push(t);
+        return Promise.resolve();
+      },
+      appendLog: (_dir, _id, entry) => {
+        logged.push(entry);
+        return Promise.resolve();
+      },
+    }).run(makeTicket(BASE), "/state");
+
+    assertEquals(result?.status, "needs-attention");
+    const logEntry = (logged as Record<string, unknown>[]).find(
+      (e) => e.event === "needs-attention",
+    );
+    assertNotEquals(logEntry, undefined);
+    assertEquals(logEntry!.reason, "worktree-branch-mismatch");
+    assertEquals(logEntry!.found, "(detached)");
+  },
+);
+
+Deno.test(
+  "checkConflictsAction: branch matches expected → proceeds to fetch",
+  async () => {
+    const calls: string[][] = [];
+
+    await makeAction({
+      runGit: (args) => {
+        calls.push(args);
+        if (args[0] === "symbolic-ref") {
+          return Promise.resolve({ code: 0, stdout: "gh-7\n", stderr: "" });
+        }
+        return Promise.resolve({ code: 0, stdout: "", stderr: "" });
+      },
+    }).run(makeTicket(BASE), "/state");
+
+    assert(calls.some((a) => a[0] === "fetch"));
   },
 );
 

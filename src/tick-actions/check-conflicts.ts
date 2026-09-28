@@ -70,12 +70,34 @@ export function checkConflictsAction(deps: CheckConflictsDeps): TickAction {
           rebaseStderr: string;
           dirtyFileCount: number;
           dirtyFileSample: string[];
+        }
+        | {
+          kind: "branch-mismatch";
+          wt: { path: string; branch: string };
+          expected: string;
+          found: string;
         };
 
       const conflictResults = await Promise.all(
         Object.entries(ticket.worktrees)
           .filter(([, wt]) => deps.worktreeExists(wt.path))
           .map(async ([slug, wt]): Promise<ConflictResult | null> => {
+            const symref = await deps.runGit(
+              ["symbolic-ref", "--short", "HEAD"],
+              wt.path,
+            );
+            const currentBranch = symref.code === 0
+              ? symref.stdout.trim()
+              : null;
+            if (currentBranch !== wt.branch) {
+              return {
+                kind: "branch-mismatch",
+                wt,
+                expected: wt.branch,
+                found: currentBranch ?? "(detached)",
+              };
+            }
+
             const prev = fetchQueue.get(slug) ?? Promise.resolve();
             const fetchPromise = prev
               .catch(() => {})
@@ -170,6 +192,27 @@ export function checkConflictsAction(deps: CheckConflictsDeps): TickAction {
             };
           }),
       );
+
+      const firstBranchMismatch = conflictResults.find(
+        (r): r is Extract<ConflictResult, { kind: "branch-mismatch" }> =>
+          r !== null && (r as ConflictResult).kind === "branch-mismatch",
+      );
+      if (firstBranchMismatch) {
+        const updated: TicketState = {
+          ...ticket,
+          status: "needs-attention",
+          updated: now,
+        };
+        await deps.writeTicket(stateDir, updated);
+        await deps.appendLog(stateDir, ticket.id, {
+          event: "needs-attention",
+          reason: "worktree-branch-mismatch",
+          worktreePath: firstBranchMismatch.wt.path,
+          expected: firstBranchMismatch.expected,
+          found: firstBranchMismatch.found,
+        });
+        return updated;
+      }
 
       const firstBlocked = conflictResults.find(
         (r): r is Extract<ConflictResult, { kind: "blocked" }> =>

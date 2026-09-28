@@ -117,6 +117,34 @@ export function resolveConflictsAction(deps: ResolveConflictsDeps): TickAction {
       }
 
       for (const wt of resolvingWorktrees) {
+        const symref = await deps.runGit(
+          ["symbolic-ref", "--short", "HEAD"],
+          wt.path,
+        );
+        const currentBranch = symref.code === 0 ? symref.stdout.trim() : null;
+        if (currentBranch !== wt.branch) {
+          for (const f of contextFiles) {
+            await deps.remove(f);
+          }
+          await deleteRunPid(join(stateDir, ticket.id));
+          const updated: TicketState = {
+            ...ticket,
+            status: "needs-attention",
+            updated: now,
+          };
+          await deps.writeTicket(stateDir, updated);
+          await deps.appendLog(stateDir, ticket.id, {
+            event: "needs-attention",
+            reason: "worktree-branch-mismatch",
+            worktreePath: wt.path,
+            expected: wt.branch,
+            found: currentBranch ?? "(detached)",
+          });
+          return updated;
+        }
+      }
+
+      for (const wt of resolvingWorktrees) {
         const push = await deps.runGit(
           ["push", "--force-with-lease", "origin", wt.branch],
           wt.path,
