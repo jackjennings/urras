@@ -1415,3 +1415,39 @@ Deno.test("loadConfig: [learnings] with non-string repo entry throws", async () 
   );
   await Deno.remove(dir, { recursive: true });
 });
+
+Deno.test("loadConfig: absent [ceremonies] section leaves config.ceremonies undefined", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `[github]\nrepos = []\n[state]\ndir = "~/tmp"\n[tick]\nconcurrency = 1\n`,
+  );
+  const cfg = await loadConfig(join(dir, "config.toml"));
+  assertEquals(cfg.ceremonies, undefined);
+  await Deno.remove(dir, { recursive: true });
+});
+
+Deno.test("loadConfig: parses [ceremonies].timeout_seconds correctly", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `[github]\nrepos = []\n[state]\ndir = "~/tmp"\n[tick]\nconcurrency = 1\n[ceremonies]\ntimeout_seconds = 900\n`,
+  );
+  const cfg = await loadConfig(join(dir, "config.toml"));
+  assertEquals(cfg.ceremonies?.timeoutSeconds, 900);
+  await Deno.remove(dir, { recursive: true });
+});
+
+Deno.test("loadConfig: throws when [ceremonies].timeout_seconds is not an integer", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `[github]\nrepos = []\n[state]\ndir = "~/tmp"\n[tick]\nconcurrency = 1\n[ceremonies]\ntimeout_seconds = 1.5\n`,
+  );
+  await assertRejects(
+    () => loadConfig(join(dir, "config.toml")),
+    Error,
+    "config.toml: [ceremonies].timeout_seconds must be a non-negative integer",
+  );
+  await Deno.remove(dir, { recursive: true });
+});
