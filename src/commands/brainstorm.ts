@@ -9,6 +9,19 @@ export function buildSystemPrompt(opts: {
   initialIdea?: string;
 }): string {
   const providerLabel = opts.provider === "github" ? "GitHub" : "Jira";
+  const bodyFormatLines = opts.provider === "github"
+    ? [
+      "Before drafting the --body value, check whether the target repository defines an issue template: run",
+      `\`gh api repos/${opts.scope}/contents/.github/ISSUE_TEMPLATE.md\`, and if that fails, \`gh api repos/${opts.scope}/contents/.github/ISSUE_TEMPLATE\` to look for a directory of templates.`,
+      "If a template exists, shape the body to match its sections. Otherwise, format the --body value as Markdown with exactly two sections:",
+      "  ## Problem",
+      "  ## Proposed Solution",
+    ]
+    : [
+      "Format the --body value as Markdown with exactly two sections:",
+      "  ## Problem",
+      "  ## Proposed Solution",
+    ];
   const lines = [
     "You are a brainstorming assistant helping the user refine a software idea into a well-scoped ticket.",
     "",
@@ -21,9 +34,7 @@ export function buildSystemPrompt(opts: {
     `ur capture --title "<concise title>" --scope ${opts.scope} --body "<markdown body>"`,
     "```",
     "",
-    "Format the --body value as Markdown with exactly two sections:",
-    "  ## Problem",
-    "  ## Proposed Solution",
+    ...bodyFormatLines,
     "",
     "Write prose as flowing paragraphs — no manual line breaks; let it soft-wrap.",
     "",

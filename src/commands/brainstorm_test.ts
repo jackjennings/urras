@@ -1,4 +1,4 @@
-import { assertRejects, assertStringIncludes } from "@std/assert";
+import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { assertSpyCalls, spy } from "@std/testing/mock";
 import { buildSystemPrompt, performBrainstorm } from "./brainstorm.ts";
 import type { Config } from "../state/types.ts";
@@ -66,6 +66,25 @@ Deno.test("buildSystemPrompt: includes body format guidance", () => {
   });
   assertStringIncludes(prompt, "## Problem");
   assertStringIncludes(prompt, "## Proposed Solution");
+});
+
+Deno.test("buildSystemPrompt: github scope instructs checking for an issue template", () => {
+  const prompt = buildSystemPrompt({
+    scope: "org/my-repo",
+    provider: "github",
+  });
+  assertStringIncludes(
+    prompt,
+    "gh api repos/org/my-repo/contents/.github/ISSUE_TEMPLATE.md",
+  );
+  assertStringIncludes(prompt, "shape the body to match its sections");
+});
+
+Deno.test("buildSystemPrompt: jira scope does not mention issue templates", () => {
+  const prompt = buildSystemPrompt({ scope: "PROJ", provider: "jira" });
+  assertStringIncludes(prompt, "## Problem");
+  assertStringIncludes(prompt, "## Proposed Solution");
+  assertEquals(prompt.includes("issue template"), false);
 });
 
 Deno.test("performBrainstorm: pi agent auto-selects scope and passes prompt to spawn", async () => {
