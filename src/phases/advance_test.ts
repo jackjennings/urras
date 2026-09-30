@@ -96,6 +96,25 @@ Deno.test("advancePhase: running phase with live PID does nothing", async () => 
   assertSpyCalls(writeTicketSpy, 0);
 });
 
+Deno.test("advancePhase: revising with alive process does nothing", async () => {
+  const ticket = makeTicket({ phase: "plan", status: "revising" });
+  const spawnSpy = spy((_opts: SpawnOpts) => Promise.resolve());
+  const writeTicketSpy = spy((_dir: string, _t: TicketState) =>
+    Promise.resolve()
+  );
+  await advancePhase(
+    ticket,
+    "/state",
+    makeTickDeps({
+      isProcessAlive: () => true,
+      spawn: spawnSpy,
+      writeTicket: writeTicketSpy,
+    }),
+  );
+  assertSpyCalls(spawnSpy, 0);
+  assertSpyCalls(writeTicketSpy, 0);
+});
+
 Deno.test("advancePhase: waiting + approved advances to next phase", async () => {
   const ticket = makeTicket({
     phase: "intake",
