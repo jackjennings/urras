@@ -598,6 +598,156 @@ Deno.test(
   },
 );
 
+Deno.test(
+  "advancePhase: merge/running→waiting with unmerged PRs calls markPRsReady with those URLs",
+  async () => {
+    const ticket = makeTicket({
+      phase: "merge",
+      status: "running",
+      prs: [
+        {
+          url: "https://github.com/o/r/pull/1",
+          title: "T1",
+          dependsOn: [],
+          merged: false,
+        },
+        {
+          url: "https://github.com/o/r/pull/2",
+          title: "T2",
+          dependsOn: [],
+          merged: true,
+        },
+      ],
+    });
+    const markPRsReadySpy = spy((_urls: string[]) => Promise.resolve());
+    await advancePhase(
+      ticket,
+      "/state",
+      makeTickDeps({
+        markPRsReady: markPRsReadySpy,
+      }),
+    );
+    assertSpyCall(markPRsReadySpy, 0, {
+      args: [["https://github.com/o/r/pull/1"]],
+    });
+  },
+);
+
+Deno.test(
+  "advancePhase: merge/running→waiting with no prs field does not call markPRsReady",
+  async () => {
+    const ticket = makeTicket({
+      phase: "merge",
+      status: "running",
+    });
+    const markPRsReadySpy = spy((_urls: string[]) => Promise.resolve());
+    await advancePhase(
+      ticket,
+      "/state",
+      makeTickDeps({
+        markPRsReady: markPRsReadySpy,
+      }),
+    );
+    assertSpyCalls(markPRsReadySpy, 0);
+  },
+);
+
+Deno.test(
+  "advancePhase: merge/running→waiting with empty prs array does not call markPRsReady",
+  async () => {
+    const ticket = makeTicket({
+      phase: "merge",
+      status: "running",
+      prs: [],
+    });
+    const markPRsReadySpy = spy((_urls: string[]) => Promise.resolve());
+    await advancePhase(
+      ticket,
+      "/state",
+      makeTickDeps({
+        markPRsReady: markPRsReadySpy,
+      }),
+    );
+    assertSpyCalls(markPRsReadySpy, 0);
+  },
+);
+
+Deno.test(
+  "advancePhase: merge/running→waiting with all PRs merged does not call markPRsReady",
+  async () => {
+    const ticket = makeTicket({
+      phase: "merge",
+      status: "running",
+      prs: [
+        {
+          url: "https://github.com/o/r/pull/1",
+          title: "T1",
+          dependsOn: [],
+          merged: true,
+        },
+      ],
+    });
+    const markPRsReadySpy = spy((_urls: string[]) => Promise.resolve());
+    await advancePhase(
+      ticket,
+      "/state",
+      makeTickDeps({
+        markPRsReady: markPRsReadySpy,
+      }),
+    );
+    assertSpyCalls(markPRsReadySpy, 0);
+  },
+);
+
+Deno.test(
+  "advancePhase: merge/running→waiting markPRsReady failure logs error and still transitions to merge/waiting",
+  async () => {
+    const ticket = makeTicket({
+      phase: "merge",
+      status: "running",
+      prs: [
+        {
+          url: "https://github.com/o/r/pull/1",
+          title: "T1",
+          dependsOn: [],
+          merged: false,
+        },
+      ],
+    });
+    const writtenTickets: TicketState[] = [];
+    const writeTicketSpy = spy((_dir: string, t: TicketState) => {
+      writtenTickets.push(t);
+      return Promise.resolve();
+    });
+    const logEntries: object[] = [];
+    const appendLogSpy = spy(
+      (_dir: string, _id: string, entry: object) => {
+        logEntries.push(entry);
+        return Promise.resolve();
+      },
+    );
+    await advancePhase(
+      ticket,
+      "/state",
+      makeTickDeps({
+        writeTicket: writeTicketSpy,
+        appendLog: appendLogSpy,
+        markPRsReady: () => Promise.reject(new Error("API error")),
+      }),
+    );
+    assertSpyCall(writeTicketSpy, 0);
+    assertEquals(writtenTickets[0].phase, "merge");
+    assertEquals(writtenTickets[0].status, "waiting");
+    assert(
+      logEntries.some(
+        (e) =>
+          (e as Record<string, unknown>).event === "error" &&
+          (e as Record<string, unknown>).context === "markPRsReady",
+      ),
+    );
+  },
+);
+
 Deno.test("advancePhase: approved waiting phase logs transition to next phase", async () => {
   const ticket = makeTicket({
     phase: "intake",

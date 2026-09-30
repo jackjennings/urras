@@ -638,6 +638,22 @@ export async function advancePhase(
           ).catch(() => {});
         }
       }
+      if (ticket.phase === "merge" && requiresPRs) {
+        const unmergedUrls = (waitingTicket.prs ?? [])
+          .filter((pr) => !pr.merged)
+          .map((pr) => pr.url);
+        if (unmergedUrls.length > 0) {
+          try {
+            await deps.markPRsReady(unmergedUrls);
+          } catch (e) {
+            await deps.appendLog(stateDir, ticket.id, {
+              event: "error",
+              context: "markPRsReady",
+              message: String(e),
+            });
+          }
+        }
+      }
     }
     return;
   }
