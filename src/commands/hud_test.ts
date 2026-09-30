@@ -13,6 +13,7 @@ import { dim, stripAnsiCode } from "@std/fmt/colors";
 import { assertSpyCalls, spy } from "@std/testing/mock";
 import type { TicketState } from "../state/types.ts";
 import {
+  blurCommandEditor,
   formatHudHeader,
   formatTickLogLine,
   handleRootWatcherEvent,
@@ -438,7 +439,7 @@ Deno.test("hudAutocompleteProvider: applyCompletion replaces prefix before curso
     { value: "approve", label: "approve" },
     "app",
   );
-  assertEquals(result, { lines: ["approve"], cursorLine: 0, cursorCol: 7 });
+  assertEquals(result, { lines: ["approve "], cursorLine: 0, cursorCol: 8 });
 });
 
 Deno.test("hudAutocompleteProvider: applyCompletion handles token-2 replacement", () => {
@@ -454,10 +455,55 @@ Deno.test("hudAutocompleteProvider: applyCompletion handles token-2 replacement"
     "github/j",
   );
   assertEquals(result, {
-    lines: ["approve github/jackjennings/lazyboy/1"],
+    lines: ["approve github/jackjennings/lazyboy/1 "],
     cursorLine: 0,
-    cursorCol: 37,
+    cursorCol: 38,
   });
+});
+
+Deno.test("hudAutocompleteProvider: applyCompletion does not add space when after starts with space", () => {
+  const provider = makeProvider();
+  const result = provider.applyCompletion(
+    ["approv x"],
+    0,
+    6,
+    { value: "approve", label: "approve" },
+    "approv",
+  );
+  assertEquals(result, { lines: ["approve x"], cursorLine: 0, cursorCol: 7 });
+});
+
+// ── blurCommandEditor ─────────────────────────────────────────────────────────
+
+Deno.test("blurCommandEditor: sets focused to false when autocomplete is not showing", () => {
+  const setTextSpy = spy((_text: string) => {});
+  const commandEditor = {
+    focused: true,
+    isShowingAutocomplete: () => false,
+    setText: setTextSpy,
+    getText: () => "some text",
+  };
+  blurCommandEditor(
+    commandEditor as unknown as Parameters<typeof blurCommandEditor>[0],
+  );
+  assertFalse(commandEditor.focused);
+  assertSpyCalls(setTextSpy, 0);
+});
+
+Deno.test("blurCommandEditor: sets focused to false and calls setText when autocomplete is showing", () => {
+  const setTextSpy = spy((_text: string) => {});
+  const commandEditor = {
+    focused: true,
+    isShowingAutocomplete: () => true,
+    setText: setTextSpy,
+    getText: () => "some text",
+  };
+  blurCommandEditor(
+    commandEditor as unknown as Parameters<typeof blurCommandEditor>[0],
+  );
+  assertFalse(commandEditor.focused);
+  assertSpyCalls(setTextSpy, 1);
+  assertEquals(setTextSpy.calls[0].args[0], "some text");
 });
 
 // ── handleTicketWatcherEvent ──────────────────────────────────────────────────

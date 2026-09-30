@@ -260,14 +260,23 @@ export function hudAutocompleteProvider(
     ) {
       const before = lines[0].slice(0, cursorCol - prefix.length);
       const after = lines[0].slice(cursorCol);
-      const newLine = before + item.value + after;
+      const addSpace = !after.startsWith(" ");
+      const newLine = before + item.value + (addSpace ? " " : "") + after;
       return {
         lines: [newLine],
         cursorLine: 0,
-        cursorCol: cursorCol - prefix.length + item.value.length,
+        cursorCol: cursorCol - prefix.length + item.value.length +
+          (addSpace ? 1 : 0),
       };
     },
   };
+}
+
+export function blurCommandEditor(commandEditor: Editor): void {
+  commandEditor.focused = false;
+  if (commandEditor.isShowingAutocomplete()) {
+    commandEditor.setText(commandEditor.getText());
+  }
 }
 
 export async function loadTicketEntry(
@@ -772,7 +781,7 @@ export const hud: Command = {
           if (statusPane.focused) {
             statusPane.focused = false;
             logPane.focused = true;
-            commandEditor.focused = false;
+            blurCommandEditor(commandEditor);
             tui.setFocus(logPane);
           } else if (logPane.focused) {
             logPane.focused = false;
@@ -780,7 +789,7 @@ export const hud: Command = {
             statusPane.focused = false;
             tui.setFocus(commandEditor);
           } else {
-            commandEditor.focused = false;
+            blurCommandEditor(commandEditor);
             statusPane.focused = true;
             logPane.focused = false;
             tui.setFocus(statusPane);
@@ -791,7 +800,7 @@ export const hud: Command = {
             commandEditor.focused = true;
             tui.setFocus(commandEditor);
           } else {
-            commandEditor.focused = false;
+            blurCommandEditor(commandEditor);
             ceremoniesPane.focused = true;
             tui.setFocus(ceremoniesPane);
           }
