@@ -41,6 +41,7 @@ export function buildClaudeCodeArgs(opts: {
   settingsPath: string;
   sessionId?: string;
   resume?: boolean;
+  mcpConfigPath?: string;
 }): string[] {
   const fileList = opts.contextFiles.length > 0
     ? "\n\nRead these files first:\n" +
@@ -76,6 +77,10 @@ export function buildClaudeCodeArgs(opts: {
     }
   }
 
+  if (opts.mcpConfigPath !== undefined) {
+    args.push("--mcp-config", opts.mcpConfigPath, "--strict-mcp-config");
+  }
+
   const addDirs = deriveAddDirs(opts.contextFiles, opts.cwd);
   if (addDirs.length > 0) {
     args.push("--add-dir", ...addDirs);
@@ -97,6 +102,7 @@ export class ClaudeCodeAgent implements CodeAgent {
     thinking: string;
     sessionId?: string;
     resume?: boolean;
+    mcpConfigPath?: string;
   }): Promise<{ stdout: string; stderr: string; code: number }> {
     const result = await new Deno.Command("claude", {
       args: buildClaudeCodeArgs({
@@ -108,6 +114,7 @@ export class ClaudeCodeAgent implements CodeAgent {
         settingsPath: this.settingsPath,
         sessionId: opts.sessionId,
         resume: opts.resume,
+        mcpConfigPath: opts.mcpConfigPath,
       }),
       cwd: opts.cwd,
       env: opts.env,
