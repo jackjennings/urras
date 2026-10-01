@@ -1451,3 +1451,109 @@ Deno.test("loadConfig: throws when [ceremonies].timeout_seconds is not an intege
   );
   await Deno.remove(dir, { recursive: true });
 });
+
+Deno.test("loadConfig: parses [codegraph] section with enabled = true and roots", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `
+[github]
+repos = ["jackjennings/lazyboy"]
+[state]
+dir = "~/code"
+[codegraph]
+enabled = true
+roots = ["/Users/jack/code/jackjennings"]
+`,
+  );
+  const cfg = await loadConfig(join(dir, "config.toml"));
+  assertEquals(cfg.codegraph?.enabled, true);
+  assertEquals(cfg.codegraph?.roots, ["/Users/jack/code/jackjennings"]);
+  await Deno.remove(dir, { recursive: true });
+});
+
+Deno.test("loadConfig: codegraph is absent when [codegraph] section is missing", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `
+[github]
+repos = ["jackjennings/lazyboy"]
+[state]
+dir = "~/code"
+`,
+  );
+  const cfg = await loadConfig(join(dir, "config.toml"));
+  assertEquals(cfg.codegraph, undefined);
+  await Deno.remove(dir, { recursive: true });
+});
+
+Deno.test("loadConfig: codegraph.enabled defaults to false when key is absent from section", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `
+[github]
+repos = ["r"]
+[state]
+dir = "~/code"
+[codegraph]
+roots = ["/foo"]
+`,
+  );
+  const cfg = await loadConfig(join(dir, "config.toml"));
+  assertEquals(cfg.codegraph?.enabled, false);
+  await Deno.remove(dir, { recursive: true });
+});
+
+Deno.test("loadConfig: codegraph.roots defaults to [] when key is absent from section", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `
+[github]
+repos = ["r"]
+[state]
+dir = "~/code"
+[codegraph]
+enabled = true
+`,
+  );
+  const cfg = await loadConfig(join(dir, "config.toml"));
+  assertEquals(cfg.codegraph?.roots, []);
+  await Deno.remove(dir, { recursive: true });
+});
+
+Deno.test("loadConfig: throws when codegraph.enabled is not a boolean", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `
+[github]
+repos = ["r"]
+[state]
+dir = "~/code"
+[codegraph]
+enabled = "yes"
+`,
+  );
+  await assertRejects(() => loadConfig(join(dir, "config.toml")));
+  await Deno.remove(dir, { recursive: true });
+});
+
+Deno.test("loadConfig: throws when codegraph.roots is not an array of strings", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `
+[github]
+repos = ["r"]
+[state]
+dir = "~/code"
+[codegraph]
+roots = 42
+`,
+  );
+  await assertRejects(() => loadConfig(join(dir, "config.toml")));
+  await Deno.remove(dir, { recursive: true });
+});

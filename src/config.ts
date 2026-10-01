@@ -239,6 +239,29 @@ export async function loadConfig(path?: string): Promise<Config> {
     }
   }
 
+  const codegraphRaw = parsed.codegraph as Record<string, unknown> | undefined;
+  let codegraph: Config["codegraph"];
+  if (codegraphRaw !== undefined) {
+    const enabledRaw = codegraphRaw.enabled;
+    if (enabledRaw !== undefined && typeof enabledRaw !== "boolean") {
+      throw new Error("config.toml: [codegraph].enabled must be a boolean");
+    }
+    const rootsRaw = codegraphRaw.roots;
+    if (
+      rootsRaw !== undefined &&
+      (!Array.isArray(rootsRaw) ||
+        !(rootsRaw as unknown[]).every((r) => typeof r === "string"))
+    ) {
+      throw new Error(
+        "config.toml: [codegraph].roots must be an array of strings",
+      );
+    }
+    codegraph = {
+      enabled: (enabledRaw as boolean | undefined) ?? false,
+      roots: (rootsRaw as string[] | undefined) ?? [],
+    };
+  }
+
   return {
     github: {
       repos: githubRaw.repos as string[],
@@ -266,6 +289,7 @@ export async function loadConfig(path?: string): Promise<Config> {
     ollama,
     learnings,
     ceremonies,
+    codegraph,
     phases: phasesDefaults !== undefined
       ? { defaults: phasesDefaults }
       : undefined,
