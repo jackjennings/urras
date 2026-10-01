@@ -20,7 +20,7 @@ import {
 } from "./filesystem.ts";
 import { deriveProjectPath } from "./phases/project-path.ts";
 import matter from "gray-matter";
-import { captureCommandRunner } from "./apfel.ts";
+import { captureCommandRunner, type CommandRunner } from "./apfel.ts";
 import { filterPrinciples } from "./judge-principles.ts";
 import { OllamaLanguageModel } from "./models/ollama.ts";
 import type { LanguageModel } from "./models/types.ts";
@@ -457,6 +457,25 @@ export function dedupePrinciples(
   return novel.length > 0 ? novel.join("\n") : null;
 }
 
+export async function resolveHunkSkillPath(
+  run: CommandRunner,
+): Promise<string | null> {
+  try {
+    const { code, stdout } = await run(["hunk", "skill", "path"]);
+    if (code !== 0) return null;
+    const path = stdout.trim();
+    if (!path) return null;
+    try {
+      await stat(path);
+      return path;
+    } catch {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+}
+
 export async function executePhase(
   opts: {
     ticketDir: string;
@@ -480,6 +499,7 @@ export async function executePhase(
     critiqueModel?: string;
     critiqueThinking?: string;
     barePhase?: string;
+    hunkSkillResolver?: () => Promise<string | null>;
   },
   agent: CodeAgent,
 ): Promise<number> {
@@ -504,6 +524,16 @@ export async function executePhase(
       includePrinciples: opts.includePrinciples,
       model: opts.languageModel,
     });
+
+  if (
+    (opts.barePhase ?? opts.phase) === "implementation" &&
+    opts.hunkSkillResolver !== undefined
+  ) {
+    const hunkPath = await opts.hunkSkillResolver();
+    if (hunkPath !== null) {
+      contextFiles.push(`@${hunkPath}`);
+    }
+  }
 
   const allPaths = [
     ...opts.scopeDirs,
@@ -895,6 +925,7 @@ if (import.meta.main) {
       languageModel,
       critiqueModel: args["critique-model"] ?? undefined,
       critiqueThinking: args["critique-thinking"] ?? undefined,
+      hunkSkillResolver: () => resolveHunkSkillPath(captureCommandRunner()),
     },
     agentType === "claude-code"
       ? new ClaudeCodeAgent(
