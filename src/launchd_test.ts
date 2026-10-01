@@ -9,10 +9,10 @@ Deno.test("plistContent: includes the label", () => {
   );
 });
 
-Deno.test("plistContent: StartInterval is 300", () => {
+Deno.test("plistContent: KeepAlive is true", () => {
   assertStringIncludes(
     plistContent("/home/user/.lazyboy"),
-    "<integer>300</integer>",
+    "<key>KeepAlive</key>",
   );
 });
 
@@ -27,10 +27,10 @@ Deno.test("plistContent: sets AbandonProcessGroup so detached phase agents survi
   );
 });
 
-Deno.test("plistContent: references tick.sh at lazboyDir", () => {
+Deno.test("plistContent: references daemon.sh at lazboyDir", () => {
   assertStringIncludes(
     plistContent("/home/user/.lazyboy"),
-    "/home/user/.lazyboy/scripts/tick.sh",
+    "/home/user/.lazyboy/scripts/daemon.sh",
   );
 });
 
@@ -48,11 +48,8 @@ Deno.test("plistContent: does not contain StandardErrorPath", () => {
   );
 });
 
-Deno.test("plistContent: ExitTimeOut is 30 seconds", () => {
-  const content = plistContent("/home/user/.lazyboy");
-  assertStringIncludes(content, "<key>ExitTimeOut</key>");
-  const afterKey = content.slice(content.indexOf("<key>ExitTimeOut</key>"));
-  assertStringIncludes(afterKey, "<integer>30</integer>");
+Deno.test("plistContent: does not contain ExitTimeOut", () => {
+  assertFalse(plistContent("/home/user/.lazyboy").includes("ExitTimeOut"));
 });
 
 Deno.test(

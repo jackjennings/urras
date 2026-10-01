@@ -140,7 +140,6 @@ import { usageSidecarShapeCheck } from "./doctor/checks/usage-sidecar-shape.ts";
 import { hostDependenciesCheck } from "./doctor/checks/host-dependencies.ts";
 import { requiredEnvVarsCheck } from "./doctor/checks/required-env-vars.ts";
 import { staleHudProcessCheck } from "./doctor/checks/stale-hud-process.ts";
-import { launchdSpawnSuppressionCheck } from "./doctor/checks/launchd-spawn-suppression.ts";
 import { ollamaAvailabilityCheck } from "./doctor/checks/ollama-availability.ts";
 import { ghVersionCheck } from "./doctor/checks/gh-version.ts";
 import type { Check } from "./doctor/checks/types.ts";
@@ -1824,14 +1823,6 @@ export function composeDoctorChecks(config: Config): Check[] {
     hostDependenciesCheck({ runCommand }),
     requiredEnvVarsCheck({ getEnv: (name) => Deno.env.get(name), config }),
     staleHudProcessCheck({ runCommand, repoPath }),
-    launchdSpawnSuppressionCheck({
-      readTextFile,
-      urrasDir: urrasDirPath,
-      runCommand,
-      uid,
-      plistPath: installedPlistPath,
-      now,
-    }),
     ollamaAvailabilityCheck({ config, fetch }),
     ghVersionCheck({ runCommand }),
   ];
