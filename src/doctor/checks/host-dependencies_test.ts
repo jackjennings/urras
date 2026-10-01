@@ -78,15 +78,15 @@ Deno.test(
 );
 
 Deno.test(
-  "hostDependenciesCheck: tuicr missing, all required present → warn with tuicr in detail",
+  "hostDependenciesCheck: hunk missing, all required present → warn with hunk in detail",
   async () => {
     const result = await hostDependenciesCheck({
       runCommand: (args) =>
-        args[1] === "tuicr"
+        args[1] === "hunk"
           ? Promise.resolve({ code: 1, stdout: "" })
           : Promise.resolve({ code: 0, stdout: "/usr/bin/x\n" }),
     }).run();
     assertEquals(result.status, "warn");
-    assertStringIncludes(result.detail, "tuicr");
+    assertStringIncludes(result.detail, "hunk");
   },
 );

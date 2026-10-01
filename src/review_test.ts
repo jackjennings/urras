@@ -1894,9 +1894,9 @@ Deno.test(
   },
 );
 
-// ── r hotkey (tuicr) ──────────────────────────────────────────────────────────
+// ── r hotkey (hunk) ───────────────────────────────────────────────────────────
 
-function makeTuicrSession(overrides: Partial<ReviewSessionOptions> = {}) {
+function makeHunkSession(overrides: Partial<ReviewSessionOptions> = {}) {
   return makeReviewSession({
     ticket: makeTicket({
       id: "github/test/repo/1",
@@ -1913,8 +1913,8 @@ function makeTuicrSession(overrides: Partial<ReviewSessionOptions> = {}) {
         "org/repo": { path: "/path/to/worktree", branch: "main" },
       },
     }),
-    checkTuicr: () => Promise.resolve(true),
-    spawnTuicr: () => Promise.resolve(),
+    checkHunk: () => Promise.resolve(true),
+    spawnHunk: () => Promise.resolve(),
     ...overrides,
   });
 }
@@ -1982,8 +1982,8 @@ Deno.test(
 Deno.test(
   "ReviewSession: r with eligible PR and tuicr unavailable shows PATH error",
   async () => {
-    const { tui, session } = makeTuicrSession({
-      checkTuicr: () => Promise.resolve(false),
+    const { tui, session } = makeHunkSession({
+      checkHunk: () => Promise.resolve(false),
     });
     void session;
     const handler = tui.inputListeners[0];
@@ -1993,7 +1993,7 @@ Deno.test(
     const lines = errorOverlay.render(80);
     assertStringIncludes(
       lines.join(" "),
-      "tuicr not found on PATH. Install from tuicr.dev.",
+      "hunk not found on PATH. Install with: brew install hunk",
     );
   },
 );
@@ -2002,8 +2002,8 @@ Deno.test(
   "ReviewSession: r with one eligible PR and tuicr available calls spawnTuicr with worktreePath and PR number",
   async () => {
     const spawnSpy = spy((_path: string, _num: number) => Promise.resolve());
-    const { tui, session } = makeTuicrSession({
-      spawnTuicr: spawnSpy,
+    const { tui, session } = makeHunkSession({
+      spawnHunk: spawnSpy,
     });
     void session;
     const handler = tui.inputListeners[0];
@@ -2018,7 +2018,7 @@ Deno.test(
 Deno.test(
   "ReviewSession: r with one eligible PR and tuicr available does not show error overlay",
   async () => {
-    const { tui, session } = makeTuicrSession();
+    const { tui, session } = makeHunkSession();
     void session;
     const handler = tui.inputListeners[0];
     handler("r");
@@ -2055,8 +2055,8 @@ Deno.test(
           "org/repo-b": { path: "/path/b", branch: "main" },
         },
       }),
-      checkTuicr: () => Promise.resolve(true),
-      spawnTuicr: () => Promise.resolve(),
+      checkHunk: () => Promise.resolve(true),
+      spawnHunk: () => Promise.resolve(),
     });
     void session;
     const overlayCountBefore = tui.overlays.length;
@@ -2095,8 +2095,8 @@ Deno.test(
           "org/repo-b": { path: "/path/b", branch: "main" },
         },
       }),
-      checkTuicr: () => Promise.resolve(true),
-      spawnTuicr: spawnSpy,
+      checkHunk: () => Promise.resolve(true),
+      spawnHunk: spawnSpy,
     });
     void session;
     const overlaysBefore = tui.overlays.length;
@@ -2145,8 +2145,8 @@ Deno.test(
           "org/repo-b": { path: "/path/b", branch: "main" },
         },
       }),
-      checkTuicr: () => Promise.resolve(true),
-      spawnTuicr: spawnSpy,
+      checkHunk: () => Promise.resolve(true),
+      spawnHunk: spawnSpy,
     });
     void session;
     const overlaysBefore = tui.overlays.length;
