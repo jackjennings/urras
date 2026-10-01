@@ -43,7 +43,7 @@ export function hostDependenciesCheck(deps: HostDependenciesDeps): Check {
         return {
           status: "warn",
           detail: `Optional binaries not found: ${missingOptional.join(", ")}`,
-          remedy: "brew install git-absorb hunk",
+          remedy: `brew install ${missingOptional.join(" ")}`,
         };
       }
 
