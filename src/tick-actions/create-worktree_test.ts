@@ -34,6 +34,9 @@ function makeAction(
     stat: () => Promise.resolve(false),
     appendLog: () => Promise.resolve(),
     applyWorktreeInclude: () => Promise.resolve(),
+    listRepoCorpus: () => Promise.resolve([]),
+    checkRepoExists: () => Promise.resolve(true),
+    submitFeedback: (_opts) => Promise.resolve(),
     ...overrides,
   });
 }
@@ -673,5 +676,186 @@ Deno.test(
       (logged[1] as Record<string, unknown>).slug,
       "other/new-repo",
     );
+  },
+);
+
+// ── run: scope validation ─────────────────────────────────────────────────────
+
+Deno.test(
+  "createWorktreeAction: corpus-confirmed slug skips API check and proceeds to worktree creation",
+  async () => {
+    const intakeContent =
+      "## Proposed Scope\n\n```yaml\nscope:\n  - other/repo\n```\n\n## Reasoning\n\nText.\n";
+    const checkSpy = spy((_slug: string) => Promise.resolve(true));
+    const createdSlugs: string[] = [];
+    const result = await makeAction({
+      readIntakeOutput: () => Promise.resolve(intakeContent),
+      listRepoCorpus: () =>
+        Promise.resolve([{ slug: "other/repo", localPath: null }]),
+      checkRepoExists: checkSpy,
+      findLocalRepo: (_, slug) => Promise.resolve(`/code/${slug}`),
+      createWorktree: (_repo, _id, slug) => {
+        createdSlugs.push(slug);
+        return Promise.resolve({ path: `/wt/${slug}`, branch: "gh-1" });
+      },
+    }).run(makeTicket(BASE), "/state");
+
+    assertSpyCalls(checkSpy, 0);
+    assertEquals(createdSlugs.includes("other/repo"), true);
+    assertEquals(result?.status, "waiting");
+  },
+);
+
+Deno.test(
+  "createWorktreeAction: hallucinated slug → revising with feedback file and scopeRetries: 1",
+  async () => {
+    const intakeContent =
+      "## Proposed Scope\n\n```yaml\nscope:\n  - bad/hallucination\n```\n\n## Reasoning\n\nText.\n";
+    const submitted: {
+      stateDir: string;
+      id: string;
+      phase: string;
+      content: string;
+    }[] = [];
+    const result = await makeAction({
+      readIntakeOutput: () => Promise.resolve(intakeContent),
+      listRepoCorpus: () =>
+        Promise.resolve([{ slug: "real/repo", localPath: null }]),
+      checkRepoExists: (_slug) => Promise.resolve(false),
+      submitFeedback: ({ stateDir: sd, id, phase, content }) => {
+        submitted.push({ stateDir: sd, id, phase, content });
+        return Promise.resolve();
+      },
+    }).run(makeTicket(BASE), "/state");
+
+    assertEquals(result?.status, "revising");
+    assertEquals(result?.scopeRetries, 1);
+    assertEquals(submitted.length, 1);
+    assertEquals(submitted[0].phase, "intake");
+    assertEquals(
+      submitted[0].content.includes("bad/hallucination"),
+      true,
+    );
+    assertEquals(submitted[0].content.includes("- real/repo"), true);
+  },
+);
+
+Deno.test(
+  "createWorktreeAction: second firing with still-invalid slug → needs-attention with invalid-scope-slug",
+  async () => {
+    const intakeContent =
+      "## Proposed Scope\n\n```yaml\nscope:\n  - bad/hallucination\n```\n\n## Reasoning\n\nText.\n";
+    const logged: object[] = [];
+    const written: TicketState[] = [];
+    const result = await makeAction({
+      readIntakeOutput: () => Promise.resolve(intakeContent),
+      listRepoCorpus: () => Promise.resolve([]),
+      checkRepoExists: () => Promise.resolve(false),
+      appendLog: (_sd, _id, entry) => {
+        logged.push(entry);
+        return Promise.resolve();
+      },
+      writeTicket: (_dir, t) => {
+        written.push(t);
+        return Promise.resolve();
+      },
+    }).run(makeTicket({ ...BASE, scopeRetries: 1 }), "/state");
+
+    assertEquals(result?.status, "needs-attention");
+    assertEquals(written[0].status, "needs-attention");
+    const attentionEntry = logged.find(
+      (e) => (e as Record<string, unknown>).event === "needs-attention",
+    ) as Record<string, unknown> | undefined;
+    assertEquals(attentionEntry?.reason, "invalid-scope-slug");
+    assertEquals(
+      (attentionEntry?.slugs as string[]).includes("bad/hallucination"),
+      true,
+    );
+  },
+);
+
+Deno.test(
+  "createWorktreeAction: multiple invalid slugs → one feedback file naming all",
+  async () => {
+    const intakeContent =
+      "## Proposed Scope\n\n```yaml\nscope:\n  - bad/one\n  - bad/two\n```\n\n## Reasoning\n\nText.\n";
+    const submitted: { phase: string; content: string }[] = [];
+    await makeAction({
+      readIntakeOutput: () => Promise.resolve(intakeContent),
+      listRepoCorpus: () => Promise.resolve([]),
+      checkRepoExists: () => Promise.resolve(false),
+      submitFeedback: ({ phase, content }) => {
+        submitted.push({ phase, content });
+        return Promise.resolve();
+      },
+    }).run(makeTicket(BASE), "/state");
+
+    assertEquals(submitted.length, 1);
+    assertEquals(submitted[0].content.includes("bad/one"), true);
+    assertEquals(submitted[0].content.includes("bad/two"), true);
+  },
+);
+
+Deno.test(
+  "createWorktreeAction: (new) slug skips scope validation entirely",
+  async () => {
+    const intakeContent =
+      "## Proposed Scope\n\n```yaml\nscope:\n  - brand/new-repo (new)\n```\n\n## Reasoning\n\nText.\n";
+    const checkSpy = spy((_slug: string) => Promise.resolve(false));
+    const result = await makeAction({
+      readIntakeOutput: () => Promise.resolve(intakeContent),
+      listRepoCorpus: () => Promise.resolve([]),
+      checkRepoExists: checkSpy,
+      initLocalRepo: () => Promise.resolve("/repos/brand/new-repo"),
+      findLocalRepo: (_, slug) =>
+        slug === "myorg/myrepo"
+          ? Promise.resolve("/code/myorg/myrepo")
+          : Promise.resolve(null),
+      createWorktree: (_repo, _id, slug) =>
+        Promise.resolve({ path: `/wt/${slug}`, branch: "gh-1" }),
+    }).run(makeTicket(BASE), "/state");
+
+    assertSpyCalls(checkSpy, 0);
+    assertEquals(result?.status, "waiting");
+  },
+);
+
+Deno.test(
+  "createWorktreeAction: URL-derived slug not subject to scope validation",
+  async () => {
+    const checkSpy = spy((_slug: string) => Promise.resolve(false));
+    const result = await makeAction({
+      readIntakeOutput: () => Promise.resolve(null),
+      listRepoCorpus: () => Promise.resolve([]),
+      checkRepoExists: checkSpy,
+      findLocalRepo: () => Promise.resolve("/code/myorg/myrepo"),
+      createWorktree: (_repo, _id, slug) =>
+        Promise.resolve({ path: `/wt/${slug}`, branch: "gh-1" }),
+    }).run(makeTicket(BASE), "/state");
+
+    assertSpyCalls(checkSpy, 0);
+    assertEquals(result?.status, "waiting");
+  },
+);
+
+Deno.test(
+  "createWorktreeAction: non-corpus slug confirmed by API proceeds to worktree creation",
+  async () => {
+    const intakeContent =
+      "## Proposed Scope\n\n```yaml\nscope:\n  - other/repo\n```\n\n## Reasoning\n\nText.\n";
+    const createdSlugs: string[] = [];
+    const result = await makeAction({
+      readIntakeOutput: () => Promise.resolve(intakeContent),
+      listRepoCorpus: () => Promise.resolve([]),
+      checkRepoExists: () => Promise.resolve(true),
+      findLocalRepo: (_, slug) => Promise.resolve(`/code/${slug}`),
+      createWorktree: (_repo, _id, slug) => {
+        createdSlugs.push(slug);
+        return Promise.resolve({ path: `/wt/${slug}`, branch: "gh-1" });
+      },
+    }).run(makeTicket(BASE), "/state");
+
+    assertEquals(createdSlugs.includes("other/repo"), true);
+    assertEquals(result?.status, "waiting");
   },
 );
