@@ -1,5 +1,6 @@
 import {
   assert,
+  assertArrayIncludes,
   assertEquals,
   assertExists,
   assertFalse,
@@ -91,10 +92,128 @@ Deno.test("buildPhaseArgs: omits --ticket-id when not provided", () => {
   assertFalse(args.includes("--ticket-id"));
 });
 
-Deno.test("buildPhaseArgs: first two args are run --allow-all", () => {
+Deno.test("buildPhaseArgs: first arg is run and --allow-all is absent", () => {
   const args = buildPhaseArgs(makeOpts());
   assertEquals(args[0], "run");
-  assertEquals(args[1], "--allow-all");
+  assertFalse(args.includes("--allow-all"));
+});
+
+Deno.test("buildPhaseArgs: --allow-read includes stateDir and ticketDir", () => {
+  const args = buildPhaseArgs(
+    makeOpts({ stateDir: "/state", ticketDir: "/state/gh-1" }),
+  );
+  const readArg = args.find((a) => a.startsWith("--allow-read="));
+  assertExists(readArg);
+  const paths = readArg!.slice("--allow-read=".length).split(",");
+  assertArrayIncludes(paths, ["/state", "/state/gh-1"]);
+});
+
+Deno.test("buildPhaseArgs: --allow-read includes scopeDirs", () => {
+  const args = buildPhaseArgs(
+    makeOpts({ scopeDirs: ["/code/a", "/code/b"] }),
+  );
+  const readArg = args.find((a) => a.startsWith("--allow-read="))!;
+  const paths = readArg.slice("--allow-read=".length).split(",");
+  assertArrayIncludes(paths, ["/code/a", "/code/b"]);
+});
+
+Deno.test("buildPhaseArgs: --allow-read includes worktree paths", () => {
+  const args = buildPhaseArgs(
+    makeOpts({
+      worktrees: { "org/repo": { path: "/trees/org/repo", branch: "main" } },
+    }),
+  );
+  const readArg = args.find((a) => a.startsWith("--allow-read="))!;
+  const paths = readArg.slice("--allow-read=".length).split(",");
+  assertArrayIncludes(paths, ["/trees/org/repo"]);
+});
+
+Deno.test("buildPhaseArgs: --allow-read does not contain empty paths when scopeDirs is empty", () => {
+  const args = buildPhaseArgs(makeOpts({ scopeDirs: [] }));
+  const readArg = args.find((a) => a.startsWith("--allow-read="))!;
+  const paths = readArg.slice("--allow-read=".length).split(",");
+  assertFalse(paths.some((p) => p === ""));
+});
+
+Deno.test("buildPhaseArgs: --allow-read includes HOME/.urras/ directory", () => {
+  const home = Deno.env.get("HOME")!;
+  const args = buildPhaseArgs(makeOpts());
+  const readArg = args.find((a) => a.startsWith("--allow-read="))!;
+  const paths = readArg.slice("--allow-read=".length).split(",");
+  assertArrayIncludes(paths, [`${home}/.urras/`]);
+});
+
+Deno.test("buildPhaseArgs: --allow-read includes deno cache directory", () => {
+  const home = Deno.env.get("HOME")!;
+  const denoDir = Deno.env.get("DENO_DIR") ?? `${home}/Library/Caches/deno`;
+  const args = buildPhaseArgs(makeOpts());
+  const readArg = args.find((a) => a.startsWith("--allow-read="))!;
+  const paths = readArg.slice("--allow-read=".length).split(",");
+  assertArrayIncludes(paths, [denoDir]);
+});
+
+Deno.test("buildPhaseArgs: --allow-write includes ticketDir and HOME/.urras subdirs", () => {
+  const home = Deno.env.get("HOME")!;
+  const args = buildPhaseArgs(makeOpts({ ticketDir: "/state/gh-1" }));
+  const writeArg = args.find((a) => a.startsWith("--allow-write="));
+  assertExists(writeArg);
+  const paths = writeArg!.slice("--allow-write=".length).split(",");
+  assertArrayIncludes(paths, [
+    "/state/gh-1",
+    `${home}/.urras/pi/`,
+    `${home}/.urras/claude-code/`,
+  ]);
+});
+
+Deno.test("buildPhaseArgs: --allow-run includes claude, pi, apfel", () => {
+  const args = buildPhaseArgs(makeOpts());
+  assert(args.includes("--allow-run=claude,pi,apfel"));
+});
+
+Deno.test("buildPhaseArgs: includes --allow-env", () => {
+  const args = buildPhaseArgs(makeOpts());
+  assert(args.includes("--allow-env"));
+});
+
+Deno.test("buildPhaseArgs: omits --allow-net when ollamaModels is absent", () => {
+  const args = buildPhaseArgs(makeOpts());
+  assertFalse(args.some((a) => a.startsWith("--allow-net")));
+});
+
+Deno.test("buildPhaseArgs: omits --allow-net when ollamaModels is empty", () => {
+  const args = buildPhaseArgs(makeOpts({ ollamaModels: [] }));
+  assertFalse(args.some((a) => a.startsWith("--allow-net")));
+});
+
+Deno.test("buildPhaseArgs: --allow-net uses host:port from ollama model url", () => {
+  const args = buildPhaseArgs(
+    makeOpts({
+      ollamaModels: [{
+        model: "llama3",
+        url: "http://my-host:12345/api/generate",
+      }],
+    }),
+  );
+  assert(args.includes("--allow-net=my-host:12345"));
+});
+
+Deno.test("buildPhaseArgs: --allow-net defaults to localhost:11434 when ollama url is absent", () => {
+  const args = buildPhaseArgs(
+    makeOpts({ ollamaModels: [{ model: "llama3" }] }),
+  );
+  assert(args.includes("--allow-net=localhost:11434"));
+});
+
+Deno.test("buildPhaseArgs: --allow-net includes all ollama host:port values", () => {
+  const args = buildPhaseArgs(
+    makeOpts({
+      ollamaModels: [
+        { model: "llama3", url: "http://host-a:11434" },
+        { model: "mistral", url: "http://host-b:9999" },
+      ],
+    }),
+  );
+  assert(args.includes("--allow-net=host-a:11434,host-b:9999"));
 });
 
 Deno.test("isProcessAlive returns true for current process", () => {
