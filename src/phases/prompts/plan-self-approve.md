@@ -3,9 +3,10 @@ word APPROVE or REJECT as the first line. If rejecting, follow with one sentence
 on the second line stating the reason.
 
 Step 1 — structural check: the output must contain at least one heading matching
-the pattern `## Task N —` (a line beginning with `## Task` followed by a number
-and a dash). Check only bare headings at the start of a line, not occurrences
-inside code blocks or blockquotes. If no such heading is found, respond:
+the pattern `## Task N` where N is a number, optionally followed by a separator
+(`:`, `-`, `–`, `—`, or whitespace before the title) or no separator at all.
+Check only bare headings at the start of a line, not occurrences inside code
+blocks or blockquotes. If no such heading is found, respond:
 
 REJECT Plan contains no task sections.
 

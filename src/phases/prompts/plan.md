@@ -74,6 +74,9 @@ tick loop owns them, and a value it does not recognize halts every ticket. Write
 your plan document to the output file path using the Write tool. Begin your
 response directly with the first section heading. No preamble.
 
+Format each task heading as `## Task N: <title>` where N is a sequential integer
+starting at 1.
+
 Each task must:
 
 - Name the files to create or modify with exact paths.
