@@ -374,3 +374,20 @@ Deno.test(
     }
   },
 );
+
+Deno.test("buildPhaseArgs: includes --codegraph-roots when codegraphRoots is non-empty", () => {
+  const args = buildPhaseArgs(makeOpts({ codegraphRoots: ["/foo", "/bar"] }));
+  const idx = args.indexOf("--codegraph-roots");
+  assertNotEquals(idx, -1);
+  assertEquals(JSON.parse(args[idx + 1]), ["/foo", "/bar"]);
+});
+
+Deno.test("buildPhaseArgs: omits --codegraph-roots when codegraphRoots is absent", () => {
+  const args = buildPhaseArgs(makeOpts());
+  assertFalse(args.includes("--codegraph-roots"));
+});
+
+Deno.test("buildPhaseArgs: omits --codegraph-roots when codegraphRoots is empty", () => {
+  const args = buildPhaseArgs(makeOpts({ codegraphRoots: [] }));
+  assertFalse(args.includes("--codegraph-roots"));
+});

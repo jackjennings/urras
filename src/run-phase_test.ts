@@ -4099,3 +4099,373 @@ Deno.test(
     }
   },
 );
+
+// ── executePhase CodeGraph MCP ──────────────────────────────────────────────
+
+Deno.test(
+  "executePhase: does not pass mcpConfigPath to agent when codegraphRoots is absent",
+  async () => {
+    const ticketDir = await Deno.makeTempDir();
+    const homeDir = await Deno.makeTempDir();
+    try {
+      await Deno.writeTextFile(join(ticketDir, "meta.md"), "---\n---\n");
+      let capturedOpts: Record<string, unknown> | null = null;
+      const agent: CodeAgent = {
+        runPhase(opts) {
+          capturedOpts = opts as Record<string, unknown>;
+          return Promise.resolve({ stdout: "", stderr: "", code: 0 });
+        },
+      };
+      await executePhase(
+        {
+          ticketDir,
+          stateDir: dirname(ticketDir),
+          outputFile: "out.md",
+          phase: "spec",
+          scopeDirs: [],
+          prompt: "p",
+          worktrees: { k: { path: "/code/jackjennings/lazyboy", branch: "b" } },
+          homeDir,
+          provider: "anthropic",
+          model: "m",
+          thinking: "off",
+          agentType: "claude-code",
+        },
+        agent,
+      );
+      assertEquals(capturedOpts?.["mcpConfigPath"], undefined);
+    } finally {
+      await Deno.remove(ticketDir, { recursive: true });
+      await Deno.remove(homeDir, { recursive: true });
+    }
+  },
+);
+
+Deno.test(
+  "executePhase: does not pass mcpConfigPath when codegraphRoots is empty",
+  async () => {
+    const ticketDir = await Deno.makeTempDir();
+    const homeDir = await Deno.makeTempDir();
+    try {
+      await Deno.writeTextFile(join(ticketDir, "meta.md"), "---\n---\n");
+      let capturedOpts: Record<string, unknown> | null = null;
+      const agent: CodeAgent = {
+        runPhase(opts) {
+          capturedOpts = opts as Record<string, unknown>;
+          return Promise.resolve({ stdout: "", stderr: "", code: 0 });
+        },
+      };
+      await executePhase(
+        {
+          ticketDir,
+          stateDir: dirname(ticketDir),
+          outputFile: "out.md",
+          phase: "spec",
+          scopeDirs: [],
+          prompt: "p",
+          worktrees: { k: { path: "/code/jackjennings/lazyboy", branch: "b" } },
+          homeDir,
+          provider: "anthropic",
+          model: "m",
+          thinking: "off",
+          agentType: "claude-code",
+          codegraphRoots: [],
+          binaryFinder: () => Promise.resolve(true),
+        },
+        agent,
+      );
+      assertEquals(capturedOpts?.["mcpConfigPath"], undefined);
+    } finally {
+      await Deno.remove(ticketDir, { recursive: true });
+      await Deno.remove(homeDir, { recursive: true });
+    }
+  },
+);
+
+Deno.test(
+  "executePhase: does not pass mcpConfigPath when worktree path is not under any configured root",
+  async () => {
+    const ticketDir = await Deno.makeTempDir();
+    const homeDir = await Deno.makeTempDir();
+    try {
+      await Deno.writeTextFile(join(ticketDir, "meta.md"), "---\n---\n");
+      let capturedOpts: Record<string, unknown> | null = null;
+      const agent: CodeAgent = {
+        runPhase(opts) {
+          capturedOpts = opts as Record<string, unknown>;
+          return Promise.resolve({ stdout: "", stderr: "", code: 0 });
+        },
+      };
+      await executePhase(
+        {
+          ticketDir,
+          stateDir: dirname(ticketDir),
+          outputFile: "out.md",
+          phase: "spec",
+          scopeDirs: [],
+          prompt: "p",
+          worktrees: { k: { path: "/other/path/lazyboy", branch: "b" } },
+          homeDir,
+          provider: "anthropic",
+          model: "m",
+          thinking: "off",
+          agentType: "claude-code",
+          codegraphRoots: ["/code/jackjennings"],
+          binaryFinder: () => Promise.resolve(true),
+        },
+        agent,
+      );
+      assertEquals(capturedOpts?.["mcpConfigPath"], undefined);
+    } finally {
+      await Deno.remove(ticketDir, { recursive: true });
+      await Deno.remove(homeDir, { recursive: true });
+    }
+  },
+);
+
+Deno.test(
+  "executePhase: passes mcpConfigPath when codegraphRoots qualifies and binary is found",
+  async () => {
+    const ticketDir = await Deno.makeTempDir();
+    const homeDir = await Deno.makeTempDir();
+    try {
+      await Deno.writeTextFile(join(ticketDir, "meta.md"), "---\n---\n");
+      let capturedOpts: Record<string, unknown> | null = null;
+      const agent: CodeAgent = {
+        runPhase(opts) {
+          capturedOpts = opts as Record<string, unknown>;
+          return Promise.resolve({ stdout: "", stderr: "", code: 0 });
+        },
+      };
+      await executePhase(
+        {
+          ticketDir,
+          stateDir: dirname(ticketDir),
+          outputFile: "out.md",
+          phase: "spec",
+          scopeDirs: [],
+          prompt: "p",
+          worktrees: {
+            k: { path: "/code/jackjennings/lazyboy", branch: "b" },
+          },
+          homeDir,
+          provider: "anthropic",
+          model: "m",
+          thinking: "off",
+          agentType: "claude-code",
+          codegraphRoots: ["/code/jackjennings"],
+          binaryFinder: () => Promise.resolve(true),
+        },
+        agent,
+      );
+      assertExists(capturedOpts?.["mcpConfigPath"]);
+      const mcpPath = capturedOpts!["mcpConfigPath"] as string;
+      let exists = true;
+      try {
+        await Deno.stat(mcpPath);
+      } catch {
+        exists = false;
+      }
+      assertFalse(exists);
+    } finally {
+      await Deno.remove(ticketDir, { recursive: true });
+      await Deno.remove(homeDir, { recursive: true });
+    }
+  },
+);
+
+Deno.test(
+  "executePhase: MCP config temp file contains the codegraph stdio server spec",
+  async () => {
+    const ticketDir = await Deno.makeTempDir();
+    const homeDir = await Deno.makeTempDir();
+    let capturedMcpPath: string | undefined;
+    try {
+      await Deno.writeTextFile(join(ticketDir, "meta.md"), "---\n---\n");
+      const agent: CodeAgent = {
+        runPhase(opts) {
+          capturedMcpPath = (opts as Record<string, unknown>)[
+            "mcpConfigPath"
+          ] as string;
+          return Promise.resolve({ stdout: "", stderr: "", code: 0 });
+        },
+      };
+      await executePhase(
+        {
+          ticketDir,
+          stateDir: dirname(ticketDir),
+          outputFile: "out.md",
+          phase: "spec",
+          scopeDirs: [],
+          prompt: "p",
+          worktrees: {
+            k: { path: "/code/jackjennings/lazyboy", branch: "b" },
+          },
+          homeDir,
+          provider: "anthropic",
+          model: "m",
+          thinking: "off",
+          agentType: "claude-code",
+          codegraphRoots: ["/code/jackjennings"],
+          binaryFinder: () => Promise.resolve(true),
+        },
+        capturedMcpPath !== undefined
+          ? {
+            runPhase(opts) {
+              capturedMcpPath = (opts as Record<string, unknown>)[
+                "mcpConfigPath"
+              ] as string;
+              return Promise.resolve({ stdout: "", stderr: "", code: 0 });
+            },
+          }
+          : agent,
+      );
+    } finally {
+      await Deno.remove(ticketDir, { recursive: true });
+      await Deno.remove(homeDir, { recursive: true });
+    }
+  },
+);
+
+Deno.test(
+  "executePhase: writes warning to stderr and omits mcpConfigPath when binary is not on PATH",
+  async () => {
+    const ticketDir = await Deno.makeTempDir();
+    const homeDir = await Deno.makeTempDir();
+    const logged: string[] = [];
+    const origError = console.error;
+    console.error = (...args: unknown[]) => logged.push(String(args[0]));
+    try {
+      await Deno.writeTextFile(join(ticketDir, "meta.md"), "---\n---\n");
+      let capturedOpts: Record<string, unknown> | null = null;
+      const agent: CodeAgent = {
+        runPhase(opts) {
+          capturedOpts = opts as Record<string, unknown>;
+          return Promise.resolve({ stdout: "", stderr: "", code: 0 });
+        },
+      };
+      await executePhase(
+        {
+          ticketDir,
+          stateDir: dirname(ticketDir),
+          outputFile: "out.md",
+          phase: "spec",
+          scopeDirs: [],
+          prompt: "p",
+          worktrees: {
+            k: { path: "/code/jackjennings/lazyboy", branch: "b" },
+          },
+          homeDir,
+          provider: "anthropic",
+          model: "m",
+          thinking: "off",
+          agentType: "claude-code",
+          codegraphRoots: ["/code/jackjennings"],
+          binaryFinder: () => Promise.resolve(false),
+        },
+        agent,
+      );
+      assertEquals(capturedOpts?.["mcpConfigPath"], undefined);
+      assert(logged.some((line) => line.includes("codegraph")));
+    } finally {
+      console.error = origError;
+      await Deno.remove(ticketDir, { recursive: true });
+      await Deno.remove(homeDir, { recursive: true });
+    }
+  },
+);
+
+Deno.test(
+  "executePhase: does not pass mcpConfigPath to pi agent even when codegraphRoots qualify",
+  async () => {
+    const ticketDir = await Deno.makeTempDir();
+    const homeDir = await Deno.makeTempDir();
+    try {
+      await Deno.writeTextFile(join(ticketDir, "meta.md"), "---\n---\n");
+      let capturedOpts: Record<string, unknown> | null = null;
+      const agent: CodeAgent = {
+        runPhase(opts) {
+          capturedOpts = opts as Record<string, unknown>;
+          return Promise.resolve({ stdout: "", stderr: "", code: 0 });
+        },
+      };
+      await executePhase(
+        {
+          ticketDir,
+          stateDir: dirname(ticketDir),
+          outputFile: "out.md",
+          phase: "spec",
+          scopeDirs: [],
+          prompt: "p",
+          worktrees: {
+            k: { path: "/code/jackjennings/lazyboy", branch: "b" },
+          },
+          homeDir,
+          provider: "anthropic",
+          model: "m",
+          thinking: "off",
+          agentType: "pi",
+          codegraphRoots: ["/code/jackjennings"],
+          binaryFinder: () => Promise.resolve(true),
+        },
+        agent,
+      );
+      assertEquals(capturedOpts?.["mcpConfigPath"], undefined);
+    } finally {
+      await Deno.remove(ticketDir, { recursive: true });
+      await Deno.remove(homeDir, { recursive: true });
+    }
+  },
+);
+
+Deno.test(
+  "executePhase: deletes MCP config temp file after runPhase resolves",
+  async () => {
+    const ticketDir = await Deno.makeTempDir();
+    const homeDir = await Deno.makeTempDir();
+    let savedMcpPath: string | undefined;
+    try {
+      await Deno.writeTextFile(join(ticketDir, "meta.md"), "---\n---\n");
+      const agent: CodeAgent = {
+        runPhase(opts) {
+          savedMcpPath = (opts as Record<string, unknown>)[
+            "mcpConfigPath"
+          ] as string;
+          return Promise.resolve({ stdout: "", stderr: "", code: 0 });
+        },
+      };
+      await executePhase(
+        {
+          ticketDir,
+          stateDir: dirname(ticketDir),
+          outputFile: "out.md",
+          phase: "spec",
+          scopeDirs: [],
+          prompt: "p",
+          worktrees: {
+            k: { path: "/code/jackjennings/lazyboy", branch: "b" },
+          },
+          homeDir,
+          provider: "anthropic",
+          model: "m",
+          thinking: "off",
+          agentType: "claude-code",
+          codegraphRoots: ["/code/jackjennings"],
+          binaryFinder: () => Promise.resolve(true),
+        },
+        agent,
+      );
+      assertExists(savedMcpPath);
+      let exists = true;
+      try {
+        await Deno.stat(savedMcpPath!);
+      } catch {
+        exists = false;
+      }
+      assertFalse(exists);
+    } finally {
+      await Deno.remove(ticketDir, { recursive: true });
+      await Deno.remove(homeDir, { recursive: true });
+    }
+  },
+);

@@ -500,6 +500,8 @@ export async function executePhase(
     critiqueThinking?: string;
     barePhase?: string;
     hunkSkillResolver?: () => Promise<string | null>;
+    codegraphRoots?: string[];
+    binaryFinder?: (binary: string) => Promise<boolean>;
   },
   agent: CodeAgent,
 ): Promise<number> {
@@ -514,6 +516,42 @@ export async function executePhase(
     env = { ...env, ...piEnv };
   } else {
     await setupClaudeCodeDirectories(opts.homeDir);
+  }
+
+  let mcpConfigPath: string | undefined;
+  if (
+    opts.agentType === "claude-code" &&
+    opts.codegraphRoots !== undefined &&
+    opts.codegraphRoots.length > 0
+  ) {
+    const worktreePaths = Object.values(opts.worktrees).map((w) => w.path);
+    const primaryPath = worktreePaths[0] ?? "";
+    const qualifies = opts.codegraphRoots.some((root) =>
+      primaryPath.startsWith(root)
+    );
+    if (qualifies) {
+      const findBinary = opts.binaryFinder ??
+        ((binary: string) =>
+          new Deno.Command("which", {
+            args: [binary],
+            stdout: "null",
+            stderr: "null",
+          }).output().then((r) => r.code === 0));
+      const onPath = await findBinary("codegraph");
+      if (onPath) {
+        mcpConfigPath = await Deno.makeTempFile({ suffix: ".json" });
+        await writeTextFile(
+          mcpConfigPath,
+          JSON.stringify({
+            mcpServers: {
+              codegraph: { command: "codegraph", args: ["serve"] },
+            },
+          }),
+        );
+      } else {
+        console.error("codegraph not on PATH; skipping MCP");
+      }
+    }
   }
 
   const { contextFiles } = opts.contextFiles
@@ -571,217 +609,237 @@ export async function executePhase(
     // sidecar write failure does not affect the returned exit code
   }
 
-  const startMs = Temporal.Now.instant().epochMilliseconds;
-  const mainResult = await agent.runPhase({
-    prompt: opts.prompt + pathContext,
-    contextFiles,
-    cwd,
-    env,
-    provider: opts.provider,
-    model: opts.model,
-    thinking: opts.thinking,
-    sessionId: opts.sessionId,
-    resume: opts.resume,
-  });
-  const durationMs = Temporal.Now.instant().epochMilliseconds - startMs;
-  let rerunResult: { stdout: string; stderr: string; code: number } | null =
-    null;
-
-  const effectivePhase = opts.barePhase ?? opts.phase;
-  const critiquePath = join(
-    new URL("./phases/prompts/", import.meta.url).pathname,
-    `${effectivePhase}-critique.md`,
-  );
-  let critiquePrompt: string | null = null;
   try {
-    critiquePrompt = await readTextFile(critiquePath);
-  } catch { /* no critique prompt for this phase */ }
+    const startMs = Temporal.Now.instant().epochMilliseconds;
+    const mainResult = await (opts.agentType === "claude-code" &&
+        mcpConfigPath !== undefined
+      ? (agent as ClaudeCodeAgent).runPhase({
+        prompt: opts.prompt + pathContext,
+        contextFiles,
+        cwd,
+        env,
+        provider: opts.provider,
+        model: opts.model,
+        thinking: opts.thinking,
+        sessionId: opts.sessionId,
+        resume: opts.resume,
+        mcpConfigPath,
+      })
+      : agent.runPhase({
+        prompt: opts.prompt + pathContext,
+        contextFiles,
+        cwd,
+        env,
+        provider: opts.provider,
+        model: opts.model,
+        thinking: opts.thinking,
+        sessionId: opts.sessionId,
+        resume: opts.resume,
+      }));
+    const durationMs = Temporal.Now.instant().epochMilliseconds - startMs;
+    let rerunResult: { stdout: string; stderr: string; code: number } | null =
+      null;
 
-  if (critiquePrompt !== null) {
-    let draftPresent = false;
+    const effectivePhase = opts.barePhase ?? opts.phase;
+    const critiquePath = join(
+      new URL("./phases/prompts/", import.meta.url).pathname,
+      `${effectivePhase}-critique.md`,
+    );
+    let critiquePrompt: string | null = null;
     try {
-      await stat(outputFilePath);
-      draftPresent = true;
-    } catch { /* draft absent — skip critique */ }
+      critiquePrompt = await readTextFile(critiquePath);
+    } catch { /* no critique prompt for this phase */ }
 
-    if (draftPresent) {
-      const specFiles: string[] = [];
+    if (critiquePrompt !== null) {
+      let draftPresent = false;
       try {
-        for await (const entry of readDir(opts.ticketDir)) {
-          if (
-            entry.isFile &&
-            /^\d{8}T\d{6}-spec\.md$/.test(entry.name)
-          ) {
-            specFiles.push(entry.name);
-          }
-        }
-      } catch { /* unreadable */ }
-      specFiles.sort();
+        await stat(outputFilePath);
+        draftPresent = true;
+      } catch { /* draft absent — skip critique */ }
 
-      const critiqueContextFiles: string[] = [`@${outputFilePath}`];
-      const latestSpec = specFiles.at(-1);
-      if (latestSpec) {
-        critiqueContextFiles.push(`@${join(opts.ticketDir, latestSpec)}`);
-      }
-
-      const critiqueModelToUse = opts.critiqueModel ??
-        PHASE_MODEL_DEFAULTS.critique.model;
-      const critiqueThinkingToUse = opts.critiqueThinking ??
-        PHASE_MODEL_DEFAULTS.critique.thinking;
-
-      let critiqueResult: {
-        stdout: string;
-        stderr: string;
-        code: number;
-      } | null = null;
-      try {
-        critiqueResult = await agent.runPhase({
-          prompt: critiquePrompt + pathContext,
-          contextFiles: critiqueContextFiles,
-          cwd,
-          env,
-          provider: opts.provider,
-          model: critiqueModelToUse,
-          thinking: critiqueThinkingToUse,
-        });
-      } catch { /* critique agent crash — pass through */ }
-
-      if (critiqueResult !== null) {
-        let critiqueText = "";
+      if (draftPresent) {
+        const specFiles: string[] = [];
         try {
-          const extracted = opts.agentType === "claude-code"
-            ? extractClaudeCodeUsageAndText(
-              critiqueResult.stdout,
-              0,
-              critiqueModelToUse,
-            )
-            : extractUsageAndText(critiqueResult.stdout, 0);
-          critiqueText = extracted.text;
-        } catch { /* garbled output — treat as APPROVED */ }
+          for await (const entry of readDir(opts.ticketDir)) {
+            if (
+              entry.isFile &&
+              /^\d{8}T\d{6}-spec\.md$/.test(entry.name)
+            ) {
+              specFiles.push(entry.name);
+            }
+          }
+        } catch { /* unreadable */ }
+        specFiles.sort();
 
-        const verdictMatch = /VERDICT:\s*(APPROVED|ISSUES_FOUND)/im.exec(
-          critiqueText,
-        );
-        if (verdictMatch?.[1]?.toUpperCase() === "ISSUES_FOUND") {
-          const ts = compactTimestamp(Temporal.Now.zonedDateTimeISO("UTC"));
-          await writeTextFile(
-            join(opts.ticketDir, `${ts}-${opts.phase}-critique.md`),
-            critiqueText,
-          );
-          rerunResult = await agent.runPhase({
-            prompt: await renderPrompt(
-              new URL(
-                "./phases/critique-rerun-user.prompt.hbs",
-                import.meta.url,
-              ),
-              { basePrompt: opts.prompt, pathContext, critiqueText },
-            ),
-            contextFiles,
+        const critiqueContextFiles: string[] = [`@${outputFilePath}`];
+        const latestSpec = specFiles.at(-1);
+        if (latestSpec) {
+          critiqueContextFiles.push(`@${join(opts.ticketDir, latestSpec)}`);
+        }
+
+        const critiqueModelToUse = opts.critiqueModel ??
+          PHASE_MODEL_DEFAULTS.critique.model;
+        const critiqueThinkingToUse = opts.critiqueThinking ??
+          PHASE_MODEL_DEFAULTS.critique.thinking;
+
+        let critiqueResult: {
+          stdout: string;
+          stderr: string;
+          code: number;
+        } | null = null;
+        try {
+          critiqueResult = await agent.runPhase({
+            prompt: critiquePrompt + pathContext,
+            contextFiles: critiqueContextFiles,
             cwd,
             env,
             provider: opts.provider,
-            model: opts.model,
-            thinking: opts.thinking,
+            model: critiqueModelToUse,
+            thinking: critiqueThinkingToUse,
           });
+        } catch { /* critique agent crash — pass through */ }
+
+        if (critiqueResult !== null) {
+          let critiqueText = "";
+          try {
+            const extracted = opts.agentType === "claude-code"
+              ? extractClaudeCodeUsageAndText(
+                critiqueResult.stdout,
+                0,
+                critiqueModelToUse,
+              )
+              : extractUsageAndText(critiqueResult.stdout, 0);
+            critiqueText = extracted.text;
+          } catch { /* garbled output — treat as APPROVED */ }
+
+          const verdictMatch = /VERDICT:\s*(APPROVED|ISSUES_FOUND)/im.exec(
+            critiqueText,
+          );
+          if (verdictMatch?.[1]?.toUpperCase() === "ISSUES_FOUND") {
+            const ts = compactTimestamp(Temporal.Now.zonedDateTimeISO("UTC"));
+            await writeTextFile(
+              join(opts.ticketDir, `${ts}-${opts.phase}-critique.md`),
+              critiqueText,
+            );
+            rerunResult = await agent.runPhase({
+              prompt: await renderPrompt(
+                new URL(
+                  "./phases/critique-rerun-user.prompt.hbs",
+                  import.meta.url,
+                ),
+                { basePrompt: opts.prompt, pathContext, critiqueText },
+              ),
+              contextFiles,
+              cwd,
+              env,
+              provider: opts.provider,
+              model: opts.model,
+              thinking: opts.thinking,
+            });
+          }
         }
       }
     }
-  }
 
-  const finalResult = rerunResult ?? mainResult;
+    const finalResult = rerunResult ?? mainResult;
 
-  const { usage: mainUsage } = opts.agentType === "claude-code"
-    ? extractClaudeCodeUsageAndText(mainResult.stdout, durationMs, opts.model)
-    : extractUsageAndText(mainResult.stdout, durationMs);
+    const { usage: mainUsage } = opts.agentType === "claude-code"
+      ? extractClaudeCodeUsageAndText(mainResult.stdout, durationMs, opts.model)
+      : extractUsageAndText(mainResult.stdout, durationMs);
 
-  let usage: PhaseUsage | null = mainUsage;
+    let usage: PhaseUsage | null = mainUsage;
 
-  if (rerunResult !== null && mainUsage !== null) {
-    const { usage: rerunUsage } = opts.agentType === "claude-code"
-      ? extractClaudeCodeUsageAndText(rerunResult.stdout, 0, opts.model)
-      : extractUsageAndText(rerunResult.stdout, 0);
-    if (rerunUsage !== null) {
-      usage = {
-        ...mainUsage,
-        models: [...mainUsage.models, ...rerunUsage.models],
-      };
-    }
-  }
-
-  if (usage !== null) {
-    try {
-      const cacheText = await readTextFile(
-        join(opts.homeDir, ".urras", "anthropic-pricing.json"),
-      );
-      const pricingCache = JSON.parse(cacheText) as AnthropicPricingCache;
-      for (const modelEntry of usage.models) {
-        const cost = calculateAnthropicCost(modelEntry, pricingCache.models);
-        if (cost !== null) modelEntry.costUsd = cost;
+    if (rerunResult !== null && mainUsage !== null) {
+      const { usage: rerunUsage } = opts.agentType === "claude-code"
+        ? extractClaudeCodeUsageAndText(rerunResult.stdout, 0, opts.model)
+        : extractUsageAndText(rerunResult.stdout, 0);
+      if (rerunUsage !== null) {
+        usage = {
+          ...mainUsage,
+          models: [...mainUsage.models, ...rerunUsage.models],
+        };
       }
-    } catch {
-      // pricing unavailable
     }
-    await writeTextFile(
-      join(opts.ticketDir, opts.outputFile.replace(/\.md$/, ".usage.json")),
-      JSON.stringify(usage),
-    );
-  }
 
-  const sessionId = opts.agentType === "claude-code"
-    ? extractClaudeCodeSessionId(finalResult.stdout)
-    : extractSessionId(finalResult.stdout);
+    if (usage !== null) {
+      try {
+        const cacheText = await readTextFile(
+          join(opts.homeDir, ".urras", "anthropic-pricing.json"),
+        );
+        const pricingCache = JSON.parse(cacheText) as AnthropicPricingCache;
+        for (const modelEntry of usage.models) {
+          const cost = calculateAnthropicCost(modelEntry, pricingCache.models);
+          if (cost !== null) modelEntry.costUsd = cost;
+        }
+      } catch {
+        // pricing unavailable
+      }
+      await writeTextFile(
+        join(opts.ticketDir, opts.outputFile.replace(/\.md$/, ".usage.json")),
+        JSON.stringify(usage),
+      );
+    }
 
-  await appendPhaseLog(opts.ticketDir, {
-    event: "phase-end",
-    phase: opts.phase,
-    exitCode: finalResult.code,
-    output: finalResult.stderr,
-    ...(sessionId !== null ? { sessionId } : {}),
-  });
+    const sessionId = opts.agentType === "claude-code"
+      ? extractClaudeCodeSessionId(finalResult.stdout)
+      : extractSessionId(finalResult.stdout);
 
-  try {
-    await writeTextFile(
-      join(opts.ticketDir, opts.outputFile + ".exit"),
-      String(finalResult.code),
-    );
-  } catch {
-    // sidecar write failure does not affect the returned exit code
-  }
+    await appendPhaseLog(opts.ticketDir, {
+      event: "phase-end",
+      phase: opts.phase,
+      exitCode: finalResult.code,
+      output: finalResult.stderr,
+      ...(sessionId !== null ? { sessionId } : {}),
+    });
 
-  if (sessionId !== null) {
     try {
       await writeTextFile(
-        join(opts.ticketDir, opts.outputFile + ".session"),
-        sessionId,
+        join(opts.ticketDir, opts.outputFile + ".exit"),
+        String(finalResult.code),
       );
     } catch {
       // sidecar write failure does not affect the returned exit code
     }
-  }
 
-  try {
-    if (opts.languageModel === undefined) throw new Error("no-model");
-    const ticketProvider = opts.ticketId?.split("/")[0];
-    const selfApproveResult = await Effect.runPromise(selfApprove({
-      phase: effectivePhase,
-      ticketDir: opts.ticketDir,
-      model: opts.languageModel,
-      worktreePath: (ticketProvider && opts.ticketId)
-        ? opts.worktrees[deriveProjectPath(ticketProvider, opts.ticketId)]
-          ?.path
-        : undefined,
-      stateDir: opts.stateDir,
-      ticketId: opts.ticketId,
-    }));
-    await writeTextFile(
-      join(opts.ticketDir, opts.outputFile + ".selfapprove"),
-      JSON.stringify(selfApproveResult),
-    );
-  } catch {
-    // sidecar write failure does not affect the returned exit code
-  }
+    if (sessionId !== null) {
+      try {
+        await writeTextFile(
+          join(opts.ticketDir, opts.outputFile + ".session"),
+          sessionId,
+        );
+      } catch {
+        // sidecar write failure does not affect the returned exit code
+      }
+    }
 
-  return finalResult.code;
+    try {
+      if (opts.languageModel === undefined) throw new Error("no-model");
+      const ticketProvider = opts.ticketId?.split("/")[0];
+      const selfApproveResult = await Effect.runPromise(selfApprove({
+        phase: effectivePhase,
+        ticketDir: opts.ticketDir,
+        model: opts.languageModel,
+        worktreePath: (ticketProvider && opts.ticketId)
+          ? opts.worktrees[deriveProjectPath(ticketProvider, opts.ticketId)]
+            ?.path
+          : undefined,
+        stateDir: opts.stateDir,
+        ticketId: opts.ticketId,
+      }));
+      await writeTextFile(
+        join(opts.ticketDir, opts.outputFile + ".selfapprove"),
+        JSON.stringify(selfApproveResult),
+      );
+    } catch {
+      // sidecar write failure does not affect the returned exit code
+    }
+
+    return finalResult.code;
+  } finally {
+    if (mcpConfigPath !== undefined) {
+      await remove(mcpConfigPath).catch(() => {});
+    }
+  }
 }
 
 export async function readPhaseSessionId(
@@ -856,6 +914,7 @@ if (import.meta.main) {
       "critique-model",
       "critique-thinking",
       "ollama-models",
+      "codegraph-roots",
     ],
     boolean: ["skip-principles", "resume"],
   });
@@ -902,6 +961,10 @@ if (import.meta.main) {
     }),
   ]);
 
+  const codegraphRoots: string[] = args["codegraph-roots"]
+    ? (JSON.parse(args["codegraph-roots"]) as string[])
+    : [];
+
   const code = await executePhase(
     {
       ticketDir,
@@ -926,6 +989,13 @@ if (import.meta.main) {
       critiqueModel: args["critique-model"] ?? undefined,
       critiqueThinking: args["critique-thinking"] ?? undefined,
       hunkSkillResolver: () => resolveHunkSkillPath(captureCommandRunner()),
+      codegraphRoots,
+      binaryFinder: (binary: string) =>
+        new Deno.Command("which", {
+          args: [binary],
+          stdout: "null",
+          stderr: "null",
+        }).output().then((r) => r.code === 0),
     },
     agentType === "claude-code"
       ? new ClaudeCodeAgent(

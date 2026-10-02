@@ -1342,6 +1342,9 @@ export function composeTickDeps(
             }))
             : undefined,
           barePhase: opts.phase,
+          codegraphRoots: config.codegraph?.enabled
+            ? (config.codegraph.roots ?? [])
+            : [],
         });
       },
       isProcessAlive: (ticketId: string) =>
