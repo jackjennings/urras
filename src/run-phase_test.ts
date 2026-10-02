@@ -23,6 +23,7 @@ import {
   extractUsageAndText,
   getPiEnvironmentVariables,
   readSelfApprove,
+  resolveHunkSkillPath,
   setupClaudeCodeDirectories,
   setupPiDirectories,
 } from "./run-phase.ts";
@@ -3920,6 +3921,178 @@ Deno.test(
         join(ticketDir, "20260911T153053-spec.md.selfapprove"),
       );
       assertEquals(JSON.parse(sidecar).approved, true);
+    } finally {
+      await Deno.remove(ticketDir, { recursive: true });
+      await Deno.remove(homeDir, { recursive: true });
+    }
+  },
+);
+
+// ── resolveHunkSkillPath ─────────────────────────────────────────────────────
+
+Deno.test(
+  "resolveHunkSkillPath: returns trimmed path when command exits 0 and file exists",
+  async () => {
+    const tempDir = await Deno.makeTempDir();
+    const skillPath = join(tempDir, "SKILL.md");
+    try {
+      await Deno.writeTextFile(skillPath, "# Hunk Skill");
+      const result = await resolveHunkSkillPath((args) => {
+        assertEquals(args[0], "hunk");
+        return Promise.resolve({ code: 0, stdout: `${skillPath}\n` });
+      });
+      assertEquals(result, skillPath);
+    } finally {
+      await Deno.remove(tempDir, { recursive: true });
+    }
+  },
+);
+
+Deno.test("resolveHunkSkillPath: returns null when command exits non-zero", async () => {
+  const result = await resolveHunkSkillPath(() =>
+    Promise.resolve({ code: 1, stdout: "" })
+  );
+  assertEquals(result, null);
+});
+
+Deno.test(
+  "resolveHunkSkillPath: returns null when path does not exist on disk",
+  async () => {
+    const result = await resolveHunkSkillPath(() =>
+      Promise.resolve({ code: 0, stdout: "/nonexistent/SKILL.md\n" })
+    );
+    assertEquals(result, null);
+  },
+);
+
+Deno.test("resolveHunkSkillPath: returns null when command throws", async () => {
+  const result = await resolveHunkSkillPath(() => {
+    throw new Error("command not found");
+  });
+  assertEquals(result, null);
+});
+
+// ── executePhase hunk injection ──────────────────────────────────────────────
+
+Deno.test(
+  "executePhase: appends hunk SKILL.md to contextFiles for implementation phase when resolver returns a path",
+  async () => {
+    const ticketDir = await Deno.makeTempDir();
+    const homeDir = await Deno.makeTempDir();
+    const skillDir = await Deno.makeTempDir();
+    const skillFile = join(skillDir, "SKILL.md");
+    try {
+      await Deno.writeTextFile(join(ticketDir, "meta.md"), "---\n---\n");
+      await Deno.writeTextFile(skillFile, "# Hunk");
+      let capturedContextFiles: string[] = [];
+      const agent: CodeAgent = {
+        runPhase(opts) {
+          capturedContextFiles = opts.contextFiles;
+          return Promise.resolve({ stdout: "", stderr: "", code: 0 });
+        },
+      };
+      await executePhase(
+        {
+          ticketDir,
+          stateDir: dirname(ticketDir),
+          outputFile: "out.md",
+          phase: "implementation",
+          scopeDirs: [],
+          prompt: "p",
+          worktrees: {},
+          homeDir,
+          provider: "anthropic",
+          model: "claude-sonnet-4-6",
+          thinking: "off",
+          agentType: "pi",
+          hunkSkillResolver: () => Promise.resolve(skillFile),
+        },
+        agent,
+      );
+      assertArrayIncludes(capturedContextFiles, [`@${skillFile}`]);
+    } finally {
+      await Deno.remove(ticketDir, { recursive: true });
+      await Deno.remove(homeDir, { recursive: true });
+      await Deno.remove(skillDir, { recursive: true });
+    }
+  },
+);
+
+Deno.test(
+  "executePhase: does not append to contextFiles when hunkSkillResolver returns null",
+  async () => {
+    const ticketDir = await Deno.makeTempDir();
+    const homeDir = await Deno.makeTempDir();
+    try {
+      await Deno.writeTextFile(join(ticketDir, "meta.md"), "---\n---\n");
+      let capturedContextFiles: string[] = [];
+      const agent: CodeAgent = {
+        runPhase(opts) {
+          capturedContextFiles = opts.contextFiles;
+          return Promise.resolve({ stdout: "", stderr: "", code: 0 });
+        },
+      };
+      await executePhase(
+        {
+          ticketDir,
+          stateDir: dirname(ticketDir),
+          outputFile: "out.md",
+          phase: "implementation",
+          scopeDirs: [],
+          prompt: "p",
+          worktrees: {},
+          homeDir,
+          provider: "anthropic",
+          model: "claude-sonnet-4-6",
+          thinking: "off",
+          agentType: "pi",
+          hunkSkillResolver: () => Promise.resolve(null),
+        },
+        agent,
+      );
+      assertFalse(capturedContextFiles.some((f) => f.includes("SKILL")));
+    } finally {
+      await Deno.remove(ticketDir, { recursive: true });
+      await Deno.remove(homeDir, { recursive: true });
+    }
+  },
+);
+
+Deno.test(
+  "executePhase: does not invoke hunkSkillResolver for non-implementation phases",
+  async () => {
+    const ticketDir = await Deno.makeTempDir();
+    const homeDir = await Deno.makeTempDir();
+    try {
+      await Deno.writeTextFile(join(ticketDir, "meta.md"), "---\n---\n");
+      let resolverCalled = false;
+      const agent: CodeAgent = {
+        runPhase() {
+          return Promise.resolve({ stdout: "", stderr: "", code: 0 });
+        },
+      };
+      await executePhase(
+        {
+          ticketDir,
+          stateDir: dirname(ticketDir),
+          outputFile: "out.md",
+          phase: "intake",
+          scopeDirs: [],
+          prompt: "p",
+          worktrees: {},
+          homeDir,
+          provider: "anthropic",
+          model: "claude-sonnet-4-6",
+          thinking: "off",
+          agentType: "pi",
+          hunkSkillResolver: () => {
+            resolverCalled = true;
+            return Promise.resolve(null);
+          },
+        },
+        agent,
+      );
+      assertFalse(resolverCalled);
     } finally {
       await Deno.remove(ticketDir, { recursive: true });
       await Deno.remove(homeDir, { recursive: true });
