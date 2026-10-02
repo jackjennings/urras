@@ -68,15 +68,12 @@ export function launchagentHealthCheck(deps: LaunchAgentHealthDeps): Check {
 
       try {
         const plistContent = await deps.readTextFile(deps.plistPath);
-        const match = plistContent.match(
-          /<key>StartInterval<\/key>\s*<integer>(\d+)<\/integer>/,
+        const hasKeepAlive = /<key>KeepAlive<\/key>\s*<true\/>/.test(
+          plistContent,
         );
-        if (!match) {
+        if (!hasKeepAlive) {
           status = worstStatus(status, "fail");
-          details.push("StartInterval not found in installed plist");
-        } else if (parseInt(match[1], 10) !== 300) {
-          status = worstStatus(status, "fail");
-          details.push(`StartInterval is ${match[1]}, expected 300`);
+          details.push("KeepAlive not set in installed plist");
         }
       } catch (e) {
         if (e instanceof Deno.errors.NotFound) {

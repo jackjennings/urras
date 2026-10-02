@@ -22,16 +22,14 @@ export function plistContent(lazboyDir: string): string {
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
-    <string>${lazboyDir}/scripts/tick.sh</string>
+    <string>${lazboyDir}/scripts/daemon.sh</string>
   </array>
-  <key>StartInterval</key>
-  <integer>300</integer>
+  <key>KeepAlive</key>
+  <true/>
   <key>RunAtLoad</key>
   <true/>
   <key>AbandonProcessGroup</key>
   <true/>
-  <key>ExitTimeOut</key>
-  <integer>30</integer>
 </dict>
 </plist>
 `;
@@ -79,7 +77,7 @@ export async function enableLaunchd(lazboyDir: string): Promise<void> {
   await new Deno.Command("launchctl", {
     args: ["bootstrap", `gui/${Deno.uid()}`, path],
   }).output();
-  console.log("Enabled: tick runs every 5 minutes.");
+  console.log("Enabled.");
 }
 
 export async function disableLaunchd(): Promise<void> {

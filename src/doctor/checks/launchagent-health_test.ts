@@ -1,9 +1,9 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
 import { launchagentHealthCheck } from "./launchagent-health.ts";
 
-const PLIST_WITH_300 = `<dict>
-  <key>StartInterval</key>
-  <integer>300</integer>
+const PLIST_WITH_KEEPALIVE = `<dict>
+  <key>KeepAlive</key>
+  <true/>
 </dict>`;
 
 const BTM_WITH_ALLOWED = `BackgroundTask {
@@ -35,7 +35,7 @@ function makeDeps(
       }
       return Promise.resolve({ code: 0, stdout: "" });
     },
-    readTextFile: () => Promise.resolve(PLIST_WITH_300),
+    readTextFile: () => Promise.resolve(PLIST_WITH_KEEPALIVE),
     uid: 501,
     plistPath: "/Library/LaunchAgents/com.jackjennings.urras.plist",
     ...overrides,
@@ -106,13 +106,12 @@ Deno.test("launchagentHealthCheck: sfltool timeout → warn, not fail", async ()
   assertEquals(result.status, "warn");
 });
 
-Deno.test("launchagentHealthCheck: StartInterval != 300 → fail", async () => {
+Deno.test("launchagentHealthCheck: KeepAlive absent → fail", async () => {
   const result = await launchagentHealthCheck(makeDeps({
-    readTextFile: () =>
-      Promise.resolve(`<key>StartInterval</key><integer>60</integer>`),
+    readTextFile: () => Promise.resolve(`<dict></dict>`),
   })).run();
   assertEquals(result.status, "fail");
-  assertStringIncludes(result.detail, "StartInterval");
+  assertStringIncludes(result.detail, "KeepAlive");
 });
 
 Deno.test("launchagentHealthCheck: explicitly disabled → fail", async () => {
