@@ -20,7 +20,7 @@ import {
 } from "../state/types.ts";
 import { type ActivePhase, PHASE_SEQUENCE } from "./types.ts";
 import type { ModelablePhase } from "./model.ts";
-import { readDir, readTextFile } from "../filesystem.ts";
+import { readDir, readTextFile, remove } from "../filesystem.ts";
 import { deriveProjectPath } from "./project-path.ts";
 import type {
   SelfReviewModelError,
@@ -140,6 +140,7 @@ export async function advancePhase(
         ticket.id,
       );
       let commentContext = "";
+      const collectedContextFilePaths: string[] = [];
       try {
         const contextFiles: string[] = [];
         for await (const entry of readDir(join(stateDir, ticket.id))) {
@@ -152,9 +153,15 @@ export async function advancePhase(
           }
         }
         contextFiles.sort();
-        const last = contextFiles.at(-1);
-        if (last) {
-          commentContext = await readTextFile(join(stateDir, ticket.id, last));
+        const parts: string[] = [];
+        for (const filename of contextFiles) {
+          const filePath = join(stateDir, ticket.id, filename);
+          const content = await readTextFile(filePath);
+          parts.push(`<!-- ${filename} -->\n${content}`);
+          collectedContextFilePaths.push(filePath);
+        }
+        if (parts.length > 0) {
+          commentContext = parts.join("\n\n---\n\n");
         }
       } catch {
         // directory missing or unreadable — proceed without comment context
@@ -204,6 +211,13 @@ export async function advancePhase(
         sessionId,
         resume: sessionId !== undefined,
       });
+      for (const filePath of collectedContextFilePaths) {
+        try {
+          await remove(filePath);
+        } catch {
+          // stale file on next revision is preferable to log noise
+        }
+      }
       await deps.writeTicket(stateDir, {
         ...ticket,
         status: "running",
