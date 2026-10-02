@@ -8,7 +8,7 @@ const REQUIRED_BINARIES = [
   "git-worktreeinclude",
 ];
 
-const OPTIONAL_BINARIES = ["git-absorb", "tuicr"];
+const OPTIONAL_BINARIES = ["git-absorb", "hunk"];
 
 export interface HostDependenciesDeps {
   runCommand: CommandRunner;
@@ -43,7 +43,7 @@ export function hostDependenciesCheck(deps: HostDependenciesDeps): Check {
         return {
           status: "warn",
           detail: `Optional binaries not found: ${missingOptional.join(", ")}`,
-          remedy: "brew install git-absorb",
+          remedy: `brew install ${missingOptional.join(" ")}`,
         };
       }
 

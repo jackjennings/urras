@@ -33,7 +33,7 @@ import {
 } from "@earendil-works/pi-tui";
 import { expandHome, loadConfig } from "./config.ts";
 import { captureCommandRunner, defaultCommandRunner } from "./apfel.ts";
-import { checkTuicrAvailable } from "./tuicr.ts";
+import { checkHunkAvailable } from "./hunk.ts";
 import { parsePrUrl } from "./providers/github/identity.ts";
 import { ApfelLanguageModel } from "./models/apfel.ts";
 import { ClaudeLanguageModel } from "./models/claude.ts";
@@ -422,8 +422,8 @@ export interface ReviewSessionOptions {
   commit?: typeof commitTicket;
   getKeybindings?: () => KeybindingsManager;
   setKeybindings?: (kb: KeybindingsManager) => void;
-  checkTuicr?: () => Promise<boolean>;
-  spawnTuicr?: (worktreePath: string, prNumber: number) => Promise<void>;
+  checkHunk?: () => Promise<boolean>;
+  spawnHunk?: (worktreePath: string, prNumber: number) => Promise<void>;
 }
 
 export interface ReviewSessionCreateOptions {
@@ -475,8 +475,8 @@ export class ReviewSession implements Component, Focusable {
     worktreePath: string | undefined,
   ) => Promise<void>;
   private readonly setKeybindings: (kb: KeybindingsManager) => void;
-  private readonly checkTuicr: () => Promise<boolean>;
-  private readonly spawnTuicr: (
+  private readonly checkHunk: () => Promise<boolean>;
+  private readonly spawnHunk: (
     worktreePath: string,
     prNumber: number,
   ) => Promise<void>;
@@ -495,8 +495,8 @@ export class ReviewSession implements Component, Focusable {
     commit = commitTicket,
     getKeybindings: getKeybindingsArg = getKeybindings,
     setKeybindings: setKeybindingsArg = setKeybindings,
-    checkTuicr: checkTuicrArg,
-    spawnTuicr: spawnTuicrArg,
+    checkHunk: checkHunkArg,
+    spawnHunk: spawnHunkArg,
   }: ReviewSessionOptions) {
     this.id = id;
     this.stateDir = stateDir;
@@ -600,13 +600,13 @@ export class ReviewSession implements Component, Focusable {
 
     this.editor.onSubmit = this.handleSubmit;
 
-    this.checkTuicr = checkTuicrArg ??
-      (() => checkTuicrAvailable(defaultCommandRunner()));
-    this.spawnTuicr = spawnTuicrArg ??
+    this.checkHunk = checkHunkArg ??
+      (() => checkHunkAvailable(defaultCommandRunner()));
+    this.spawnHunk = spawnHunkArg ??
       (async (worktreePath: string, prNumber: number): Promise<void> => {
         tui.stop();
-        const child = new Deno.Command("tuicr", {
-          args: ["pr", String(prNumber)],
+        const child = new Deno.Command("hunk", {
+          args: ["gh", "pr", String(prNumber)],
           cwd: worktreePath,
           stdin: "inherit",
           stdout: "inherit",
@@ -736,10 +736,10 @@ export class ReviewSession implements Component, Focusable {
             return;
           }
 
-          const available = await this.checkTuicr();
+          const available = await this.checkHunk();
           if (!available) {
             this.errorOverlay.setMessage(
-              "tuicr not found on PATH. Install from tuicr.dev.",
+              "hunk not found on PATH. Install with: brew install hunk",
             );
             this.errorHandle.setHidden(false);
             this.errorHandle.focus();
@@ -752,7 +752,7 @@ export class ReviewSession implements Component, Focusable {
             const worktreePath = this.ticket.worktrees[pr.worktreeKey!].path;
             const parsed = parsePrUrl(pr.url);
             if (!parsed) return;
-            await this.spawnTuicr(worktreePath, parsed.number);
+            await this.spawnHunk(worktreePath, parsed.number);
           } else {
             const items: SelectItem[] = eligiblePrs.map((pr) => ({
               value: pr.url,
@@ -781,7 +781,7 @@ export class ReviewSession implements Component, Focusable {
               const worktreePath = this.ticket.worktrees[pr.worktreeKey!].path;
               const parsed = parsePrUrl(pr.url);
               if (!parsed) return;
-              await this.spawnTuicr(worktreePath, parsed.number);
+              await this.spawnHunk(worktreePath, parsed.number);
             };
 
             picker.onCancel = () => {

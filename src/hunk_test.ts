@@ -1,31 +1,31 @@
 import { assert, assertEquals, assertFalse } from "@std/assert";
 import { spy } from "@std/testing/mock";
-import { checkTuicrAvailable } from "./tuicr.ts";
+import { checkHunkAvailable } from "./hunk.ts";
 
 Deno.test(
-  "checkTuicrAvailable: returns true when runner exits with code 0",
+  "checkHunkAvailable: returns true when runner exits with code 0",
   async () => {
     const run = spy((_args: string[]) =>
       Promise.resolve({ code: 0, stdout: "" })
     );
-    assert(await checkTuicrAvailable(run));
+    assert(await checkHunkAvailable(run));
   },
 );
 
 Deno.test(
-  "checkTuicrAvailable: returns false when runner exits with non-zero code",
+  "checkHunkAvailable: returns false when runner exits with non-zero code",
   async () => {
     const run = spy((_args: string[]) =>
       Promise.resolve({ code: 127, stdout: "" })
     );
-    assertFalse(await checkTuicrAvailable(run));
+    assertFalse(await checkHunkAvailable(run));
   },
 );
 
-Deno.test("checkTuicrAvailable: runs which tuicr", async () => {
+Deno.test("checkHunkAvailable: runs which hunk", async () => {
   const run = spy((_args: string[]) =>
     Promise.resolve({ code: 0, stdout: "" })
   );
-  await checkTuicrAvailable(run);
-  assertEquals(run.calls[0].args[0], ["which", "tuicr"]);
+  await checkHunkAvailable(run);
+  assertEquals(run.calls[0].args[0], ["which", "hunk"]);
 });

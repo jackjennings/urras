@@ -1,4 +1,4 @@
-import { assertEquals, assertStringIncludes } from "@std/assert";
+import { assertEquals, assertFalse, assertStringIncludes } from "@std/assert";
 import { hostDependenciesCheck } from "./host-dependencies.ts";
 
 Deno.test("hostDependenciesCheck: all binaries found → pass", async () => {
@@ -78,15 +78,81 @@ Deno.test(
 );
 
 Deno.test(
-  "hostDependenciesCheck: tuicr missing, all required present → warn with tuicr in detail",
+  "hostDependenciesCheck: hunk missing, all required present → warn with hunk in detail",
   async () => {
     const result = await hostDependenciesCheck({
       runCommand: (args) =>
-        args[1] === "tuicr"
+        args[1] === "hunk"
           ? Promise.resolve({ code: 1, stdout: "" })
           : Promise.resolve({ code: 0, stdout: "/usr/bin/x\n" }),
     }).run();
     assertEquals(result.status, "warn");
-    assertStringIncludes(result.detail, "tuicr");
+    assertStringIncludes(result.detail, "hunk");
+  },
+);
+
+Deno.test(
+  "hostDependenciesCheck: git-absorb missing → remedy lists only git-absorb",
+  async () => {
+    const result = await hostDependenciesCheck({
+      runCommand: (args) =>
+        args[1] === "git-absorb"
+          ? Promise.resolve({ code: 1, stdout: "" })
+          : Promise.resolve({ code: 0, stdout: "/usr/bin/x\n" }),
+    }).run();
+    assertEquals(result.remedy, "brew install git-absorb");
+  },
+);
+
+Deno.test(
+  "hostDependenciesCheck: hunk missing → remedy lists only hunk",
+  async () => {
+    const result = await hostDependenciesCheck({
+      runCommand: (args) =>
+        args[1] === "hunk"
+          ? Promise.resolve({ code: 1, stdout: "" })
+          : Promise.resolve({ code: 0, stdout: "/usr/bin/x\n" }),
+    }).run();
+    assertEquals(result.remedy, "brew install hunk");
+  },
+);
+
+Deno.test(
+  "hostDependenciesCheck: both optional missing → remedy lists both",
+  async () => {
+    const missing = new Set(["git-absorb", "hunk"]);
+    const result = await hostDependenciesCheck({
+      runCommand: (args) =>
+        missing.has(args[1])
+          ? Promise.resolve({ code: 1, stdout: "" })
+          : Promise.resolve({ code: 0, stdout: "/usr/bin/x\n" }),
+    }).run();
+    assertEquals(result.remedy, "brew install git-absorb hunk");
+  },
+);
+
+Deno.test(
+  "hostDependenciesCheck: git-absorb missing → remedy does not include hunk",
+  async () => {
+    const result = await hostDependenciesCheck({
+      runCommand: (args) =>
+        args[1] === "git-absorb"
+          ? Promise.resolve({ code: 1, stdout: "" })
+          : Promise.resolve({ code: 0, stdout: "/usr/bin/x\n" }),
+    }).run();
+    assertFalse(result.remedy?.includes("hunk"));
+  },
+);
+
+Deno.test(
+  "hostDependenciesCheck: hunk missing → remedy does not include git-absorb",
+  async () => {
+    const result = await hostDependenciesCheck({
+      runCommand: (args) =>
+        args[1] === "hunk"
+          ? Promise.resolve({ code: 1, stdout: "" })
+          : Promise.resolve({ code: 0, stdout: "/usr/bin/x\n" }),
+    }).run();
+    assertFalse(result.remedy?.includes("git-absorb"));
   },
 );
