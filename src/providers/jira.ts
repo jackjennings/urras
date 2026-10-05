@@ -39,6 +39,7 @@ export class JiraProvider implements Provider {
   private project: string;
   private doneStatusName: string;
   private pickupStatusName: string;
+  private paused: boolean;
   private http: HttpClient;
   private judgeCommentModel: LanguageModel;
 
@@ -49,6 +50,7 @@ export class JiraProvider implements Provider {
     project: string;
     doneStatusName: string;
     pickupStatusName?: string;
+    paused?: boolean;
     http: HttpClient;
     judgeCommentModel?: LanguageModel;
   }) {
@@ -58,6 +60,7 @@ export class JiraProvider implements Provider {
     this.project = opts.project;
     this.doneStatusName = opts.doneStatusName;
     this.pickupStatusName = opts.pickupStatusName ?? "In Progress";
+    this.paused = opts.paused ?? false;
     this.http = opts.http;
     this.judgeCommentModel = opts.judgeCommentModel ??
       new FallbackLanguageModel([
@@ -215,6 +218,7 @@ export class JiraProvider implements Provider {
   }
 
   async fetchNew(knownIds: Set<string>): Promise<WorkItem[]> {
+    if (this.paused) return [];
     const jql =
       `assignee = currentUser() AND project = ${this.project} AND statusCategory != Done`;
     const url = `${this.baseUrl}/rest/api/3/search/jql`;

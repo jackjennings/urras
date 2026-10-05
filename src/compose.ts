@@ -404,6 +404,7 @@ export function composeTickDeps(
 
   const githubProvider = new GitHubProvider({
     repos: config.github.repos,
+    paused: config.github.paused,
     accountResolver: resolveAccount,
     resolveRepo,
     resolveOrg: (bareOrg) => ({
@@ -448,6 +449,7 @@ export function composeTickDeps(
       project: entry.project,
       doneStatusName: entry.statuses?.done ?? "Done",
       pickupStatusName: entry.statuses?.pickup ?? "In Progress",
+      paused: entry.paused,
       http,
       judgeCommentModel: new FallbackLanguageModel([
         new ApfelLanguageModel(captureCommandRunner()),

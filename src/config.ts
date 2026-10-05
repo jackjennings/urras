@@ -44,6 +44,7 @@ export async function loadConfig(path?: string): Promise<Config> {
       jira[name] = {
         baseUrl: entry.base_url,
         project: entry.project,
+        paused: entry.paused === true ? true : undefined,
         statuses: jiraStatuses,
       };
     }
@@ -262,9 +263,15 @@ export async function loadConfig(path?: string): Promise<Config> {
     };
   }
 
+  const githubPausedRaw = githubRaw.paused;
+  const githubPaused = Array.isArray(githubPausedRaw)
+    ? (githubPausedRaw as string[])
+    : undefined;
+
   return {
     github: {
       repos: githubRaw.repos as string[],
+      paused: githubPaused,
       accounts,
       orgs,
     },

@@ -183,6 +183,7 @@ export interface LearningState {
 export interface Config {
   github: {
     repos: string[];
+    paused?: string[];
     accounts?: Record<string, { tokenEnv: string; login: string }>;
     orgs?: Record<string, string>;
   };
@@ -206,6 +207,7 @@ export interface Config {
     {
       baseUrl: string;
       project: string;
+      paused?: boolean;
       statuses?: { pickup: string; done: string };
     }
   >;

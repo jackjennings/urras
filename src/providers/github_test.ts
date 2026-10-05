@@ -1124,3 +1124,73 @@ Deno.test(
     assertEquals(capturedAuth, "Bearer my-token");
   },
 );
+
+Deno.test("fetchNew skips org/repo slug when it is in the paused list", async () => {
+  let httpCalled = false;
+  const provider = new GitHubProvider({
+    repos: ["acme/api"],
+    paused: ["acme/api"],
+    accountResolver: fixedResolver("fake", "jackjennings"),
+    http: new HttpClient((_url, _init) => {
+      httpCalled = true;
+      return Promise.resolve(new Response("", { status: 200 }));
+    }),
+  });
+  const items = await provider.fetchNew(new Set());
+  assertFalse(httpCalled, "HTTP should not be called for a paused repo slug");
+  assertEquals(items.length, 0);
+});
+
+Deno.test("fetchNew does not skip org/repo slug when only the bare org is paused", async () => {
+  const provider = new GitHubProvider({
+    repos: ["acme/api"],
+    paused: ["acme"],
+    accountResolver: fixedResolver("fake", "jackjennings"),
+    http: new HttpClient((_url, _init) =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            data: {
+              repository: {
+                issues: {
+                  nodes: [
+                    {
+                      number: 1,
+                      title: "One",
+                      body: "desc",
+                      url: "https://github.com/acme/api/issues/1",
+                    },
+                  ],
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                },
+              },
+            },
+          }),
+          { status: 200 },
+        ),
+      )
+    ),
+  });
+  const items = await provider.fetchNew(new Set());
+  assertEquals(
+    items.length,
+    1,
+    "org/repo slug must not be affected by a bare-org pause",
+  );
+});
+
+Deno.test("fetchNew skips bare org when it is in the paused list", async () => {
+  let httpCalled = false;
+  const provider = new GitHubProvider({
+    repos: ["acme"],
+    paused: ["acme"],
+    accountResolver: fixedResolver("fake", "jackjennings"),
+    http: new HttpClient((_url, _init) => {
+      httpCalled = true;
+      return Promise.resolve(new Response("", { status: 200 }));
+    }),
+  });
+  const items = await provider.fetchNew(new Set());
+  assertFalse(httpCalled, "HTTP should not be called for a paused bare org");
+  assertEquals(items.length, 0);
+});
