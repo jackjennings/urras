@@ -44,6 +44,9 @@ export function makeTickDeps(overrides: Partial<TickDeps> = {}): TickDeps {
     adjudicatePhaseModel: () => Promise.resolve(null),
     readRunPidBootStamp: () => Promise.resolve(null),
     currentBootId: () => "boot",
+    runVerification: () => Promise.resolve({ exitCode: 0, output: "" }),
+    writeVerificationContext: () => Promise.resolve(),
+    config: undefined,
     ...overrides,
   };
 }
