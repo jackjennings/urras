@@ -47,7 +47,6 @@ export function makeTickDeps(overrides: Partial<TickDeps> = {}): TickDeps {
     runVerification: () => Promise.resolve({ exitCode: 0, output: "" }),
     writeVerificationContext: () => Promise.resolve(),
     config: undefined,
-    bootstrapGlossaryEntry: () => Promise.resolve(),
     ...overrides,
   };
 }

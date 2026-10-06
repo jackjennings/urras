@@ -3635,7 +3635,7 @@ Deno.test(
         runPhase: () => {
           return Deno.writeTextFile(
             join(ticketDir, "20260101T120000-intake.md"),
-            "## Proposed Scope\n\n```yaml\nscope:\n  - jackjennings/lazyboy\n```\n",
+            "## Proposed Scope\n\n```yaml\nscope:\n  - jackjennings/lazyboy\n```\n\n## Reasoning\n\nRight repo.\n\n## Glossary Entry\n\n### jackjennings/lazyboy\n\nA pipeline automation tool.\n",
           ).then(() => ({ stdout: "", stderr: "", code: 0 }));
         },
       };
