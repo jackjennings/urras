@@ -116,6 +116,7 @@ export interface TicketState {
   prs?: PrEntry[];
   newRepos?: string[];
   ciHandledRunIds?: string[];
+  consumedContextFiles?: string[];
   lastSeenCommentTimestamp?: string;
   lastSeenPrCommentTimestamp?: string;
   lastUpstreamSyncTimestamp?: string;

@@ -17,7 +17,6 @@ import { readTicket, writeTicket } from "../state/store.ts";
 import { SelfReviewModelError } from "../self-approve.ts";
 import { loadPromptFile } from "./runners.ts";
 import { makeTickDeps, makeTicket } from "../test-support.ts";
-import { exists } from "../filesystem.ts";
 
 type SpawnOpts = Parameters<TickDeps["spawn"]>[0];
 
@@ -3614,30 +3613,80 @@ Deno.test(
 );
 
 Deno.test(
-  "advancePhase: revising deletes context files after spawn",
+  "advancePhase: revising records consumed context filenames in ticket",
   async () => {
     const stateDir = await Deno.makeTempDir();
     const ticketDir = join(stateDir, "github", "org", "repo", "1");
     await Deno.mkdir(ticketDir, { recursive: true });
-    const file1 = join(ticketDir, "20260101T120000-comment-context.md");
-    const file2 = join(ticketDir, "20260201T080000-comment-context.md");
-    await Deno.writeTextFile(file1, "## New comments\n\nOlder comment");
-    await Deno.writeTextFile(file2, "## New comments\n\nNewer comment");
+    await Deno.writeTextFile(
+      join(ticketDir, "20260101T120000-comment-context.md"),
+      "## New comments\n\nOlder comment",
+    );
+    await Deno.writeTextFile(
+      join(ticketDir, "20260201T080000-comment-context.md"),
+      "## New comments\n\nNewer comment",
+    );
     const ticket = makeTicket({
       id: "github/org/repo/1",
       phase: "plan",
       status: "revising",
     });
+    const writtenTickets: TicketState[] = [];
     await advancePhase(
       ticket,
       stateDir,
       makeTickDeps({
         spawn: () => Promise.resolve(),
+        writeTicket: (_dir, t) => {
+          writtenTickets.push(t);
+          return Promise.resolve();
+        },
         resolveModelConfig: () => ({ model: "m", thinking: "off" }),
       }),
     );
-    assertFalse(await exists(file1));
-    assertFalse(await exists(file2));
+    const runningTicket = writtenTickets.find((t) => t.status === "running");
+    assertArrayIncludes(runningTicket?.consumedContextFiles ?? [], [
+      "20260101T120000-comment-context.md",
+      "20260201T080000-comment-context.md",
+    ]);
+    await Deno.remove(stateDir, { recursive: true });
+  },
+);
+
+Deno.test(
+  "advancePhase: revising skips context files already in consumedContextFiles",
+  async () => {
+    const stateDir = await Deno.makeTempDir();
+    const ticketDir = join(stateDir, "github", "org", "repo", "1");
+    await Deno.mkdir(ticketDir, { recursive: true });
+    await Deno.writeTextFile(
+      join(ticketDir, "20260101T120000-comment-context.md"),
+      "## New comments\n\nAlready consumed",
+    );
+    await Deno.writeTextFile(
+      join(ticketDir, "20260201T080000-comment-context.md"),
+      "## New comments\n\nNew comment",
+    );
+    const ticket = makeTicket({
+      id: "github/org/repo/1",
+      phase: "plan",
+      status: "revising",
+      consumedContextFiles: ["20260101T120000-comment-context.md"],
+    });
+    const spawnedPrompts: string[] = [];
+    await advancePhase(
+      ticket,
+      stateDir,
+      makeTickDeps({
+        spawn: (opts) => {
+          spawnedPrompts.push(opts.prompt);
+          return Promise.resolve();
+        },
+        resolveModelConfig: () => ({ model: "m", thinking: "off" }),
+      }),
+    );
+    assertFalse(spawnedPrompts[0].includes("Already consumed"));
+    assertStringIncludes(spawnedPrompts[0], "New comment");
     await Deno.remove(stateDir, { recursive: true });
   },
 );

@@ -20,7 +20,7 @@ import {
 } from "../state/types.ts";
 import { type ActivePhase, PHASE_SEQUENCE } from "./types.ts";
 import type { ModelablePhase } from "./model.ts";
-import { readDir, readTextFile, remove } from "../filesystem.ts";
+import { readDir, readTextFile } from "../filesystem.ts";
 import { deriveProjectPath } from "./project-path.ts";
 import type {
   SelfReviewModelError,
@@ -140,12 +140,14 @@ export async function advancePhase(
         ticket.id,
       );
       let commentContext = "";
-      const collectedContextFilePaths: string[] = [];
+      const alreadyConsumed = new Set(ticket.consumedContextFiles ?? []);
+      const newlyConsumedFilenames: string[] = [];
       try {
         const contextFiles: string[] = [];
         for await (const entry of readDir(join(stateDir, ticket.id))) {
           if (
             entry.isFile &&
+            !alreadyConsumed.has(entry.name) &&
             (entry.name.endsWith("-comment-context.md") ||
               entry.name.endsWith("-upstream-edit-context.md"))
           ) {
@@ -158,7 +160,7 @@ export async function advancePhase(
           const filePath = join(stateDir, ticket.id, filename);
           const content = await readTextFile(filePath);
           parts.push(`<!-- ${filename} -->\n${content}`);
-          collectedContextFilePaths.push(filePath);
+          newlyConsumedFilenames.push(filename);
         }
         if (parts.length > 0) {
           commentContext = parts.join("\n\n---\n\n");
@@ -211,18 +213,15 @@ export async function advancePhase(
         sessionId,
         resume: sessionId !== undefined,
       });
-      for (const filePath of collectedContextFilePaths) {
-        try {
-          await remove(filePath);
-        } catch {
-          // stale file on next revision is preferable to log noise
-        }
-      }
+      const updatedConsumedContextFiles = newlyConsumedFilenames.length > 0
+        ? [...(ticket.consumedContextFiles ?? []), ...newlyConsumedFilenames]
+        : ticket.consumedContextFiles;
       await deps.writeTicket(stateDir, {
         ...ticket,
         status: "running",
         updated: now,
         notifiedNeedsAttention: false,
+        consumedContextFiles: updatedConsumedContextFiles,
       });
       await deps.appendLog(stateDir, ticket.id, {
         event: "status-transition",
