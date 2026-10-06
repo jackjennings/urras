@@ -1,6 +1,7 @@
 import { parseArgs } from "@std/cli/parse-args";
 import { CONTEXT_PHASE_SEQUENCE } from "./phases/types.ts";
-import { join } from "@std/path";
+import { dirname, join } from "@std/path";
+import { runGit } from "./worktree.ts";
 import type { CodeAgent } from "./agents/types.ts";
 import { PiCodeAgent } from "./agents/pi.ts";
 import { ClaudeCodeAgent } from "./agents/claude-code.ts";
@@ -10,6 +11,7 @@ import {
   calculateAnthropicCost,
 } from "./anthropic-pricing.ts";
 import {
+  exists,
   mkdir,
   readDir,
   readTextFile,
@@ -476,6 +478,34 @@ export async function resolveHunkSkillPath(
   }
 }
 
+async function indexCodegraphWorktree(worktreePath: string): Promise<void> {
+  if (await exists(join(worktreePath, ".codegraph"))) return;
+  const initialized = await new Deno.Command("codegraph", {
+    args: ["init", worktreePath],
+    stdout: "null",
+    stderr: "null",
+  }).output();
+  if (initialized.code !== 0) {
+    throw new Error(`codegraph init exited ${initialized.code}`);
+  }
+  const excludePath = await runGit(
+    ["rev-parse", "--path-format=absolute", "--git-path", "info/exclude"],
+    worktreePath,
+  );
+  if (excludePath.code !== 0) return;
+  const path = excludePath.stdout.trim();
+  const current = await readTextFile(path).catch(() => "");
+  if (!current.split("\n").includes(".codegraph/")) {
+    await mkdir(dirname(path), { recursive: true });
+    await writeTextFile(
+      path,
+      `${current}${
+        current.endsWith("\n") || current === "" ? "" : "\n"
+      }.codegraph/\n`,
+    );
+  }
+}
+
 export async function executePhase(
   opts: {
     ticketDir: string;
@@ -502,6 +532,7 @@ export async function executePhase(
     hunkSkillResolver?: () => Promise<string | null>;
     codegraphRoots?: string[];
     binaryFinder?: (binary: string) => Promise<boolean>;
+    codegraphIndexer?: (worktreePath: string) => Promise<void>;
   },
   agent: CodeAgent,
 ): Promise<number> {
@@ -539,12 +570,17 @@ export async function executePhase(
           }).output().then((r) => r.code === 0));
       const onPath = await findBinary("codegraph");
       if (onPath) {
+        try {
+          await (opts.codegraphIndexer ?? indexCodegraphWorktree)(primaryPath);
+        } catch (error) {
+          console.error(`codegraph index failed: ${error}`);
+        }
         mcpConfigPath = await Deno.makeTempFile({ suffix: ".json" });
         await writeTextFile(
           mcpConfigPath,
           JSON.stringify({
             mcpServers: {
-              codegraph: { command: "codegraph", args: ["serve"] },
+              codegraph: { command: "codegraph", args: ["serve", "--mcp"] },
             },
           }),
         );
