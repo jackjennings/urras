@@ -61,6 +61,13 @@ pass → advance pass → commit.
   default). Each ticket is a directory in it; `meta.md` holds YAML frontmatter
   (via `gray-matter`) and phase output files (`intake.md`, …) live alongside.
   `commitState` runs `git add -A && git commit` there after each tick.
+- State files are **immutable after being written** — the only exception is
+  `meta.md`, which `writeTicket` overwrites on every tick. Context files
+  (`*-comment-context.md`, `*-upstream-edit-context.md`), phase output files,
+  and sidecar files must never be deleted or mutated. To prevent a context file
+  from being re-injected on a later revision, record its filename in
+  `TicketState.consumedContextFiles` (persisted via `FIELDS`) and filter against
+  that set in `advancePhase`.
 - `writeTicket` (`src/state/store.ts`) and `readTicket` both iterate `FIELDS`, a
   `{ [K in keyof TicketState]-?: FieldCodec<K> }` mapped type. Adding a field to
   `TicketState` without a corresponding `FIELDS` entry is a TypeScript compile

@@ -176,6 +176,10 @@ const FIELDS: { [K in keyof TicketState]-?: Field<K> } = {
     write: (t) => t.ciHandledRunIds,
     read: (d) => d.ciHandledRunIds as string[] | undefined,
   },
+  consumedContextFiles: {
+    write: (t) => t.consumedContextFiles,
+    read: (d) => d.consumedContextFiles as string[] | undefined,
+  },
   lastSeenCommentTimestamp: {
     write: (t) => t.lastSeenCommentTimestamp,
     read: (d) => normalizeTimestamp(d.lastSeenCommentTimestamp),

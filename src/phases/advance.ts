@@ -150,11 +150,14 @@ export async function advancePhase(
         ticket.id,
       );
       let commentContext = "";
+      const alreadyConsumed = new Set(ticket.consumedContextFiles ?? []);
+      const newlyConsumedFilenames: string[] = [];
       try {
         const contextFiles: string[] = [];
         for await (const entry of readDir(join(stateDir, ticket.id))) {
           if (
             entry.isFile &&
+            !alreadyConsumed.has(entry.name) &&
             (entry.name.endsWith("-comment-context.md") ||
               entry.name.endsWith("-upstream-edit-context.md") ||
               entry.name.endsWith("-verification-failure-context.md"))
@@ -163,9 +166,15 @@ export async function advancePhase(
           }
         }
         contextFiles.sort();
-        const last = contextFiles.at(-1);
-        if (last) {
-          commentContext = await readTextFile(join(stateDir, ticket.id, last));
+        const parts: string[] = [];
+        for (const filename of contextFiles) {
+          const filePath = join(stateDir, ticket.id, filename);
+          const content = await readTextFile(filePath);
+          parts.push(`<!-- ${filename} -->\n${content}`);
+          newlyConsumedFilenames.push(filename);
+        }
+        if (parts.length > 0) {
+          commentContext = parts.join("\n\n---\n\n");
         }
       } catch {
         // directory missing or unreadable — proceed without comment context
@@ -215,11 +224,15 @@ export async function advancePhase(
         sessionId,
         resume: sessionId !== undefined,
       });
+      const updatedConsumedContextFiles = newlyConsumedFilenames.length > 0
+        ? [...(ticket.consumedContextFiles ?? []), ...newlyConsumedFilenames]
+        : ticket.consumedContextFiles;
       await deps.writeTicket(stateDir, {
         ...ticket,
         status: "running",
         updated: now,
         notifiedNeedsAttention: false,
+        consumedContextFiles: updatedConsumedContextFiles,
       });
       await deps.appendLog(stateDir, ticket.id, {
         event: "status-transition",
