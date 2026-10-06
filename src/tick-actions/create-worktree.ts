@@ -7,6 +7,7 @@ import { extractIntakeArtifacts } from "../extract-artifacts.ts";
 import {
   extractGitHubSlug,
   parseIntakeScope,
+  type RepoCandidate,
   resolveGitHubSlug,
 } from "../worktree.ts";
 
@@ -30,6 +31,14 @@ export interface CreateWorktreeDeps {
     worktreePath: string,
     sourcePath: string,
   ) => Promise<void>;
+  listRepoCorpus: () => Promise<RepoCandidate[]>;
+  checkRepoExists: (slug: string) => Promise<boolean>;
+  submitFeedback: (opts: {
+    stateDir: string;
+    id: string;
+    phase: string;
+    content: string;
+  }) => Promise<void>;
 }
 
 export function createWorktreeAction(deps: CreateWorktreeDeps): TickAction {
@@ -140,6 +149,65 @@ export function createWorktreeAction(deps: CreateWorktreeDeps): TickAction {
             githubSlugs.add(canonical);
             resolvedScopeSlugs.push(canonical);
             if (isNew) newRepoSlugs.push(canonical);
+          }
+        }
+      }
+
+      const slugsToValidate = resolvedScopeSlugs.filter(
+        (s) => !newRepoSlugs.includes(s),
+      );
+
+      if (slugsToValidate.length > 0) {
+        const corpus = await deps.listRepoCorpus();
+        const corpusSlugs = new Set(corpus.map((c) => c.slug));
+
+        const invalidSlugs: string[] = [];
+        for (const slug of slugsToValidate) {
+          if (!corpusSlugs.has(slug)) {
+            const exists = await deps.checkRepoExists(slug);
+            if (!exists) invalidSlugs.push(slug);
+          }
+        }
+
+        if (invalidSlugs.length > 0) {
+          if ((correctedTicket.scopeRetries ?? 0) === 0) {
+            const corpusList = corpus.map((c) => `- ${c.slug}`).join("\n");
+            const content = [
+              `The following repository slug(s) chosen by intake do not exist as GitHub repositories: ${
+                invalidSlugs.join(", ")
+              }.`,
+              "",
+              "Please revise the scope to select only from the following known repositories:",
+              "",
+              corpusList,
+              "",
+              "If none of these match the ticket's intent, output an empty scope list.",
+            ].join("\n");
+            await deps.submitFeedback({
+              stateDir,
+              id: ticket.id,
+              phase: "intake",
+              content,
+            });
+            return {
+              ...correctedTicket,
+              status: "revising" as const,
+              scopeRetries: 1,
+              updated: now,
+            };
+          } else {
+            const updated = {
+              ...correctedTicket,
+              status: "needs-attention" as const,
+              updated: now,
+            };
+            await deps.writeTicket(stateDir, updated);
+            await deps.appendLog(stateDir, ticket.id, {
+              event: "needs-attention",
+              reason: "invalid-scope-slug",
+              slugs: invalidSlugs,
+            });
+            return updated;
           }
         }
       }
