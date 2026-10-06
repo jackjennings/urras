@@ -27,6 +27,7 @@ export interface ExecutorOptions {
   maxTurns?: number;
   ollamaModels?: Array<{ model: string; url?: string }>;
   barePhase?: ActivePhase;
+  codegraphRoots?: string[];
 }
 
 export function isProcessAlive(pid: number): boolean {
@@ -95,6 +96,9 @@ export function buildPhaseArgs(opts: ExecutorOptions): string[] {
   }
   if (opts.barePhase !== undefined) {
     args.push("--bare-phase", opts.barePhase);
+  }
+  if (opts.codegraphRoots && opts.codegraphRoots.length > 0) {
+    args.push("--codegraph-roots", JSON.stringify(opts.codegraphRoots));
   }
   return args;
 }

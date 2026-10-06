@@ -298,3 +298,58 @@ Deno.test("buildClaudeCodeArgs: omits --resume when sessionId is absent", () => 
   });
   assertFalse(args.includes("--resume"));
 });
+
+Deno.test(
+  "buildClaudeCodeArgs: includes --mcp-config and --strict-mcp-config when mcpConfigPath is set",
+  () => {
+    const args = buildClaudeCodeArgs({
+      prompt: "p",
+      model: "m",
+      thinking: "off",
+      contextFiles: [],
+      cwd: "/wt",
+      settingsPath: "/s.json",
+      mcpConfigPath: "/tmp/mcp.json",
+    });
+    const idx = args.indexOf("--mcp-config");
+    assertNotEquals(idx, -1);
+    assertEquals(args[idx + 1], "/tmp/mcp.json");
+    assert(args.includes("--strict-mcp-config"));
+  },
+);
+
+Deno.test(
+  "buildClaudeCodeArgs: omits --mcp-config and --strict-mcp-config when mcpConfigPath is absent",
+  () => {
+    const args = buildClaudeCodeArgs({
+      prompt: "p",
+      model: "m",
+      thinking: "off",
+      contextFiles: [],
+      cwd: "/wt",
+      settingsPath: "/s.json",
+    });
+    assertFalse(args.includes("--mcp-config"));
+    assertFalse(args.includes("--strict-mcp-config"));
+  },
+);
+
+Deno.test(
+  "buildClaudeCodeArgs: --mcp-config appears before --add-dir when both are present",
+  () => {
+    const args = buildClaudeCodeArgs({
+      prompt: "p",
+      model: "m",
+      thinking: "off",
+      contextFiles: ["@/ticket/meta.md"],
+      cwd: "/worktree",
+      settingsPath: "/s.json",
+      mcpConfigPath: "/tmp/mcp.json",
+    });
+    const mcpIdx = args.indexOf("--mcp-config");
+    const addDirIdx = args.indexOf("--add-dir");
+    assertNotEquals(mcpIdx, -1);
+    assertNotEquals(addDirIdx, -1);
+    assertLess(mcpIdx, addDirIdx);
+  },
+);
