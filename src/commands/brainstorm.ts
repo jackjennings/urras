@@ -75,7 +75,7 @@ function makeDefaultSpawn(config: Config): (prompt: string) => Promise<number> {
   }
   return async (prompt) => {
     const child = new Deno.Command("claude", {
-      args: [prompt, "--dangerously-skip-permissions"],
+      args: [prompt, "--permission-mode", "auto"],
       stdin: "inherit",
       stdout: "inherit",
       stderr: "inherit",
