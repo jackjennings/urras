@@ -87,6 +87,7 @@ export function formatGitHubApiError(
 export class GitHubProvider implements Provider {
   private orgRepoSlugs: string[];
   private bareOrgs: string[];
+  private paused: string[];
   private accountResolver: AccountResolver;
   private http: HttpClient;
   private _clone: CloneFn;
@@ -104,6 +105,7 @@ export class GitHubProvider implements Provider {
   constructor(
     opts: {
       repos: string[];
+      paused?: string[];
       accountResolver: AccountResolver;
       http: HttpClient;
       _clone?: CloneFn;
@@ -121,6 +123,7 @@ export class GitHubProvider implements Provider {
   ) {
     this.orgRepoSlugs = opts.repos.filter((r) => r.includes("/"));
     this.bareOrgs = opts.repos.filter((r) => !r.includes("/"));
+    this.paused = opts.paused ?? [];
     this.accountResolver = opts.accountResolver;
     this.http = opts.http;
     this._clone = opts._clone ?? this.defaultClone.bind(this);
@@ -325,6 +328,7 @@ export class GitHubProvider implements Provider {
   async fetchNew(knownIds: Set<string>): Promise<WorkItem[]> {
     const items: WorkItem[] = [];
     for (const repo of this.orgRepoSlugs) {
+      if (this.paused.includes(repo)) continue;
       const resolved = this.resolveRepo(repo);
       if (resolved === null) {
         console.log(
@@ -382,6 +386,7 @@ export class GitHubProvider implements Provider {
       }
     }
     for (const bareOrg of this.bareOrgs) {
+      if (this.paused.includes(bareOrg)) continue;
       const { currentLogin } = this.resolveOrg(bareOrg);
       const { token, login } = this.accountResolver(bareOrg);
       const q = `org:${currentLogin} assignee:${login} is:open is:issue`;

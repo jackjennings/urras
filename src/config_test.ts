@@ -1557,3 +1557,93 @@ roots = 42
   await assertRejects(() => loadConfig(join(dir, "config.toml")));
   await Deno.remove(dir, { recursive: true });
 });
+
+Deno.test("loadConfig parses github.paused as string array", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `
+[github]
+repos = ["acme/api", "acme/web"]
+paused = ["acme/api", "other-org"]
+
+[state]
+dir = "~/tmp"
+
+[tick]
+concurrency = 1
+`,
+  );
+  const cfg = await loadConfig(join(dir, "config.toml"));
+  assertEquals(cfg.github.paused, ["acme/api", "other-org"]);
+  await Deno.remove(dir, { recursive: true });
+});
+
+Deno.test("loadConfig defaults github.paused to undefined when absent", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `
+[github]
+repos = ["acme/api"]
+
+[state]
+dir = "~/tmp"
+
+[tick]
+concurrency = 1
+`,
+  );
+  const cfg = await loadConfig(join(dir, "config.toml"));
+  assertEquals(cfg.github.paused, undefined);
+  await Deno.remove(dir, { recursive: true });
+});
+
+Deno.test("loadConfig parses jira project paused = true", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `
+[github]
+repos = []
+
+[state]
+dir = "~/tmp"
+
+[tick]
+concurrency = 1
+
+[jira.projects.MY_PROJECT]
+base_url = "https://myorg.atlassian.net"
+project = "MY_PROJECT"
+paused = true
+`,
+  );
+  const cfg = await loadConfig(join(dir, "config.toml"));
+  assertEquals(cfg.jira?.MY_PROJECT.paused, true);
+  await Deno.remove(dir, { recursive: true });
+});
+
+Deno.test("loadConfig defaults jira project paused to undefined when absent", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `
+[github]
+repos = []
+
+[state]
+dir = "~/tmp"
+
+[tick]
+concurrency = 1
+
+[jira.projects.MY_PROJECT]
+base_url = "https://myorg.atlassian.net"
+project = "MY_PROJECT"
+`,
+  );
+  const cfg = await loadConfig(join(dir, "config.toml"));
+  assertEquals(cfg.jira?.MY_PROJECT.paused, undefined);
+  await Deno.remove(dir, { recursive: true });
+});

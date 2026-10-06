@@ -1596,3 +1596,22 @@ Deno.test(
     }
   },
 );
+
+Deno.test("fetchNew returns empty array without an HTTP call when paused is true", async () => {
+  let httpCalled = false;
+  const provider = new JiraProvider({
+    baseUrl: BASE_URL,
+    email: "test@example.com",
+    apiToken: "token",
+    project: "PROJ",
+    doneStatusName: "Done",
+    paused: true,
+    http: new HttpClient((_url, _init) => {
+      httpCalled = true;
+      return Promise.resolve(new Response("", { status: 200 }));
+    }),
+  });
+  const items = await provider.fetchNew(new Set());
+  assertFalse(httpCalled, "HTTP should not be called when paused");
+  assertEquals(items.length, 0);
+});
