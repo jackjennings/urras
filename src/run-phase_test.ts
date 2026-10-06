@@ -4171,6 +4171,7 @@ Deno.test(
           agentType: "claude-code",
           codegraphRoots: [],
           binaryFinder: () => Promise.resolve(true),
+          codegraphIndexer: () => Promise.resolve(),
         },
         agent,
       );
@@ -4212,6 +4213,7 @@ Deno.test(
           agentType: "claude-code",
           codegraphRoots: ["/code/jackjennings"],
           binaryFinder: () => Promise.resolve(true),
+          codegraphIndexer: () => Promise.resolve(),
         },
         agent,
       );
@@ -4255,6 +4257,7 @@ Deno.test(
           agentType: "claude-code",
           codegraphRoots: ["/code/jackjennings"],
           binaryFinder: () => Promise.resolve(true),
+          codegraphIndexer: () => Promise.resolve(),
         },
         agent,
       );
@@ -4275,19 +4278,21 @@ Deno.test(
 );
 
 Deno.test(
-  "executePhase: MCP config temp file contains the codegraph stdio server spec",
+  "executePhase: MCP config starts codegraph as an MCP server over stdio",
   async () => {
     const ticketDir = await Deno.makeTempDir();
     const homeDir = await Deno.makeTempDir();
-    let capturedMcpPath: string | undefined;
+    let serverSpec: unknown;
     try {
       await Deno.writeTextFile(join(ticketDir, "meta.md"), "---\n---\n");
       const agent: CodeAgent = {
-        runPhase(opts) {
-          capturedMcpPath = (opts as Record<string, unknown>)[
-            "mcpConfigPath"
-          ] as string;
-          return Promise.resolve({ stdout: "", stderr: "", code: 0 });
+        async runPhase(opts) {
+          const { mcpConfigPath } = opts as unknown as {
+            mcpConfigPath: string;
+          };
+          serverSpec = JSON.parse(await Deno.readTextFile(mcpConfigPath))
+            .mcpServers.codegraph;
+          return { stdout: "", stderr: "", code: 0 };
         },
       };
       await executePhase(
@@ -4308,19 +4313,74 @@ Deno.test(
           agentType: "claude-code",
           codegraphRoots: ["/code/jackjennings"],
           binaryFinder: () => Promise.resolve(true),
+          codegraphIndexer: () => Promise.resolve(),
         },
-        capturedMcpPath !== undefined
-          ? {
-            runPhase(opts) {
-              capturedMcpPath = (opts as Record<string, unknown>)[
-                "mcpConfigPath"
-              ] as string;
-              return Promise.resolve({ stdout: "", stderr: "", code: 0 });
-            },
-          }
-          : agent,
+        agent,
       );
+      assertEquals(serverSpec, {
+        command: "codegraph",
+        args: ["serve", "--mcp"],
+      });
     } finally {
+      await Deno.remove(ticketDir, { recursive: true });
+      await Deno.remove(homeDir, { recursive: true });
+    }
+  },
+);
+
+Deno.test(
+  "executePhase: indexes the primary worktree before starting the agent, and a failed index does not block the phase",
+  async () => {
+    const ticketDir = await Deno.makeTempDir();
+    const homeDir = await Deno.makeTempDir();
+    const events: string[] = [];
+    const origError = console.error;
+    console.error = () => {};
+    try {
+      await Deno.writeTextFile(join(ticketDir, "meta.md"), "---\n---\n");
+      const agent: CodeAgent = {
+        runPhase(opts) {
+          events.push(
+            (opts as unknown as { mcpConfigPath?: string }).mcpConfigPath ===
+                undefined
+              ? "agent-without-mcp"
+              : "agent-with-mcp",
+          );
+          return Promise.resolve({ stdout: "", stderr: "", code: 0 });
+        },
+      };
+      const code = await executePhase(
+        {
+          ticketDir,
+          stateDir: dirname(ticketDir),
+          outputFile: "out.md",
+          phase: "spec",
+          scopeDirs: [],
+          prompt: "p",
+          worktrees: {
+            k: { path: "/code/jackjennings/lazyboy", branch: "b" },
+          },
+          homeDir,
+          provider: "anthropic",
+          model: "m",
+          thinking: "off",
+          agentType: "claude-code",
+          codegraphRoots: ["/code/jackjennings"],
+          binaryFinder: () => Promise.resolve(true),
+          codegraphIndexer: (path) => {
+            events.push(`index:${path}`);
+            return Promise.reject(new Error("boom"));
+          },
+        },
+        agent,
+      );
+      assertEquals(code, 0);
+      assertEquals(events, [
+        "index:/code/jackjennings/lazyboy",
+        "agent-with-mcp",
+      ]);
+    } finally {
+      console.error = origError;
       await Deno.remove(ticketDir, { recursive: true });
       await Deno.remove(homeDir, { recursive: true });
     }
@@ -4407,6 +4467,7 @@ Deno.test(
           agentType: "pi",
           codegraphRoots: ["/code/jackjennings"],
           binaryFinder: () => Promise.resolve(true),
+          codegraphIndexer: () => Promise.resolve(),
         },
         agent,
       );
@@ -4452,6 +4513,7 @@ Deno.test(
           agentType: "claude-code",
           codegraphRoots: ["/code/jackjennings"],
           binaryFinder: () => Promise.resolve(true),
+          codegraphIndexer: () => Promise.resolve(),
         },
         agent,
       );
