@@ -56,6 +56,51 @@ an external repository not present in that list.
 
 One short paragraph explaining why you chose these directories.
 
+## Glossary
+
+The project glossary lives at:
+
+```
+{glossaryDir}
+```
+
+Each repo has a file at `{glossaryDir}/<org>/<repo>.md` containing a short
+description of what that project does. Before producing your final output,
+perform the following steps for all candidate repos you are considering.
+
+**1. Read each candidate's glossary file.** The file may be absent or empty if
+no entry has been written yet.
+
+**2. Write missing or empty entries.** For each candidate whose file is absent
+or empty:
+
+- Research the repo: read its README, browse the source tree, check recent
+  commits.
+- Write the entry using the Write tool (if absent) or Edit (if empty). Format:
+
+  ```
+  ### org/repo
+
+  One or two sentences describing what the project does, written for an agent unfamiliar with the codebase.
+  ```
+
+  Write entries one at a time. Complete all glossary reads and writes before
+  making your final selection.
+
+**3. Include a `## Glossary Entry` section in your output.** After selecting the
+repo, append to your output:
+
+```
+## Glossary Entry
+
+### org/repo
+
+<description copied verbatim from the glossary file>
+```
+
+The `### org/repo` slug must exactly match the first entry in your
+`## Proposed Scope` YAML list. If `scope` is empty, omit this section entirely.
+
 ## Artifact type
 
 Identify which artifact configurations apply to this ticket:

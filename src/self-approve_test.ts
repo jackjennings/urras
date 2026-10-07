@@ -348,7 +348,7 @@ Deno.test("selfApprove: continues without diff when worktreePath git command fai
   try {
     await Deno.writeTextFile(
       join(tempDir, "20260717T120000-intake.md"),
-      "## Proposed Scope\n\n```yaml\nscope:\n  - jackjennings/lazyboy\n```\n",
+      "## Proposed Scope\n\n```yaml\nscope:\n  - jackjennings/lazyboy\n```\n\n## Reasoning\n\nRight repo.\n\n## Glossary Entry\n\n### jackjennings/lazyboy\n\nA pipeline automation tool.\n",
     );
     let capturedPrompt = "";
     const result = await Effect.runPromise(
@@ -511,6 +511,109 @@ Deno.test("selfApprove: prepends ticket id to content sent to model when ticketI
     );
     assertStringIncludes(capturedPrompt, "## Ticket");
     assertStringIncludes(capturedPrompt, "github/jackjennings/lazyboy/652");
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+Deno.test("selfApprove (intake): rejects when scope is non-empty and glossary entry is absent", async () => {
+  const tempDir = await Deno.makeTempDir();
+  try {
+    await Deno.writeTextFile(
+      join(tempDir, "20260717T120000-intake.md"),
+      `## Proposed Scope
+
+\`\`\`yaml
+scope:
+  - jackjennings/urras
+\`\`\`
+
+## Reasoning
+
+This is the right repo.
+`,
+    );
+    const result = await Effect.runPromise(
+      selfApprove({
+        phase: "intake",
+        ticketDir: tempDir,
+        model: textModel("APPROVE"),
+      }),
+    );
+    assertEquals(result.approved, false);
+    assert(result.reason?.includes("jackjennings/urras"));
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+Deno.test("selfApprove (intake): passes glossary check and calls model when entry is present", async () => {
+  const tempDir = await Deno.makeTempDir();
+  try {
+    await Deno.writeTextFile(
+      join(tempDir, "20260717T120000-intake.md"),
+      `## Proposed Scope
+
+\`\`\`yaml
+scope:
+  - jackjennings/urras
+\`\`\`
+
+## Reasoning
+
+This is the right repo.
+
+## Glossary Entry
+
+### jackjennings/urras
+
+A pipeline automation tool for managing GitHub issues and PRs.
+`,
+    );
+    let modelCalled = false;
+    const result = await Effect.runPromise(
+      selfApprove({
+        phase: "intake",
+        ticketDir: tempDir,
+        model: textModel("APPROVE", () => {
+          modelCalled = true;
+        }),
+      }),
+    );
+    assert(modelCalled, "model should be called when glossary check passes");
+    assertEquals(result.approved, true);
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+Deno.test("selfApprove (intake): skips glossary check when scope is empty", async () => {
+  const tempDir = await Deno.makeTempDir();
+  try {
+    await Deno.writeTextFile(
+      join(tempDir, "20260717T120000-intake.md"),
+      `## Proposed Scope
+
+\`\`\`yaml
+scope: []
+\`\`\`
+
+## Reasoning
+
+No relevant repos.
+`,
+    );
+    let modelCalled = false;
+    await Effect.runPromise(
+      selfApprove({
+        phase: "intake",
+        ticketDir: tempDir,
+        model: textModel("APPROVE", () => {
+          modelCalled = true;
+        }),
+      }),
+    );
+    assert(modelCalled, "model should be called when scope is empty");
   } finally {
     await Deno.remove(tempDir, { recursive: true });
   }

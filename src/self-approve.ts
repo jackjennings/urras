@@ -2,6 +2,7 @@ import { join } from "@std/path";
 import { Data, Effect } from "effect";
 import { findLatestPhaseOutput } from "./review.ts";
 import { readTextFile } from "./filesystem.ts";
+import { validateGlossaryRequirement } from "./glossary.ts";
 import type { LanguageModel } from "./models/types.ts";
 import { runGit } from "./worktree.ts";
 import { loadStatePrompt } from "./phases/runners.ts";
@@ -54,9 +55,14 @@ async function executeReview({
   const found = await findLatestPhaseOutput(ticketDir);
   if (!found) return { approved: false, reason: null };
 
-  let outputContent = await readTextFile(
-    join(ticketDir, found.filename),
-  );
+  const rawOutput = await readTextFile(join(ticketDir, found.filename));
+
+  if (phase === "intake") {
+    const violation = validateGlossaryRequirement(rawOutput);
+    if (violation) return violation;
+  }
+
+  let outputContent = rawOutput;
 
   if (ticketId) {
     outputContent = `## Ticket\n\n${ticketId}\n\n${outputContent}`;

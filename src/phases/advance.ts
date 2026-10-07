@@ -2,6 +2,7 @@ import { join } from "@std/path";
 import { Effect, Exit } from "effect";
 import { estimateTokenCount } from "tokenx";
 import { deleteRunPid } from "../executor.ts";
+import { glossaryDir } from "../glossary.ts";
 import { extractPrinciples } from "../run-phase.ts";
 import {
   loadArtifactPrompt,
@@ -255,11 +256,15 @@ export async function advancePhase(
       ticket.artifacts,
     );
     const corpusText = await deps.buildRepoCorpusText();
-    const intakeStatePrompt = await loadStatePrompt(
+    const rawIntakeStatePrompt = await loadStatePrompt(
       "intake",
       stateDir,
       ticket.provider,
       ticket.id,
+    );
+    const intakeStatePrompt = rawIntakeStatePrompt.replaceAll(
+      "{glossaryDir}",
+      glossaryDir(stateDir),
     );
     const prompt = [
       intakeBase,
