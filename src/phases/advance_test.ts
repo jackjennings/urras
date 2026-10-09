@@ -270,6 +270,22 @@ Deno.test("advancePhase: non-implementation phases receive empty worktrees", asy
   assertEquals(spawnedWorktrees, {});
 });
 
+Deno.test("advancePhase: new ticket intake prompt has glossary directory substituted", async () => {
+  const ticket = makeTicket({ phase: "intake", status: "new" });
+  let spawnedPrompt = "";
+  const spawnSpy = spy((opts: SpawnOpts) => {
+    spawnedPrompt = opts.prompt;
+    return Promise.resolve();
+  });
+  await advancePhase(
+    ticket,
+    "/state",
+    makeTickDeps({ spawn: spawnSpy }),
+  );
+  assertStringIncludes(spawnedPrompt, "/state/glossary");
+  assertFalse(spawnedPrompt.includes("{glossaryDir}"));
+});
+
 Deno.test("advancePhase: new ticket spawn receives empty worktrees", async () => {
   const ticket = makeTicket({
     phase: "intake",
@@ -2651,7 +2667,10 @@ Deno.test(
       }),
     );
     assertSpyCall(spawnSpy, 0);
-    const basePrompt = await loadPromptFile("intake.md");
+    const basePrompt = (await loadPromptFile("intake.md")).replaceAll(
+      "{glossaryDir}",
+      "/state/glossary",
+    );
     assertEquals(spawnedPrompt, basePrompt);
   },
 );
@@ -2685,7 +2704,10 @@ Deno.test(
       }),
     );
     assertSpyCall(spawnSpy, 0);
-    const basePrompt = await loadPromptFile("intake.md");
+    const basePrompt = (await loadPromptFile("intake.md")).replaceAll(
+      "{glossaryDir}",
+      "/state/glossary",
+    );
     assertEquals(
       spawnedPrompt,
       basePrompt +
@@ -2720,7 +2742,10 @@ Deno.test(
       }),
     );
     assertSpyCall(spawnSpy, 0);
-    const basePrompt = await loadPromptFile("intake.md");
+    const basePrompt = (await loadPromptFile("intake.md")).replaceAll(
+      "{glossaryDir}",
+      "/state/glossary",
+    );
     assertEquals(spawnedPrompt, basePrompt);
   },
 );

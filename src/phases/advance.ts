@@ -266,15 +266,11 @@ export async function advancePhase(
       ticket.artifacts,
     );
     const corpusText = await deps.buildRepoCorpusText();
-    const rawIntakeStatePrompt = await loadStatePrompt(
+    const intakeStatePrompt = await loadStatePrompt(
       "intake",
       stateDir,
       ticket.provider,
       ticket.id,
-    );
-    const intakeStatePrompt = rawIntakeStatePrompt.replaceAll(
-      "{glossaryDir}",
-      glossaryDir(stateDir),
     );
     const prompt = [
       intakeBase,
@@ -284,7 +280,8 @@ export async function advancePhase(
       intakeStatePrompt,
     ]
       .filter((part) => part.length > 0)
-      .join("\n\n");
+      .join("\n\n")
+      .replaceAll("{glossaryDir}", glossaryDir(stateDir));
     const threshold = deps.maxPromptTokens ?? DEFAULT_MAX_PROMPT_TOKENS;
     const tokens = estimateTokenCount(prompt);
     if (tokens > threshold) {
