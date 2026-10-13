@@ -26,3 +26,15 @@ export function bootId(): string {
   if (!match) throw new Error(`bootId: unexpected sysctl output: ${raw}`);
   return match[1];
 }
+
+const BOOT_ID_TOLERANCE_SECONDS = 120;
+
+export function isSameBoot(left: string, right: string): boolean {
+  if (left === right) return true;
+  const leftSeconds = Number(left);
+  const rightSeconds = Number(right);
+  if (!Number.isInteger(leftSeconds) || !Number.isInteger(rightSeconds)) {
+    return false;
+  }
+  return Math.abs(leftSeconds - rightSeconds) <= BOOT_ID_TOLERANCE_SECONDS;
+}

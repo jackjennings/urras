@@ -1,7 +1,7 @@
 import type { WorktreeInfo } from "./state/types.ts";
 import type { ActivePhase } from "./phases/types.ts";
 import { readTextFileSync, remove, writeTextFile } from "./filesystem.ts";
-import { bootId } from "./paths.ts";
+import { bootId, isSameBoot } from "./paths.ts";
 
 export interface ExecutorOptions {
   ticketDir: string;
@@ -153,7 +153,7 @@ export function isPhaseAlive(ticketDir: string): boolean {
   const lines = content.trim().split("\n");
   const pid = parseInt(lines[0], 10);
   if (isNaN(pid)) return false;
-  if (lines[1] !== undefined && lines[1] !== bootId()) return false;
+  if (lines[1] !== undefined && !isSameBoot(lines[1], bootId())) return false;
   return isProcessAlive(pid);
 }
 

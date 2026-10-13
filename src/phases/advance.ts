@@ -3,6 +3,7 @@ import { Effect, Exit } from "effect";
 import { estimateTokenCount } from "tokenx";
 import { deleteRunPid } from "../executor.ts";
 import { glossaryDir } from "../glossary.ts";
+import { isSameBoot } from "../paths.ts";
 import { extractPrinciples } from "../run-phase.ts";
 import {
   loadArtifactPrompt,
@@ -364,7 +365,7 @@ export async function advancePhase(
         const currentId = deps.currentBootId();
         if (
           storedBootId !== null &&
-          storedBootId !== currentId &&
+          !isSameBoot(storedBootId, currentId) &&
           waitingTicket.phaseSessionIds?.[ticket.phase]
         ) {
           const sessionId = waitingTicket.phaseSessionIds[ticket.phase]!;

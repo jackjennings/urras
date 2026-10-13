@@ -375,6 +375,38 @@ Deno.test(
   },
 );
 
+Deno.test(
+  "isPhaseAlive: returns true when run.pid boot ID drifts by a second from the current boot ID",
+  async () => {
+    const tempDir = await Deno.makeTempDir();
+    try {
+      await Deno.writeTextFile(
+        join(tempDir, "run.pid"),
+        `${Deno.pid}\n${Number(bootId()) - 1}`,
+      );
+      assert(isPhaseAlive(tempDir));
+    } finally {
+      await Deno.remove(tempDir, { recursive: true });
+    }
+  },
+);
+
+Deno.test(
+  "isPhaseAlive: returns false when run.pid boot ID is from a much earlier boot",
+  async () => {
+    const tempDir = await Deno.makeTempDir();
+    try {
+      await Deno.writeTextFile(
+        join(tempDir, "run.pid"),
+        `${Deno.pid}\n${Number(bootId()) - 86400}`,
+      );
+      assertFalse(isPhaseAlive(tempDir));
+    } finally {
+      await Deno.remove(tempDir, { recursive: true });
+    }
+  },
+);
+
 Deno.test("buildPhaseArgs: includes --codegraph-roots when codegraphRoots is non-empty", () => {
   const args = buildPhaseArgs(makeOpts({ codegraphRoots: ["/foo", "/bar"] }));
   const idx = args.indexOf("--codegraph-roots");
