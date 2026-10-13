@@ -77,15 +77,53 @@ pass → advance pass → commit.
 
 ## Phase state machine
 
-Tickets carry `phase: TicketPhase` and `status: TicketStatus`.
+Tickets carry `phase: TicketPhase` and `status: TicketStatus`. The two are
+independent axes: **phase is the stage of work, status is what is happening at
+that stage.** Valid pairs are enforced by `VALID_STATUSES`
+(`src/state/types.ts`).
 
-- `PHASE_SEQUENCE` covers only the five runner phases (`intake` →
-  `implementation`), cycling `new → running → waiting → (approved) → running`;
-  `merge` is handled explicitly in `advancePhase`.
-- Implementation agents leave the ticket in `implementation/waiting` for review;
-  once approved it moves to `merge/waiting`.
+### Phases
+
+| Phase            | Meaning                                                                                             |
+| ---------------- | --------------------------------------------------------------------------------------------------- |
+| `intake`         | Reads only the ticket and proposes which repositories are in scope, and the artifact type.          |
+| `enrichment`     | Explores the scoped repositories and gathers context (relevant code, constraints). Decides nothing. |
+| `spec`           | Chooses the smallest change that satisfies the ticket and writes it down as a specification.        |
+| `plan`           | Turns the spec into an ordered implementation plan. Skippable via `phases.plan.skip` in `meta.md`.  |
+| `implementation` | Does the work in the worktrees (code) or produces the deliverable (document, work items).           |
+| `merge`          | Post-implementation hold: for code tickets, waits for every PR to merge. No agent runs here.        |
+| `wont-do`        | Terminal; the ticket was declined and is excluded from the tick queue.                              |
+
+`intake` through `implementation` are the five runner phases (`PHASE_SEQUENCE`);
+each runs an agent and writes an output file. `merge` and `wont-do` are
+bookkeeping phases handled explicitly in `advancePhase`.
+
+### Statuses
+
+| Status            | Meaning                                                                                               |
+| ----------------- | ----------------------------------------------------------------------------------------------------- |
+| `new`             | Captured, nothing has run. Valid only for `intake`.                                                   |
+| `running`         | A phase agent has been spawned for this phase (live, or crashed and awaiting recovery).               |
+| `waiting`         | The phase output is written and the ticket is waiting on approval (human or self-approve) to advance. |
+| `revising`        | Feedback was recorded (`ur review`); the next tick re-runs the **current** phase with it.             |
+| `needs-attention` | Parked for a human, with a `reason`. Leaves the advance pass until `ur retry`.                        |
+| `done`            | Finished. Valid only for `merge` and `wont-do`.                                                       |
+
+### Transitions
+
+- A runner phase cycles `running → waiting → (approved) → next phase running`.
+  `waiting` means "output ready", not "nothing to do": it advances only once
+  `isApproved` holds.
+- Nothing spawns an agent from `waiting`. A phase runs only when the previous
+  phase is approved (the spawn is a transition **into** it), or when its status
+  is `revising`. A ticket set to `implementation/waiting` by hand or by
+  `ur rewind` does not re-run implementation; use `ur review` to re-run it.
+- `implementation/waiting` (approved) moves to `merge`. The merge status depends
+  on the ticket's artifacts: `waiting` for `code` (until every PR merges),
+  `done` immediately otherwise, since there is no PR to wait on.
 - Any phase can transition to `needs-attention` on subprocess failure.
-- `{ phase: "merge", status: "done" }` is the terminal state.
+- `{ phase: "merge", status: "done" }` and
+  `{ phase: "wont-do", status: "done" }` are the terminal states.
 
 When a phase agent exits without creating its output file
 (`phase-output-invalid: missing`), `advancePhase` attempts one recovery before
