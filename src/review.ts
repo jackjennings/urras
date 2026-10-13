@@ -1034,7 +1034,11 @@ export class ReviewSession implements Component, Focusable {
           await child.status;
         } else {
           const child = new Deno.Command("claude", {
-            args: [prompt, "--dangerously-skip-permissions"],
+            args: [
+              "--append-system-prompt",
+              prompt,
+              "--dangerously-skip-permissions",
+            ],
             stdin: "inherit",
             stdout: "inherit",
             stderr: "inherit",
