@@ -210,6 +210,7 @@ export interface Config {
       baseUrl: string;
       project: string;
       paused?: boolean;
+      githubAccount?: string;
       statuses?: { pickup: string; done: string };
     }
   >;

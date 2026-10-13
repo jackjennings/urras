@@ -6,6 +6,7 @@ import {
   preflightGitHubCredentials,
   readPhaseOutput,
   resolveGitHubAccount,
+  resolveJiraGitHubAccount,
 } from "./compose.ts";
 import { PHASE_SEQUENCE } from "./phases/types.ts";
 import { join } from "@std/path";
@@ -800,3 +801,30 @@ Deno.test(
     }
   },
 );
+
+Deno.test("resolveJiraGitHubAccount: maps Jira key prefix to the project's configured account", () => {
+  Deno.env.set("GITHUB_TOKEN_WORK", "work-token");
+  const config = makeConfig({
+    accounts: { work: { tokenEnv: "GITHUB_TOKEN_WORK", login: "sdx" } },
+  });
+  config.jira = {
+    nw: {
+      baseUrl: "https://example.atlassian.net",
+      project: "NW",
+      githubAccount: "work",
+    },
+  };
+  assertEquals(resolveJiraGitHubAccount("jira/NW-2392", config), {
+    token: "work-token",
+    login: "sdx",
+  });
+});
+
+Deno.test("resolveJiraGitHubAccount: null when project has no github_account or ticket is not Jira", () => {
+  const config = makeConfig();
+  config.jira = {
+    nw: { baseUrl: "https://example.atlassian.net", project: "NW" },
+  };
+  assertEquals(resolveJiraGitHubAccount("jira/NW-2392", config), null);
+  assertEquals(resolveJiraGitHubAccount("github/a/b/1", config), null);
+});

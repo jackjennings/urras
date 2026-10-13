@@ -1738,3 +1738,34 @@ verify = 42
   );
   await Deno.remove(dir, { recursive: true });
 });
+
+Deno.test("loadConfig rejects [jira.projects.*].github_account naming an unknown account", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `
+[github]
+repos = []
+
+[state]
+dir = "~/code"
+
+[tick]
+concurrency = 1
+
+[jira.projects.nw]
+base_url = "https://myorg.atlassian.net"
+project = "NW"
+github_account = "missing"
+`,
+  );
+  try {
+    await assertRejects(
+      () => loadConfig(join(dir, "config.toml")),
+      Error,
+      'unknown account "missing"',
+    );
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});

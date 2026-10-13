@@ -41,8 +41,17 @@ export async function loadConfig(path?: string): Promise<Config> {
         }
         jiraStatuses = { pickup: statusesRaw.pickup, done: statusesRaw.done };
       }
+      if (
+        entry.github_account !== undefined &&
+        typeof entry.github_account !== "string"
+      ) {
+        throw new Error(
+          `config.toml: [jira.projects.${name}].github_account must be a string`,
+        );
+      }
       jira[name] = {
         baseUrl: entry.base_url,
+        githubAccount: entry.github_account,
         project: entry.project,
         paused: entry.paused === true ? true : undefined,
         statuses: jiraStatuses,
@@ -182,6 +191,14 @@ export async function loadConfig(path?: string): Promise<Config> {
         );
       }
       accounts[name] = { tokenEnv: entry.token_env, login: entry.login };
+    }
+  }
+  for (const [name, project] of Object.entries(jira ?? {})) {
+    if (project.githubAccount === undefined) continue;
+    if (!accounts?.[project.githubAccount]) {
+      throw new Error(
+        `config.toml: [jira.projects.${name}].github_account references unknown account "${project.githubAccount}"`,
+      );
     }
   }
   const orgsRaw = githubRaw.orgs as Record<string, string> | undefined;

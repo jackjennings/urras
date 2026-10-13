@@ -325,6 +325,25 @@ export function resolveGitHubAccount(
   };
 }
 
+export function resolveJiraGitHubAccount(
+  ticketId: string,
+  config: Config,
+): { token: string; login: string } | null {
+  const key = ticketId.match(/^jira\/([A-Za-z][A-Za-z0-9]*)-\d+$/)?.[1];
+  if (key === undefined) return null;
+  const project = Object.values(config.jira ?? {}).find((entry) =>
+    entry.project === key
+  );
+  const account = project?.githubAccount
+    ? config.github.accounts?.[project.githubAccount]
+    : undefined;
+  if (!account) return null;
+  return {
+    token: Deno.env.get(account.tokenEnv) ?? "",
+    login: account.login,
+  };
+}
+
 export function deriveOrgFromTicketDir(
   ticketDir: string,
   stateDir: string,
@@ -1344,8 +1363,11 @@ export function composeTickDeps(
     tickActions,
     tickDeps: {
       spawn: (opts) => {
-        const parsed = parseTicketId(relative(stateDir, opts.ticketDir));
+        const ticketId = relative(stateDir, opts.ticketDir);
+        const parsed = parseTicketId(ticketId);
         const ticketSlug = parsed ? `${parsed.org}/${parsed.repo}` : "";
+        const githubToken = resolveJiraGitHubAccount(ticketId, config)?.token ??
+          resolveAccount(ticketSlug).token;
         return spawnPhase({
           ticketDir: opts.ticketDir,
           stateDir,
@@ -1354,7 +1376,7 @@ export function composeTickDeps(
             .filter((s) => s.startsWith("/") || s.startsWith("~/"))
             .map(expandHome),
           outputFile: opts.outputFile,
-          githubToken: resolveAccount(ticketSlug).token,
+          githubToken,
           anthropicApiKey,
           worktrees: opts.worktrees,
           provider: piProvider,
