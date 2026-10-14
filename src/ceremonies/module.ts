@@ -39,11 +39,12 @@ export class ModuleCeremony implements Ceremony {
     this.#deps = deps;
   }
 
-  async #fail(): Promise<void> {
+  async #fail(error?: unknown): Promise<void> {
     await this.#deps.appendTickLog({
       event: "ceremony-warning",
       ceremony: this.name,
       reason: "ceremony-failed",
+      ...(error === undefined ? {} : { error: describeError(error) }),
     });
   }
 
@@ -53,8 +54,8 @@ export class ModuleCeremony implements Ceremony {
       entry = await import(
         toFileUrl(join(this.#deps.ceremonyDir, "index.ts")).href
       );
-    } catch {
-      await this.#fail();
+    } catch (error) {
+      await this.#fail(error);
       return;
     }
 
@@ -70,7 +71,7 @@ export class ModuleCeremony implements Ceremony {
       ) as Record<string, unknown>;
     } catch (e) {
       if (!(e instanceof Deno.errors.NotFound)) {
-        await this.#fail();
+        await this.#fail(e);
         return;
       }
     }
@@ -113,8 +114,14 @@ export class ModuleCeremony implements Ceremony {
       await (entry.default as (context: CeremonyContext) => Promise<void>)(
         context,
       );
-    } catch {
-      await this.#fail();
+    } catch (error) {
+      await this.#fail(error);
     }
   }
+}
+
+function describeError(error: unknown): string {
+  return error instanceof Error
+    ? (error.stack ?? error.message)
+    : String(error);
 }
