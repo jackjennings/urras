@@ -104,5 +104,6 @@ export const tick: Command = {
     ) return;
     const deps = composeTickDeps(config);
     await new TickService(deps).run();
+    Deno.exit(0);
   },
 };
