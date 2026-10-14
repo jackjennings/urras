@@ -10,8 +10,10 @@ import {
   runCreate,
   runDatabase,
   runPage,
+  runReplace,
   runSearch,
   searchResultsToMarkdown,
+  toRich,
 } from "./notion";
 import type { Client } from "@notionhq/client";
 import type {
@@ -772,4 +774,123 @@ Deno.test("CLI exits 1 with usage on create with missing title", async () => {
   }).output();
   assertEquals(result.code, 1);
   assert(new TextDecoder().decode(result.stderr).includes("usage:"));
+});
+
+// ── inline formatting ─────────────────────────────────────────────────────────
+
+Deno.test("toRich — plain text is one unannotated segment", () => {
+  assertEquals(toRich("plain"), [{ type: "text", text: { content: "plain" } }]);
+});
+
+Deno.test("toRich — bold, code, italic and link become annotated segments", () => {
+  const segments = toRich(
+    "a **bold** b `code` c _italic_ d [site](https://example.com)",
+  );
+  assertEquals(
+    segments.map((s) => s.text.content),
+    ["a ", "bold", " b ", "code", " c ", "italic", " d ", "site"],
+  );
+  assertEquals(segments[1].annotations, { bold: true });
+  assertEquals(segments[3].annotations, { code: true });
+  assertEquals(segments[5].annotations, { italic: true });
+  assertEquals(segments[7].text.link, { url: "https://example.com" });
+});
+
+Deno.test("toRich — snake_case identifiers are not italicised", () => {
+  const segments = toRich("user_view_pk and user_problem");
+  assertEquals(segments.length, 1);
+  assertEquals(segments[0].annotations, undefined);
+});
+
+Deno.test("markdownToBlocks — inline markers do not appear in block text", () => {
+  const blocks = markdownToBlocks("- **Key**: `value`");
+  const richText = (blocks[0].bulleted_list_item as {
+    rich_text: { text: { content: string } }[];
+  }).rich_text;
+  assertEquals(richText.map((r) => r.text.content), ["Key", ": ", "value"]);
+});
+
+Deno.test("markdownToBlocks — pipe table becomes a table block with header row", () => {
+  const blocks = markdownToBlocks(
+    "| Column | Type |\n|---|---|\n| `pk` | bigserial |\n| a \\| b | text |",
+  );
+  assertEquals(blocks.length, 1);
+  assertEquals(blocks[0].type, "table");
+  const table = blocks[0].table as {
+    table_width: number;
+    has_column_header: boolean;
+    children: { table_row: { cells: { text: { content: string } }[][] } }[];
+  };
+  assertEquals(table.table_width, 2);
+  assert(table.has_column_header);
+  assertEquals(table.children.length, 3);
+  assertEquals(table.children[2].table_row.cells[0][0].text.content, "a | b");
+});
+
+Deno.test("markdownToBlocks — paragraph before a table stays separate", () => {
+  const blocks = markdownToBlocks("Intro\n| A | B |\n|---|---|\n| 1 | 2 |");
+  assertEquals(blocks.map((b) => b.type), ["paragraph", "table"]);
+});
+
+// ── runReplace ────────────────────────────────────────────────────────────────
+
+function replaceClient(existing: { id: string; type: string }[]) {
+  const calls: string[] = [];
+  const client = {
+    blocks: {
+      children: {
+        list: () => Promise.resolve({ results: existing, has_more: false }),
+        append: () => {
+          calls.push("append");
+          return Promise.resolve({});
+        },
+      },
+      delete: ({ block_id }: { block_id: string }) => {
+        calls.push(`delete:${block_id}`);
+        return Promise.resolve({});
+      },
+    },
+    pages: {
+      update: () => {
+        calls.push("rename");
+        return Promise.resolve({});
+      },
+    },
+  } as unknown as Client;
+  return { client, calls };
+}
+
+const PAGE_URL = "https://www.notion.so/abc1234567890abcdef1234567890ab";
+
+Deno.test("runReplace — appends new content before deleting old blocks, sparing child pages", async () => {
+  const { client, calls } = replaceClient([
+    { id: "old-1", type: "paragraph" },
+    { id: "child", type: "child_page" },
+    { id: "old-2", type: "heading_2" },
+  ]);
+  await runReplace(client, PAGE_URL, "# New");
+  assertEquals(calls, ["append", "delete:old-1", "delete:old-2"]);
+});
+
+Deno.test("runReplace — renames the page when a title is given", async () => {
+  const { client, calls } = replaceClient([]);
+  await runReplace(client, PAGE_URL, "# New", "Phase 9: Title");
+  assertEquals(calls, ["append", "rename"]);
+});
+
+Deno.test("runReplace — refuses empty markdown and leaves the page untouched", async () => {
+  const { client, calls } = replaceClient([{ id: "old", type: "paragraph" }]);
+  await assertRejects(
+    () => runReplace(client, PAGE_URL, "\n\n"),
+    Error,
+    "empty Markdown",
+  );
+  assertEquals(calls, []);
+});
+
+Deno.test("toRich — inline code inside bold keeps both annotations", () => {
+  const segments = toRich("**`resolution`**: done");
+  assertEquals(segments[0].text.content, "resolution");
+  assertEquals(segments[0].annotations, { code: true, bold: true });
+  assertEquals(segments[1].text.content, ": done");
 });

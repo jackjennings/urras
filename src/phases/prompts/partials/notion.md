@@ -30,4 +30,15 @@ notion append <page-url>
 Reads Markdown from stdin. Converts it to Notion blocks and appends them to the
 page at `<page-url>`. Exits 0 on success. Supported elements: paragraphs,
 headings H1–H3, bulleted and numbered list items, fenced code blocks, block
-quotes, horizontal rules.
+quotes, horizontal rules, pipe tables (the first row becomes the header), and
+inline bold (`**x**`), italic (`_x_`), code (`` `x` ``), and links
+(`[text](url)`).
+
+```
+notion replace <page-url> [title]
+```
+
+Reads Markdown from stdin and replaces the page's content with it, keeping the
+same URL. Optionally renames the page to `[title]`. Child pages are left alone.
+Refuses empty input. Use it to revise an existing page instead of creating a new
+one.

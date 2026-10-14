@@ -36,6 +36,7 @@ notion database <url>       # fetch a Notion database as a Markdown table
 notion search <query>       # search the Notion workspace
 notion create <parent-url> <title>  # create a child Notion page (prints new URL)
 notion append <page-url>            # append Markdown from stdin to a Notion page
+notion replace <page-url> [title]   # replace a page's content from stdin, keeping its URL
 ```
 
 Every new subcommand must have a 3-character zsh alias (`u` + first two unique
