@@ -20,7 +20,12 @@ if [ -n "$LAZYBOY_PATH" ]; then
   export PATH="$LAZYBOY_PATH:$PATH"
 fi
 
+started_revision="$(git -C "$LAZYBOY_DIR" rev-parse HEAD)"
+
 while true; do
   deno run --allow-all "$LAZYBOY_DIR/src/index.ts" tick
+  if [ "$(git -C "$LAZYBOY_DIR" rev-parse HEAD)" != "$started_revision" ]; then
+    exit 0
+  fi
   sleep 300
 done
