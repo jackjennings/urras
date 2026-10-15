@@ -1027,9 +1027,13 @@ export function composeTickDeps(
             Deno.env.get("JIRA_API_TOKEN") ?? ""
           }`,
         );
-        const url = `${
-          config.jira!.baseUrl
-        }/rest/api/3/issue/${issueKey}/comment?maxResults=50`;
+        const project = issueKey.split("-")[0];
+        const match = jiraProviders.find((j) => j.project === project);
+        if (!match) {
+          throw new Error(`No Jira project configured for ${issueKey}`);
+        }
+        const url =
+          `${match.baseUrl}/rest/api/3/issue/${issueKey}/comment?maxResults=50`;
         const res = await http.get(url, {
           headers: {
             Authorization: `Basic ${auth}`,
