@@ -889,6 +889,17 @@ Deno.test("usage command reads usage files from all ticket directories", async (
   assertStringIncludes(output, "$0.01");
 });
 
+Deno.test("usage command prints the window and an --all hint by default", async () => {
+  const output = await runUsageCommand([], []);
+  assertStringIncludes(output.split("\n")[0], "last 30 days");
+  assertStringIncludes(output.split("\n")[0], "--all");
+});
+
+Deno.test("usage command prints an all-time window with --all", async () => {
+  const output = await runUsageCommand(["--all"], []);
+  assertEquals(output.split("\n")[0], "Window: all time");
+});
+
 Deno.test("usage command excludes usage older than 30 days by default", async () => {
   const output = await runUsageCommand([], [
     {

@@ -220,6 +220,13 @@ export function formatAncillaryUsageOutput(
 
 const ROLLING_WINDOW_DAYS = 30;
 
+export function formatWindow(since: Temporal.Instant | undefined): string {
+  if (!since) return "Window: all time";
+  const start = since.toZonedDateTimeISO("UTC").toPlainDate();
+  const end = Temporal.Now.zonedDateTimeISO("UTC").toPlainDate();
+  return `Window: ${start} to ${end} (last ${ROLLING_WINDOW_DAYS} days). Use --all for full cost.`;
+}
+
 export const usage: Command = {
   name: "usage",
   description:
@@ -252,6 +259,6 @@ export const usage: Command = {
       );
       if (ancillaryOutput) output += "\n" + ancillaryOutput;
     }
-    console.log(output);
+    console.log(`${formatWindow(since)}\n${output}`);
   },
 };
