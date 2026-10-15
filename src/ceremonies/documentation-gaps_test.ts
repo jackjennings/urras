@@ -7,18 +7,46 @@ import { assertSpyCalls, spy } from "@std/testing/mock";
 import { join } from "@std/path";
 import { DocumentationGapsCeremony } from "./documentation-gaps.ts";
 import type { CommandRunner } from "../apfel.ts";
+import { compactTimestamp } from "../timestamp.ts";
+
+async function writeEnrichment(options: {
+  stateDir: string;
+  ticketNumber: number;
+  timestamp: string;
+  body: string;
+}): Promise<void> {
+  const ticketDir = join(
+    options.stateDir,
+    "github",
+    "org",
+    "repo",
+    String(options.ticketNumber),
+  );
+  await Deno.mkdir(ticketDir, { recursive: true });
+  await Deno.writeTextFile(
+    join(ticketDir, `${options.timestamp}-enrichment.md`),
+    `## Open Questions\n\n${options.body}\n`,
+  );
+}
+
+async function writeRecentEnrichments(stateDir: string): Promise<void> {
+  const timestamp = compactTimestamp(Temporal.Now.zonedDateTimeISO("UTC"));
+  for (const ticketNumber of [1, 2, 3]) {
+    await writeEnrichment({
+      stateDir,
+      ticketNumber,
+      timestamp,
+      body: "How does auth work?",
+    });
+  }
+}
 
 Deno.test("DocumentationGapsCeremony: calls run when open questions are present", async () => {
   const stateDir = await Deno.makeTempDir();
   const repoDir = await Deno.makeTempDir();
   const outputDir = await Deno.makeTempDir();
   try {
-    const ticketDir = join(stateDir, "github", "org", "repo", "1");
-    await Deno.mkdir(ticketDir, { recursive: true });
-    await Deno.writeTextFile(
-      join(ticketDir, "20260101T000000-enrichment.md"),
-      "## Open Questions\n\nWhy does X work this way?\n",
-    );
+    await writeRecentEnrichments(stateDir);
     const run: CommandRunner = spy((_args: string[]) =>
       Promise.resolve({
         code: 0,
@@ -50,12 +78,7 @@ Deno.test("DocumentationGapsCeremony: writes error report when run exits non-zer
   const repoDir = await Deno.makeTempDir();
   const outputDir = await Deno.makeTempDir();
   try {
-    const ticketDir = join(stateDir, "github", "org", "repo", "2");
-    await Deno.mkdir(ticketDir, { recursive: true });
-    await Deno.writeTextFile(
-      join(ticketDir, "20260101T000000-enrichment.md"),
-      "## Open Questions\n\nWhat is the purpose?\n",
-    );
+    await writeRecentEnrichments(stateDir);
     const run: CommandRunner = spy((_args: string[]) =>
       Promise.resolve({ code: 1, stdout: "" })
     );
@@ -83,12 +106,7 @@ Deno.test("DocumentationGapsCeremony: passes correct model and flags to claude",
   const repoDir = await Deno.makeTempDir();
   const outputDir = await Deno.makeTempDir();
   try {
-    const ticketDir = join(stateDir, "github", "org", "repo", "3");
-    await Deno.mkdir(ticketDir, { recursive: true });
-    await Deno.writeTextFile(
-      join(ticketDir, "20260101T000000-enrichment.md"),
-      "## Open Questions\n\nHow does auth work?\n",
-    );
+    await writeRecentEnrichments(stateDir);
     let capturedArgs: string[] = [];
     const run: CommandRunner = spy((args: string[]) => {
       capturedArgs = args;
@@ -124,12 +142,7 @@ Deno.test("DocumentationGapsCeremony: writes no-gaps report when run returns NO_
   const repoDir = await Deno.makeTempDir();
   const outputDir = await Deno.makeTempDir();
   try {
-    const ticketDir = join(stateDir, "github", "org", "repo", "4");
-    await Deno.mkdir(ticketDir, { recursive: true });
-    await Deno.writeTextFile(
-      join(ticketDir, "20260101T000000-enrichment.md"),
-      "## Open Questions\n\nAny gaps?\n",
-    );
+    await writeRecentEnrichments(stateDir);
     const run: CommandRunner = spy((_args: string[]) =>
       Promise.resolve({
         code: 0,
@@ -160,6 +173,72 @@ Deno.test("DocumentationGapsCeremony: does not call run when no open questions e
   const repoDir = await Deno.makeTempDir();
   const outputDir = await Deno.makeTempDir();
   try {
+    const run: CommandRunner = spy((_args: string[]) =>
+      Promise.resolve({ code: 0, stdout: "" })
+    );
+    const ceremony = new DocumentationGapsCeremony({
+      stateDir,
+      repoDir,
+      run,
+      commitState: () => Promise.resolve(),
+    });
+    await ceremony.run(Temporal.Now.zonedDateTimeISO("UTC"), outputDir);
+    assertSpyCalls(run as ReturnType<typeof spy>, 0);
+  } finally {
+    await Deno.remove(stateDir, { recursive: true });
+    await Deno.remove(repoDir, { recursive: true });
+    await Deno.remove(outputDir, { recursive: true });
+  }
+});
+
+Deno.test("DocumentationGapsCeremony: ignores open questions older than the window", async () => {
+  const stateDir = await Deno.makeTempDir();
+  const repoDir = await Deno.makeTempDir();
+  const outputDir = await Deno.makeTempDir();
+  try {
+    const stale = compactTimestamp(
+      Temporal.Now.zonedDateTimeISO("UTC").subtract({ days: 60 }),
+    );
+    for (const ticketNumber of [1, 2, 3]) {
+      await writeEnrichment({
+        stateDir,
+        ticketNumber,
+        timestamp: stale,
+        body: "Old question?",
+      });
+    }
+    const run: CommandRunner = spy((_args: string[]) =>
+      Promise.resolve({ code: 0, stdout: "" })
+    );
+    const ceremony = new DocumentationGapsCeremony({
+      stateDir,
+      repoDir,
+      run,
+      commitState: () => Promise.resolve(),
+    });
+    await ceremony.run(Temporal.Now.zonedDateTimeISO("UTC"), outputDir);
+    assertSpyCalls(run as ReturnType<typeof spy>, 0);
+  } finally {
+    await Deno.remove(stateDir, { recursive: true });
+    await Deno.remove(repoDir, { recursive: true });
+    await Deno.remove(outputDir, { recursive: true });
+  }
+});
+
+Deno.test("DocumentationGapsCeremony: does not call run for fewer than three tickets", async () => {
+  const stateDir = await Deno.makeTempDir();
+  const repoDir = await Deno.makeTempDir();
+  const outputDir = await Deno.makeTempDir();
+  try {
+    const timestamp = compactTimestamp(Temporal.Now.zonedDateTimeISO("UTC"));
+    for (const ticketNumber of [1, 2]) {
+      await writeEnrichment({
+        stateDir,
+        ticketNumber,
+        timestamp,
+        body: "Why?",
+      });
+    }
     const run: CommandRunner = spy((_args: string[]) =>
       Promise.resolve({ code: 0, stdout: "" })
     );

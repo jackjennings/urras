@@ -34,8 +34,12 @@ function extractOpenQuestions(content: string): string | null {
   return ["## Open Questions", ...bodyLines].join("\n");
 }
 
+const QUESTION_WINDOW_DAYS = 30;
+const MINIMUM_TICKETS = 3;
+
 async function collectOpenQuestions(
   stateDir: string,
+  earliestTimestamp: string,
 ): Promise<Array<{ ticketId: string; questions: string }>> {
   const results: Array<{ ticketId: string; questions: string }> = [];
   const SKIP = new Set(["ceremonies", "prompts", ".git"]);
@@ -45,7 +49,10 @@ async function collectOpenQuestions(
       for await (const entry of readDir(dir)) {
         if (entry.isDirectory && !SKIP.has(entry.name)) {
           await walk(join(dir, entry.name));
-        } else if (entry.isFile && entry.name.endsWith("-enrichment.md")) {
+        } else if (
+          entry.isFile && entry.name.endsWith("-enrichment.md") &&
+          entry.name.slice(0, earliestTimestamp.length) >= earliestTimestamp
+        ) {
           const content = await readTextFile(join(dir, entry.name));
           const questions = extractOpenQuestions(content);
           if (!questions) continue;
@@ -158,14 +165,17 @@ export class DocumentationGapsCeremony implements Ceremony {
   async run(now: Temporal.ZonedDateTime, outputDir: string): Promise<void> {
     await mkdir(outputDir, { recursive: true });
 
-    const questions = await collectOpenQuestions(this.#deps.stateDir);
+    const questions = await collectOpenQuestions(
+      this.#deps.stateDir,
+      compactTimestamp(now.subtract({ days: QUESTION_WINDOW_DAYS })),
+    );
     const outputPath = join(
       outputDir,
       `${compactTimestamp(now)}-documentation-gaps.md`,
     );
 
     let content: string;
-    if (questions.length === 0) {
+    if (new Set(questions.map((q) => q.ticketId)).size < MINIMUM_TICKETS) {
       content = "# Documentation Gap Report\n\nNo uncovered gaps found.\n";
     } else {
       const corpus = await readCorpus(this.#deps.repoDir, this.#deps.stateDir);

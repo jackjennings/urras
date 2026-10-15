@@ -5,6 +5,8 @@ Cluster the provided Open Questions semantically — questions that ask the same
 - Select up to 3 representative verbatim quotes
 - Identify which file in the doc corpus the answer should land in (AGENTS.md, a specific phase prompt file, or "unknown")
 
+Drop any cluster with fewer than 3 occurrences. A gap that appears once or twice is a question about one ticket, not a gap in the documentation.
+
 Drop any cluster whose answer is already directly present in the doc corpus. Coverage is binary: a cluster is covered only if the corpus directly answers it, not merely mentions the topic.
 
 Drop any cluster whose theme semantically matches a heading from the Previously Reported Gaps list.
