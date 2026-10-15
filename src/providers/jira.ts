@@ -5,9 +5,7 @@ import { HttpClient } from "../http-client.ts";
 import { captureCommandRunner } from "../apfel.ts";
 import { judgeComment } from "../judge-comment.ts";
 import type { LanguageModel } from "../models/types.ts";
-import { ApfelLanguageModel } from "../models/apfel.ts";
-import { ClaudeLanguageModel } from "../models/claude.ts";
-import { FallbackLanguageModel } from "../models/fallback.ts";
+import { buildAncillaryChain } from "../models/ancillary-chain.ts";
 
 interface JiraIssueLink {
   type: { inward: string; outward: string };
@@ -63,12 +61,10 @@ export class JiraProvider implements Provider {
     this.paused = opts.paused ?? false;
     this.http = opts.http;
     this.judgeCommentModel = opts.judgeCommentModel ??
-      new FallbackLanguageModel([
-        new ApfelLanguageModel(captureCommandRunner()),
-        new ClaudeLanguageModel(captureCommandRunner(), {
-          model: "claude-haiku-4-5",
-        }),
-      ]);
+      buildAncillaryChain({
+        callSite: "judgeComment",
+        run: captureCommandRunner(),
+      });
   }
 
   async close(url: string): Promise<void> {

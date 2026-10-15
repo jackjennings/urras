@@ -129,6 +129,7 @@ import {
 import { PHASE_SEQUENCE } from "./phases/types.ts";
 import { HttpClient } from "./http-client.ts";
 import { ApfelLanguageModel } from "./models/apfel.ts";
+import { buildAncillaryChain } from "./models/ancillary-chain.ts";
 import { ClaudeLanguageModel } from "./models/claude.ts";
 import { FallbackLanguageModel } from "./models/fallback.ts";
 import { OllamaLanguageModel } from "./models/ollama.ts";
@@ -470,12 +471,10 @@ export function composeTickDeps(
       pickupStatusName: entry.statuses?.pickup ?? "In Progress",
       paused: entry.paused,
       http,
-      judgeCommentModel: new FallbackLanguageModel([
-        new ApfelLanguageModel(captureCommandRunner()),
-        new ClaudeLanguageModel(captureCommandRunner(), {
-          model: "claude-haiku-4-5",
-        }),
-      ]),
+      judgeCommentModel: buildAncillaryChain({
+        callSite: "judgeComment",
+        run: captureCommandRunner(),
+      }),
     });
     providers.push(jiraProvider);
     jiraProviders.push({
@@ -501,23 +500,17 @@ export function composeTickDeps(
     return githubProvider;
   }
 
-  const ollamaModels: OllamaLanguageModel[] = config.ollama
-    ? config.ollama.models.map(
-      (model) =>
-        new OllamaLanguageModel(fetch, { model, url: config.ollama!.url }),
-    )
-    : [];
+  const ollamaModelConfigs = (config.ollama?.models ?? []).map((model) => ({
+    model,
+    url: config.ollama!.url,
+  }));
 
-  const shortTitleModel = new FallbackLanguageModel([
-    ...ollamaModels,
-    new ApfelLanguageModel(captureCommandRunner(), {
-      recordUsage: appendAncillaryUsage("generateShortTitle"),
-    }),
-    new ClaudeLanguageModel(captureCommandRunner(), {
-      model: "claude-haiku-4-5",
-      recordUsage: appendAncillaryUsage("generateShortTitle"),
-    }),
-  ]);
+  const shortTitleModel = buildAncillaryChain({
+    callSite: "generateShortTitle",
+    run: captureCommandRunner(),
+    ollamaModels: ollamaModelConfigs,
+    ollamaFirst: true,
+  });
 
   const tickActions = [
     createWorktreeAction({
@@ -1175,13 +1168,11 @@ export function composeTickDeps(
       judgeComment: (body) =>
         judgeComment(
           body,
-          new FallbackLanguageModel([
-            new ApfelLanguageModel(captureCommandRunner()),
-            ...ollamaModels,
-            new ClaudeLanguageModel(captureCommandRunner(), {
-              model: "claude-haiku-4-5",
-            }),
-          ]),
+          buildAncillaryChain({
+            callSite: "judgeComment",
+            run: captureCommandRunner(),
+            ollamaModels: ollamaModelConfigs,
+          }),
         ),
       writeContextFile: async (ticketDir, content) => {
         const timestamp = compactTimestamp(
@@ -1226,13 +1217,11 @@ export function composeTickDeps(
           newTitle,
           oldBody,
           newBody,
-          new FallbackLanguageModel([
-            new ApfelLanguageModel(captureCommandRunner()),
-            ...ollamaModels,
-            new ClaudeLanguageModel(captureCommandRunner(), {
-              model: "claude-haiku-4-5",
-            }),
-          ]),
+          buildAncillaryChain({
+            callSite: "judgeUpstreamEdit",
+            run: captureCommandRunner(),
+            ollamaModels: ollamaModelConfigs,
+          }),
         ),
       generateShortTitle: (title, body) =>
         generateShortTitle(shortTitleModel, title, body),
@@ -1280,9 +1269,16 @@ export function composeTickDeps(
             return new OllamaLanguageModel(fetch, {
               model: entry.model,
               url: config.ollama?.url,
+              recordUsage: callSite
+                ? appendAncillaryUsage(callSite)
+                : undefined,
             });
           } else {
-            return new ApfelLanguageModel(captureCommandRunner());
+            return new ApfelLanguageModel(captureCommandRunner(), {
+              recordUsage: callSite
+                ? appendAncillaryUsage(callSite)
+                : undefined,
+            });
           }
         });
         return new FallbackLanguageModel(models);
@@ -1401,11 +1397,8 @@ export function composeTickDeps(
           resume: opts.resume,
           includePrinciples: config.tick.principles,
           maxTurns: config.tick.maxTurns,
-          ollamaModels: config.ollama
-            ? config.ollama.models.map((model) => ({
-              model,
-              url: config.ollama!.url,
-            }))
+          ollamaModels: ollamaModelConfigs.length > 0
+            ? ollamaModelConfigs
             : undefined,
           barePhase: opts.phase,
           codegraphRoots: config.codegraph?.enabled
@@ -1436,13 +1429,11 @@ export function composeTickDeps(
         if (!extracted) return;
         const scope = await judgePrinciples(
           extracted,
-          new FallbackLanguageModel([
-            new ApfelLanguageModel(captureCommandRunner()),
-            ...ollamaModels,
-            new ClaudeLanguageModel(captureCommandRunner(), {
-              model: "claude-haiku-4-5",
-            }),
-          ]),
+          buildAncillaryChain({
+            callSite: "judgePrinciples",
+            run: captureCommandRunner(),
+            ollamaModels: ollamaModelConfigs,
+          }),
         );
         if (scope === null) return;
         const globalPath = join(sd, "principles.md");
@@ -1598,13 +1589,11 @@ export function composeTickDeps(
       adjudicatePhaseModel: (prompt) =>
         adjudicatePhaseModel(
           prompt,
-          new FallbackLanguageModel([
-            new ApfelLanguageModel(captureCommandRunner()),
-            ...ollamaModels,
-            new ClaudeLanguageModel(captureCommandRunner(), {
-              model: "claude-haiku-4-5",
-            }),
-          ]),
+          buildAncillaryChain({
+            callSite: "adjudicatePhaseModel",
+            run: captureCommandRunner(),
+            ollamaModels: ollamaModelConfigs,
+          }),
         ),
       spawnOutlierAnalysis: async (
         ticketId,

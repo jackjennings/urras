@@ -35,9 +35,7 @@ import { expandHome, loadConfig } from "./config.ts";
 import { captureCommandRunner, defaultCommandRunner } from "./apfel.ts";
 import { checkHunkAvailable } from "./hunk.ts";
 import { parsePrUrl } from "./providers/github/identity.ts";
-import { ApfelLanguageModel } from "./models/apfel.ts";
-import { ClaudeLanguageModel } from "./models/claude.ts";
-import { FallbackLanguageModel } from "./models/fallback.ts";
+import { buildAncillaryChain } from "./models/ancillary-chain.ts";
 import type { LanguageModel } from "./models/types.ts";
 import {
   commitTicket,
@@ -239,12 +237,10 @@ export async function findLatestFeedback(
 
 export async function classifyApproval(
   text: string,
-  model: LanguageModel = new FallbackLanguageModel([
-    new ApfelLanguageModel(captureCommandRunner()),
-    new ClaudeLanguageModel(captureCommandRunner(), {
-      model: "claude-haiku-4-5",
-    }),
-  ]),
+  model: LanguageModel = buildAncillaryChain({
+    callSite: "classifyApproval",
+    run: captureCommandRunner(),
+  }),
 ): Promise<boolean> {
   if (text.trim().length > 50) return false;
   const result = await model.generateObject<

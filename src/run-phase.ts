@@ -24,11 +24,11 @@ import { deriveProjectPath } from "./phases/project-path.ts";
 import matter from "gray-matter";
 import { captureCommandRunner, type CommandRunner } from "./apfel.ts";
 import { filterPrinciples } from "./judge-principles.ts";
-import { OllamaLanguageModel } from "./models/ollama.ts";
 import type { LanguageModel } from "./models/types.ts";
-import { ApfelLanguageModel } from "./models/apfel.ts";
-import { ClaudeLanguageModel } from "./models/claude.ts";
-import { FallbackLanguageModel } from "./models/fallback.ts";
+import {
+  buildAncillaryChain,
+  type OllamaModelConfig,
+} from "./models/ancillary-chain.ts";
 import { compactTimestamp } from "./timestamp.ts";
 import { PHASE_MODEL_DEFAULTS } from "./phases/model.ts";
 import { selfApprove } from "./self-approve.ts";
@@ -992,19 +992,13 @@ if (import.meta.main) {
 
   const stateDir = args["state-dir"] ?? "";
 
-  const ollamaModels: OllamaLanguageModel[] = args["ollama-models"]
-    ? (JSON.parse(args["ollama-models"]) as Array<
-      { model: string; url?: string }
-    >).map((m) => new OllamaLanguageModel(fetch, m))
-    : [];
-
-  const languageModel = new FallbackLanguageModel([
-    new ApfelLanguageModel(captureCommandRunner()),
-    ...ollamaModels,
-    new ClaudeLanguageModel(captureCommandRunner(), {
-      model: "claude-haiku-4-5",
-    }),
-  ]);
+  const languageModel = buildAncillaryChain({
+    callSite: "phaseRunner",
+    run: captureCommandRunner(),
+    ollamaModels: args["ollama-models"]
+      ? JSON.parse(args["ollama-models"]) as OllamaModelConfig[]
+      : [],
+  });
 
   const codegraphRoots: string[] = args["codegraph-roots"]
     ? (JSON.parse(args["codegraph-roots"]) as string[])
