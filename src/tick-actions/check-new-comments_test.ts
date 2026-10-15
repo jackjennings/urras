@@ -746,3 +746,84 @@ Deno.test(
     );
   },
 );
+
+Deno.test(
+  "checkNewCommentsAction: tracking fetch failure still processes PR comments",
+  async () => {
+    const writeContextSpy = spy(() => Promise.resolve());
+    const result = await checkNewCommentsAction(
+      makeDeps({
+        fetchJiraComments: () => Promise.reject(new Error("Jira API 401")),
+        fetchPrComments: () =>
+          Promise.resolve([
+            {
+              author: "reviewer",
+              body: "Rename this",
+              timestamp: "2026-02-01T00:00:00Z",
+            },
+          ]),
+        writeContextFile: writeContextSpy,
+      }),
+    ).run(
+      makeTicket({ ...BASE_JIRA, prs: [ACTIVE_PR] }),
+      "/state",
+    );
+    assertEquals(result?.status, "revising");
+    assertSpyCalls(writeContextSpy, 1);
+  },
+);
+
+Deno.test(
+  "checkNewCommentsAction: tracking fetch failure is logged",
+  async () => {
+    const appendLogSpy = spy((_s: string, _id: string, _e: object) =>
+      Promise.resolve()
+    );
+    const result = await checkNewCommentsAction(
+      makeDeps({
+        fetchJiraComments: () => Promise.reject(new Error("Jira API 401")),
+        appendLog: appendLogSpy,
+      }),
+    ).run(makeTicket(BASE_JIRA), "/state");
+    assertEquals(result, null);
+    assertSpyCalls(appendLogSpy, 1);
+    const entry = appendLogSpy.calls[0].args[2] as Record<string, string>;
+    assertEquals(entry.event, "error");
+    assertEquals(entry.context, "check-new-comments");
+    assertStringIncludes(entry.message, "Jira API 401");
+  },
+);
+
+Deno.test(
+  "checkNewCommentsAction: PR fetch failure is logged and other PRs are still checked",
+  async () => {
+    const appendLogSpy = spy((_s: string, _id: string, _e: object) =>
+      Promise.resolve()
+    );
+    const secondPr = { ...ACTIVE_PR, url: "https://github.com/o/r/pull/2" };
+    const result = await checkNewCommentsAction(
+      makeDeps({
+        fetchPrComments: (url) =>
+          url === ACTIVE_PR.url
+            ? Promise.reject(new Error("GitHub API 502"))
+            : Promise.resolve([
+              {
+                author: "reviewer",
+                body: "Fix",
+                timestamp: "2026-02-01T00:00:00Z",
+              },
+            ]),
+        appendLog: appendLogSpy,
+      }),
+    ).run(
+      makeTicket({ ...BASE_GITHUB, prs: [ACTIVE_PR, secondPr] }),
+      "/state",
+    );
+    assertEquals(result?.status, "revising");
+    const errors = appendLogSpy.calls
+      .map((call) => call.args[2] as Record<string, string>)
+      .filter((entry) => entry.event === "error");
+    assertEquals(errors.length, 1);
+    assertStringIncludes(errors[0].message, "GitHub API 502");
+  },
+);

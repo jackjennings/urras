@@ -61,7 +61,14 @@ export function checkNewCommentsAction(deps: CheckNewCommentsDeps): TickAction {
       const since = ticket.lastSeenCommentTimestamp ?? ticket.created;
       const prSince = ticket.lastSeenPrCommentTimestamp ?? ticket.created;
 
-      let fetched: RawComment[];
+      const logFetchFailure = (error: unknown) =>
+        deps.appendLog(stateDir, ticket.id, {
+          event: "error",
+          context: "check-new-comments",
+          message: String(error),
+        });
+
+      let fetched: RawComment[] = [];
       try {
         if (ticket.provider === "github") {
           fetched = await deps.fetchGitHubComments(ticket.id, since);
@@ -69,8 +76,8 @@ export function checkNewCommentsAction(deps: CheckNewCommentsDeps): TickAction {
           const issueKey = ticket.id.split("/")[1];
           fetched = await deps.fetchJiraComments(issueKey, since);
         }
-      } catch {
-        return null;
+      } catch (error) {
+        await logFetchFailure(error);
       }
 
       const comments = fetched.filter((c) => isAfter(c.timestamp, since));
@@ -88,7 +95,8 @@ export function checkNewCommentsAction(deps: CheckNewCommentsDeps): TickAction {
         let prComments: RawComment[];
         try {
           prComments = await deps.fetchPrComments(pr.url, prSince);
-        } catch {
+        } catch (error) {
+          await logFetchFailure(error);
           continue;
         }
         prFetched += prComments.length;
