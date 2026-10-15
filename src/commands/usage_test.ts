@@ -81,6 +81,19 @@ Deno.test("aggregateUsage: groups an empty model name under unknown", () => {
   assertFalse(result.has(""));
 });
 
+Deno.test("aggregateUsage: omits unnamed models with no usage", () => {
+  const result = aggregateUsage([
+    makeUsage({
+      model: "",
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    }),
+  ]);
+  assertEquals(result.size, 0);
+});
+
 Deno.test("aggregateUsage: groups by stripped model name and sums token fields", () => {
   const result = aggregateUsage([
     makeUsage({

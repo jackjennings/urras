@@ -6,7 +6,7 @@ import {
   type AncillaryUsageRecord,
   readAncillaryUsageFile,
 } from "../ancillary-usage.ts";
-import type { PhaseUsage } from "../state/types.ts";
+import type { PhaseModelUsage, PhaseUsage } from "../state/types.ts";
 import type { Command } from "./types.ts";
 
 type ModelGroup = {
@@ -23,6 +23,12 @@ type ModelGroup = {
 function normalizeModelName(model: string | undefined): string {
   const name = (model ?? "").replace(/-\d{8}$/, "").trim();
   return name === "" ? "unknown" : name;
+}
+
+function isEmptyUnnamedModel(model: PhaseModelUsage): boolean {
+  return normalizeModelName(model.model) === "unknown" &&
+    model.input + model.output + model.cacheRead + model.cacheWrite === 0 &&
+    !model.costUsd;
 }
 
 export function aggregateUsage(records: PhaseUsage[]): Map<string, ModelGroup> {
@@ -47,7 +53,8 @@ export function aggregateUsage(records: PhaseUsage[]): Map<string, ModelGroup> {
   }
 
   for (const r of records) {
-    for (const m of r.models) {
+    const models = r.models.filter((m) => !isEmptyUnnamedModel(m));
+    for (const m of models) {
       const key = normalizeModelName(m.model);
       const g = getOrCreate(key);
       g.input += m.input;
@@ -60,8 +67,8 @@ export function aggregateUsage(records: PhaseUsage[]): Map<string, ModelGroup> {
         g.costCount++;
       }
     }
-    if (r.tools && r.models.length > 0) {
-      const primary = r.models.reduce((a, b) =>
+    if (r.tools && models.length > 0) {
+      const primary = models.reduce((a, b) =>
         a.input + a.output >= b.input + b.output ? a : b
       );
       const g = getOrCreate(normalizeModelName(primary.model));
