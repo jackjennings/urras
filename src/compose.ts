@@ -917,6 +917,13 @@ export function composeTickDeps(
               `Infrastructure failures are network errors, rate limits, runner timeouts, package ` +
               `download failures, and transient flakiness with no code correlation. Default to a ` +
               `PR-side cause — a red run on a PR branch is overwhelmingly the PR's fault.\n\n` +
+              `End-to-end (E2E) test failures need an extra check. Compare the failing spec's ` +
+              `subject against \`git diff origin/<base-branch>...HEAD\`. Modify an E2E test, its ` +
+              `fixtures, or the code it exercises only when the failure is caused by changes this ` +
+              `PR already makes. If the failing E2E tests cover behavior this PR does not touch ` +
+              `(for example they also fail on the base branch, or fail in an unrelated area), do ` +
+              `not edit them, make no commit, and end with \`VERDICT: UNRELATED\`. Do not ` +
+              `skip, delete, or loosen an E2E test to turn the run green.\n\n` +
               `Fix it in the worktree. Reproduce the failure locally with the job's own command, ` +
               `fix it, re-run that command, and confirm it passes before claiming FIXED. Common ` +
               `cases:\n` +
@@ -948,7 +955,7 @@ export function composeTickDeps(
               `agent-browser, or any other internal tooling in commit messages.\n\n` +
               `Only the output file below is read by the pipeline — nothing you say in your final reply is ` +
               `seen. The last line written to that file, via the Write or Edit tool, must be ` +
-              `exactly one of: \`VERDICT: FIXED\`, \`VERDICT: INFRA\`, or \`VERDICT: UNFIXABLE\`, ` +
+              `exactly one of: \`VERDICT: FIXED\`, \`VERDICT: INFRA\`, \`VERDICT: UNRELATED\`, or \`VERDICT: UNFIXABLE\`, ` +
               `with no markdown formatting (no bold, no heading, no bullet). Use INFRA only for an ` +
               `infrastructure failure, and UNFIXABLE only when the failure genuinely requires a ` +
               `human decision. When the verdict is FIXED, add one more line immediately after it ` +

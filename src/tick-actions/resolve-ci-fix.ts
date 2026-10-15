@@ -117,7 +117,7 @@ export function resolveCIFixAction(deps: ResolveCIFixDeps): TickAction {
         }
 
         const verdictMatch = outputContent.match(
-          /^VERDICT:\s*(FIXED|INFRA|UNFIXABLE)/im,
+          /^VERDICT:\s*(FIXED|INFRA|UNRELATED|UNFIXABLE)/im,
         );
         if (!verdictMatch) {
           return await park(contextPath, "no-verdict-line", {
@@ -129,6 +129,7 @@ export function resolveCIFixAction(deps: ResolveCIFixDeps): TickAction {
         const verdict = verdictMatch[1].toUpperCase() as
           | "FIXED"
           | "INFRA"
+          | "UNRELATED"
           | "UNFIXABLE";
 
         if (verdict === "UNFIXABLE") {

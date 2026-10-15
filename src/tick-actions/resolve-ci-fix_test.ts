@@ -70,6 +70,8 @@ const FIXED_WITH_LEARNING_OUTPUT = "Ran deno fmt and committed the result.\n" +
   "LEARNING: Run deno fmt after resolving conflicts so formatting drift never reaches CI.\n";
 const INFRA_OUTPUT =
   "Package download timed out on the runner.\nVERDICT: INFRA\n";
+const UNRELATED_OUTPUT =
+  "The failing E2E tests cover code this PR does not touch.\nVERDICT: UNRELATED\n";
 const UNFIXABLE_OUTPUT =
   "The failure needs a product decision.\nVERDICT: UNFIXABLE\n";
 
@@ -306,6 +308,36 @@ Deno.test("resolveCIFixAction: INFRA on attempt 1 re-runs the failed jobs and do
     runId: "1001",
   });
   assertEquals(result?.status, "waiting");
+});
+
+Deno.test("resolveCIFixAction: UNRELATED does not push, re-run, or park, even on attempt 2", async () => {
+  const gitSpy = spy(
+    (_args: string[], _cwd: string) =>
+      Promise.resolve({ code: 0, stdout: "", stderr: "" }),
+  );
+  const rerunSpy = spy((_opts: { repo: string; runId: string }) =>
+    Promise.resolve()
+  );
+  const logged: Record<string, unknown>[] = [];
+  const result = await makeAction({
+    readFile: (path: string) =>
+      Promise.resolve(
+        path.endsWith(CONTEXT_FILENAME)
+          ? CONTEXT_CONTENT.replace("Attempt: 1", "Attempt: 2")
+          : UNRELATED_OUTPUT,
+      ),
+    runGit: gitSpy,
+    rerunFailedJobs: rerunSpy,
+    appendLog: (_sd, _id, entry) => {
+      logged.push(entry as Record<string, unknown>);
+      return Promise.resolve();
+    },
+  }).run(makeTicket(BASE), "/state");
+  assertSpyCalls(gitSpy, 0);
+  assertSpyCalls(rerunSpy, 0);
+  assertEquals(result?.status, "waiting");
+  assertEquals(logged[0].event, "ci-fix-resolved");
+  assertEquals(logged[0].verdict, "UNRELATED");
 });
 
 Deno.test("resolveCIFixAction: INFRA on attempt 2 parks and does not re-run", async () => {

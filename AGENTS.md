@@ -1009,12 +1009,13 @@ the next PR.
 for `*-ci-fix-context-*.md` files when no live process is present. For each
 context file it derives the output filename by replacing `-ci-fix-context-` with
 `-ci-fix-` (the same timestamp prefix is shared) and parses the verdict from the
-first line matching `/^VERDICT:\s*(FIXED|INFRA|UNFIXABLE)/im`.
+first line matching `/^VERDICT:\s*(FIXED|INFRA|UNRELATED|UNFIXABLE)/im`.
 
 | Verdict     | Effect                                                                                                                                                                                                                                                                                                                                             |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `FIXED`     | `git push --force-with-lease=refs/heads/<branch>:<Head-SHA> origin <branch>` from the worktree, logging `branch-pushed`. A push failure parks the ticket (`push-failed`).                                                                                                                                                                          |
 | `INFRA`     | On attempt 1, `POST /actions/runs/{runId}/rerun-failed-jobs`; no push, no code change. A failed re-run is logged (`rerun-failed`) and never parks. On attempt 2 or higher, no re-run is attempted — the ticket parks with `needs-attention` and reason `infra-rerun-exhausted`. A missing or non-numeric `Attempt` header is treated as attempt 1. |
+| `UNRELATED` | The failure is in code the PR does not touch (typically E2E tests failing independently of the PR's changes). No push, no re-run, no park; logged as `ci-fix-resolved` and the ticket stays `implementation/waiting`. The run's `${runId}-${attempt}` key is already in `ciHandledRunIds`, so the same run is not picked up again.                 |
 | `UNFIXABLE` | `needs-attention`, reason `ci-unfixable`.                                                                                                                                                                                                                                                                                                          |
 
 The lease is pinned to the head SHA rather than left bare because the agent is
