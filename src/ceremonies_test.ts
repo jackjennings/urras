@@ -484,6 +484,23 @@ function makeDocumentationGaps(
   });
 }
 
+async function writeRecentEnrichments(stateDir: string): Promise<void> {
+  for (const ticketNumber of [1, 2, 3]) {
+    const ticketDir = join(
+      stateDir,
+      "github",
+      "org",
+      "repo",
+      String(ticketNumber),
+    );
+    await Deno.mkdir(ticketDir, { recursive: true });
+    await Deno.writeTextFile(
+      join(ticketDir, "20260720T000000-enrichment.md"),
+      "## Open Questions\n- Which model to use?\n",
+    );
+  }
+}
+
 async function outputFiles(outputDir: string): Promise<string[]> {
   const files: string[] = [];
   for await (const entry of Deno.readDir(outputDir)) files.push(entry.name);
@@ -522,12 +539,7 @@ Deno.test("DocumentationGapsCeremony: LLM response written verbatim to output fi
   const stateDir = await Deno.makeTempDir();
   const outputDir = await Deno.makeTempDir();
   try {
-    const ticketDir = join(stateDir, "github", "org", "repo", "1");
-    await Deno.mkdir(ticketDir, { recursive: true });
-    await Deno.writeTextFile(
-      join(ticketDir, "20260101T000000-enrichment.md"),
-      "## Open Questions\n- Which model to use?\n",
-    );
+    await writeRecentEnrichments(stateDir);
     const llmResponse =
       "# Documentation Gap Report\n\n_1 cluster across 1 ticket_\n\n## Model Selection\n\n**Occurrences:** 1\n";
     const ceremony = makeDocumentationGaps(stateDir, outputDir, {
@@ -552,12 +564,7 @@ Deno.test("DocumentationGapsCeremony: LLM returning NO_GAPS writes no-gaps outpu
   const stateDir = await Deno.makeTempDir();
   const outputDir = await Deno.makeTempDir();
   try {
-    const ticketDir = join(stateDir, "github", "org", "repo", "1");
-    await Deno.mkdir(ticketDir, { recursive: true });
-    await Deno.writeTextFile(
-      join(ticketDir, "20260101T000000-enrichment.md"),
-      "## Open Questions\n- Which model to use?\n",
-    );
+    await writeRecentEnrichments(stateDir);
     const ceremony = makeDocumentationGaps(stateDir, outputDir, {
       run: (_args) =>
         Promise.resolve({
@@ -579,12 +586,7 @@ Deno.test("DocumentationGapsCeremony: LLM failure writes error output and still 
   const stateDir = await Deno.makeTempDir();
   const outputDir = await Deno.makeTempDir();
   try {
-    const ticketDir = join(stateDir, "github", "org", "repo", "1");
-    await Deno.mkdir(ticketDir, { recursive: true });
-    await Deno.writeTextFile(
-      join(ticketDir, "20260101T000000-enrichment.md"),
-      "## Open Questions\n- Which model to use?\n",
-    );
+    await writeRecentEnrichments(stateDir);
     const commitState = spy(() => Promise.resolve());
     const ceremony = makeDocumentationGaps(stateDir, outputDir, {
       run: (_args) => Promise.reject(new Error("network error")),
@@ -605,12 +607,7 @@ Deno.test("DocumentationGapsCeremony: non-OK LLM response writes error output an
   const stateDir = await Deno.makeTempDir();
   const outputDir = await Deno.makeTempDir();
   try {
-    const ticketDir = join(stateDir, "github", "org", "repo", "1");
-    await Deno.mkdir(ticketDir, { recursive: true });
-    await Deno.writeTextFile(
-      join(ticketDir, "20260101T000000-enrichment.md"),
-      "## Open Questions\n- Which model to use?\n",
-    );
+    await writeRecentEnrichments(stateDir);
     const commitState = spy(() => Promise.resolve());
     const ceremony = makeDocumentationGaps(stateDir, outputDir, {
       run: (_args) => Promise.resolve({ code: 1, stdout: "" }),
@@ -648,12 +645,7 @@ Deno.test("DocumentationGapsCeremony: prior report headings included in LLM user
   const stateDir = await Deno.makeTempDir();
   const outputDir = await Deno.makeTempDir();
   try {
-    const ticketDir = join(stateDir, "github", "org", "repo", "1");
-    await Deno.mkdir(ticketDir, { recursive: true });
-    await Deno.writeTextFile(
-      join(ticketDir, "20260101T000000-enrichment.md"),
-      "## Open Questions\n- Which model to use?\n",
-    );
+    await writeRecentEnrichments(stateDir);
     await Deno.writeTextFile(
       join(outputDir, "20260101T060000-documentation-gaps.md"),
       "# Documentation Gap Report\n\n## Previously Reported Theme\n\n**Occurrences:** 3\n",
@@ -678,12 +670,7 @@ Deno.test("DocumentationGapsCeremony: documentation corpus content included in L
   const outputDir = await Deno.makeTempDir();
   const repoDir = await Deno.makeTempDir();
   try {
-    const ticketDir = join(stateDir, "github", "org", "repo", "1");
-    await Deno.mkdir(ticketDir, { recursive: true });
-    await Deno.writeTextFile(
-      join(ticketDir, "20260101T000000-enrichment.md"),
-      "## Open Questions\n- Which model to use?\n",
-    );
+    await writeRecentEnrichments(stateDir);
     await Deno.writeTextFile(
       join(repoDir, "AGENTS.md"),
       "# Agent Instructions\n\nSENTINEL_CORPUS_CONTENT\n",
