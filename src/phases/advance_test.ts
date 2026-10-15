@@ -2041,6 +2041,44 @@ Deno.test(
 );
 
 Deno.test(
+  "advancePhase: merge revision output is never self-approved",
+  async () => {
+    const stateDir = Deno.makeTempDirSync();
+    try {
+      const ticket = makeTicket({ phase: "merge", status: "running" });
+      const ticketDir = join(stateDir, ticket.id);
+      await Deno.mkdir(ticketDir, { recursive: true });
+      await Deno.writeTextFile(
+        join(ticketDir, "20260101T100001-merge.md"),
+        "content",
+      );
+      const readSelfApproveSpy = spy(() =>
+        Effect.succeed({ approved: true, reason: null })
+      );
+      const writtenTickets: TicketState[] = [];
+      await advancePhase(
+        ticket,
+        stateDir,
+        makeTickDeps({
+          readSelfApprove: readSelfApproveSpy,
+          writeTicket: (_dir, written) => {
+            writtenTickets.push(written);
+            return Promise.resolve();
+          },
+        }),
+      );
+      assertSpyCalls(readSelfApproveSpy, 0);
+      assertEquals(
+        writtenTickets.flatMap((written) => written.approvals),
+        [],
+      );
+    } finally {
+      await Deno.remove(stateDir, { recursive: true });
+    }
+  },
+);
+
+Deno.test(
   "advancePhase: no feedback before output calls self-approve normally",
   async () => {
     const stateDir = Deno.makeTempDirSync();

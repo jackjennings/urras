@@ -628,8 +628,8 @@ export async function advancePhase(
       } catch {
         // directory unreadable — proceed with normal self-approve
       }
-      const skipSelfApprove = ticket.phase === "plan" &&
-        (ticket.newRepos?.length ?? 0) > 0;
+      const skipSelfApprove = ticket.phase === "merge" ||
+        (ticket.phase === "plan" && (ticket.newRepos?.length ?? 0) > 0);
       if (
         ticket.phase === "implementation" && !feedbackPrecedesOutput &&
         !skipSelfApprove
