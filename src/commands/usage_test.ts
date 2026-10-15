@@ -12,6 +12,7 @@ import {
   formatUsageOutput,
   usage,
 } from "./usage.ts";
+import { compactTimestamp } from "../timestamp.ts";
 import type { AncillaryUsageRecord } from "../ancillary-usage.ts";
 import type { PhaseUsage } from "../state/types.ts";
 
@@ -803,29 +804,35 @@ Deno.test("usage command name is 'usage'", () => {
   assertEquals(usage.name, "usage");
 });
 
-Deno.test("usage command reads usage files from all ticket directories", async () => {
+async function runUsageCommand(
+  args: string[],
+  files: Array<{ name: string; model: string; costUsd: number }>,
+): Promise<string> {
   const stateDir = await Deno.makeTempDir();
+  const fakeHome = await Deno.makeTempDir();
+  const originalHome = Deno.env.get("HOME");
+  const originalUrrasDir = Deno.env.get("URRAS_DIR");
   try {
     const ticketDir = join(stateDir, "github", "a", "repo", "1");
     await Deno.mkdir(ticketDir, { recursive: true });
     await Deno.writeTextFile(join(ticketDir, "meta.md"), "---\n---\n");
-    await Deno.writeTextFile(
-      join(ticketDir, "20260715T190000-intake.usage.json"),
-      JSON.stringify(
-        makeUsage({
-          model: "claude-haiku-4-5-20251001",
-          input: 10,
-          output: 5,
-          cacheRead: 0,
-          cacheWrite: 0,
-          costUsd: 0.01,
-        }),
-      ),
-    );
-
-    const originalEnv = Deno.env.get("HOME");
-    const fakeHome = await Deno.makeTempDir();
+    for (const file of files) {
+      await Deno.writeTextFile(
+        join(ticketDir, file.name),
+        JSON.stringify(
+          makeUsage({
+            model: file.model,
+            input: 10,
+            output: 5,
+            cacheRead: 0,
+            cacheWrite: 0,
+            costUsd: file.costUsd,
+          }),
+        ),
+      );
+    }
     Deno.env.set("HOME", fakeHome);
+    Deno.env.set("URRAS_DIR", join(fakeHome, ".urras"));
     const configDir = join(fakeHome, ".config", "urras");
     await Deno.mkdir(configDir, { recursive: true });
     await Deno.writeTextFile(
@@ -834,20 +841,71 @@ Deno.test("usage command reads usage files from all ticket directories", async (
     );
 
     const lines: string[] = [];
-    const origLog = console.log;
-    console.log = (s: string) => lines.push(s);
+    const originalLog = console.log;
+    console.log = (line: string) => lines.push(line);
     try {
-      await usage.run([]);
+      await usage.run(args);
     } finally {
-      console.log = origLog;
-      if (originalEnv !== undefined) Deno.env.set("HOME", originalEnv);
-      else Deno.env.delete("HOME");
-      await Deno.remove(fakeHome, { recursive: true });
+      console.log = originalLog;
     }
-    assertEquals(lines.length, 1);
-    assertStringIncludes(lines[0], "claude-haiku-4-5");
-    assertStringIncludes(lines[0], "$0.01");
+    return lines.join("\n");
   } finally {
+    if (originalHome !== undefined) Deno.env.set("HOME", originalHome);
+    else Deno.env.delete("HOME");
+    if (originalUrrasDir !== undefined) {
+      Deno.env.set("URRAS_DIR", originalUrrasDir);
+    } else Deno.env.delete("URRAS_DIR");
+    await Deno.remove(fakeHome, { recursive: true });
     await Deno.remove(stateDir, { recursive: true });
   }
+}
+
+function daysAgoTimestamp(days: number): string {
+  return compactTimestamp(
+    Temporal.Now.zonedDateTimeISO("UTC").subtract({ hours: days * 24 }),
+  );
+}
+
+Deno.test("usage command reads usage files from all ticket directories", async () => {
+  const output = await runUsageCommand([], [{
+    name: `${daysAgoTimestamp(1)}-intake.usage.json`,
+    model: "claude-haiku-4-5-20251001",
+    costUsd: 0.01,
+  }]);
+  assertStringIncludes(output, "claude-haiku-4-5");
+  assertStringIncludes(output, "$0.01");
+});
+
+Deno.test("usage command excludes usage older than 30 days by default", async () => {
+  const output = await runUsageCommand([], [
+    {
+      name: `${daysAgoTimestamp(1)}-intake.usage.json`,
+      model: "claude-haiku-4-5",
+      costUsd: 0.01,
+    },
+    {
+      name: `${daysAgoTimestamp(45)}-spec.usage.json`,
+      model: "claude-opus-4-6",
+      costUsd: 0.02,
+    },
+  ]);
+  assertStringIncludes(output, "claude-haiku-4-5");
+  assertFalse(output.includes("claude-opus-4-6"));
+});
+
+Deno.test("usage command --all includes usage older than 30 days", async () => {
+  const output = await runUsageCommand(["--all"], [
+    {
+      name: `${daysAgoTimestamp(1)}-intake.usage.json`,
+      model: "claude-haiku-4-5",
+      costUsd: 0.01,
+    },
+    {
+      name: `${daysAgoTimestamp(45)}-spec.usage.json`,
+      model: "claude-opus-4-6",
+      costUsd: 0.02,
+    },
+  ]);
+  assertStringIncludes(output, "claude-haiku-4-5");
+  assertStringIncludes(output, "claude-opus-4-6");
 });

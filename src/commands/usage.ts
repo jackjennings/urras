@@ -211,22 +211,34 @@ export function formatAncillaryUsageOutput(
   return lines.join("\n");
 }
 
+const ROLLING_WINDOW_DAYS = 30;
+
 export const usage: Command = {
   name: "usage",
-  description: "show aggregate usage statistics",
-  async run(_args) {
+  description:
+    "show aggregate usage statistics for the last 30 days (--all for everything)",
+  usage: "ur usage [--all]",
+  completesWith: ["--all"],
+  async run(args) {
+    const since = args.includes("--all")
+      ? undefined
+      : Temporal.Now.instant().subtract({ hours: ROLLING_WINDOW_DAYS * 24 });
     const config = await loadConfig();
     const stateDir = expandHome(config.state.dir);
     const ids = await listTickets(stateDir);
     const allRecords: PhaseUsage[] = [];
     await Promise.all(
       ids.map(async (id) => {
-        const records = await readUsageFiles(join(stateDir, id));
+        const records = await readUsageFiles(join(stateDir, id), { since });
         if (records) allRecords.push(...records);
       }),
     );
     let output = formatUsageOutput(aggregateUsage(allRecords));
-    const ancillaryRecords = await readAncillaryUsageFile();
+    const ancillaryRecords = (await readAncillaryUsageFile()).filter(
+      (record) =>
+        !since ||
+        Temporal.Instant.compare(Temporal.Instant.from(record.ts), since) >= 0,
+    );
     if (ancillaryRecords.length > 0) {
       const ancillaryOutput = formatAncillaryUsageOutput(
         aggregateAncillaryUsage(ancillaryRecords),

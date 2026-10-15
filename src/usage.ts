@@ -1,6 +1,6 @@
 import { join } from "@std/path";
 import type { PhaseUsage } from "./state/types.ts";
-import { readDir, readTextFile } from "./filesystem.ts";
+import { readDir, readTextFile, stat } from "./filesystem.ts";
 
 export function formatLargeTokens(n: number): string {
   if (n < 1000) return String(n);
@@ -8,13 +8,45 @@ export function formatLargeTokens(n: number): string {
   return `${(Math.round(n / 100_000) / 10).toFixed(1)}m`;
 }
 
+const FILENAME_TIMESTAMP = /^(\d{8}T\d{6})-/;
+
+async function usageFileInstant(
+  ticketDir: string,
+  name: string,
+): Promise<Temporal.Instant | null> {
+  const match = FILENAME_TIMESTAMP.exec(name);
+  if (match) {
+    try {
+      return Temporal.PlainDateTime.from(match[1]).toZonedDateTime("UTC")
+        .toInstant();
+    } catch {
+      // fall through to the modification time
+    }
+  }
+  try {
+    const { mtime } = await stat(join(ticketDir, name));
+    return mtime
+      ? Temporal.Instant.fromEpochMilliseconds(mtime.getTime())
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function readUsageFiles(
   ticketDir: string,
+  options: { since?: Temporal.Instant } = {},
 ): Promise<PhaseUsage[] | null> {
   const files: PhaseUsage[] = [];
   try {
     for await (const entry of readDir(ticketDir)) {
       if (!entry.isFile || !entry.name.endsWith(".usage.json")) continue;
+      if (options.since) {
+        const instant = await usageFileInstant(ticketDir, entry.name);
+        if (!instant || Temporal.Instant.compare(instant, options.since) < 0) {
+          continue;
+        }
+      }
       try {
         const raw = await readTextFile(join(ticketDir, entry.name));
         files.push(JSON.parse(raw) as PhaseUsage);
