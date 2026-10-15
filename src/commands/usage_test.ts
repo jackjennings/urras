@@ -66,6 +66,20 @@ Deno.test("aggregateUsage: strips date suffix from model name", () => {
   assertFalse(result.has("claude-haiku-4-5-20251001"));
 });
 
+Deno.test("aggregateUsage: groups an empty model name under unknown", () => {
+  const result = aggregateUsage([
+    makeUsage({
+      model: "",
+      input: 1,
+      output: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+    }),
+  ]);
+  assert(result.has("unknown"));
+  assertFalse(result.has(""));
+});
+
 Deno.test("aggregateUsage: groups by stripped model name and sums token fields", () => {
   const result = aggregateUsage([
     makeUsage({

@@ -20,6 +20,11 @@ type ModelGroup = {
   tools: Record<string, number>;
 };
 
+function normalizeModelName(model: string | undefined): string {
+  const name = (model ?? "").replace(/-\d{8}$/, "").trim();
+  return name === "" ? "unknown" : name;
+}
+
 export function aggregateUsage(records: PhaseUsage[]): Map<string, ModelGroup> {
   const groups = new Map<string, ModelGroup>();
 
@@ -43,7 +48,7 @@ export function aggregateUsage(records: PhaseUsage[]): Map<string, ModelGroup> {
 
   for (const r of records) {
     for (const m of r.models) {
-      const key = m.model.replace(/-\d{8}$/, "");
+      const key = normalizeModelName(m.model);
       const g = getOrCreate(key);
       g.input += m.input;
       g.output += m.output;
@@ -59,7 +64,7 @@ export function aggregateUsage(records: PhaseUsage[]): Map<string, ModelGroup> {
       const primary = r.models.reduce((a, b) =>
         a.input + a.output >= b.input + b.output ? a : b
       );
-      const g = getOrCreate(primary.model.replace(/-\d{8}$/, ""));
+      const g = getOrCreate(normalizeModelName(primary.model));
       for (const [name, count] of Object.entries(r.tools)) {
         g.tools[name] = (g.tools[name] ?? 0) + count;
       }
@@ -146,7 +151,8 @@ export function aggregateAncillaryUsage(
       siteGroup = new Map();
       groups.set(r.callSite, siteGroup);
     }
-    let modelGroup = siteGroup.get(r.model);
+    const model = normalizeModelName(r.model);
+    let modelGroup = siteGroup.get(model);
     if (!modelGroup) {
       modelGroup = {
         input: 0,
@@ -156,7 +162,7 @@ export function aggregateAncillaryUsage(
         costCount: 0,
         estimated: false,
       };
-      siteGroup.set(r.model, modelGroup);
+      siteGroup.set(model, modelGroup);
     }
     if (r.input !== undefined) modelGroup.input += r.input;
     if (r.output !== undefined) modelGroup.output += r.output;
