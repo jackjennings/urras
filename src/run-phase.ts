@@ -525,7 +525,8 @@ export async function executePhase(
     sessionId?: string;
     resume?: boolean;
     includePrinciples?: boolean;
-    languageModel?: LanguageModel;
+    principlesModel?: LanguageModel;
+    selfApproveModel?: LanguageModel;
     critiqueModel?: string;
     critiqueThinking?: string;
     barePhase?: string;
@@ -596,7 +597,7 @@ export async function executePhase(
       ticketDir: opts.ticketDir,
       stateDir: opts.stateDir,
       includePrinciples: opts.includePrinciples,
-      model: opts.languageModel,
+      model: opts.principlesModel,
     });
 
   if (
@@ -858,12 +859,12 @@ export async function executePhase(
     }
 
     try {
-      if (opts.languageModel === undefined) throw new Error("no-model");
+      if (opts.selfApproveModel === undefined) throw new Error("no-model");
       const ticketProvider = opts.ticketId?.split("/")[0];
       const selfApproveResult = await Effect.runPromise(selfApprove({
         phase: effectivePhase,
         ticketDir: opts.ticketDir,
-        model: opts.languageModel,
+        model: opts.selfApproveModel,
         worktreePath: (ticketProvider && opts.ticketId)
           ? opts.worktrees[deriveProjectPath(ticketProvider, opts.ticketId)]
             ?.path
@@ -992,13 +993,15 @@ if (import.meta.main) {
 
   const stateDir = args["state-dir"] ?? "";
 
-  const languageModel = buildAncillaryChain({
-    callSite: "phaseRunner",
-    run: captureCommandRunner(),
-    ollamaModels: args["ollama-models"]
-      ? JSON.parse(args["ollama-models"]) as OllamaModelConfig[]
-      : [],
-  });
+  const ollamaModels = args["ollama-models"]
+    ? JSON.parse(args["ollama-models"]) as OllamaModelConfig[]
+    : [];
+  const buildLanguageModel = (callSite: string) =>
+    buildAncillaryChain({
+      callSite,
+      run: captureCommandRunner(),
+      ollamaModels,
+    });
 
   const codegraphRoots: string[] = args["codegraph-roots"]
     ? (JSON.parse(args["codegraph-roots"]) as string[])
@@ -1024,7 +1027,8 @@ if (import.meta.main) {
       sessionId: args["session-id"] ?? undefined,
       resume: args["resume"] ?? false,
       includePrinciples: !args["skip-principles"],
-      languageModel,
+      principlesModel: buildLanguageModel("phaseRunner.filterPrinciples"),
+      selfApproveModel: buildLanguageModel("phaseRunner.selfApprove"),
       critiqueModel: args["critique-model"] ?? undefined,
       critiqueThinking: args["critique-thinking"] ?? undefined,
       hunkSkillResolver: () => resolveHunkSkillPath(captureCommandRunner()),

@@ -3082,7 +3082,7 @@ Deno.test(
           model: "claude-sonnet-4-6",
           thinking: "off",
           agentType: "pi",
-          languageModel: indicesModel([0]),
+          principlesModel: indicesModel([0]),
         },
         agent,
       );
@@ -3238,7 +3238,7 @@ Deno.test(
               model: "claude-sonnet-4-6",
               thinking: "off",
               agentType: "pi",
-              languageModel: indicesModel([0]),
+              principlesModel: indicesModel([0]),
             },
             agent,
           ),
@@ -3608,7 +3608,7 @@ Deno.test(
           model: "claude-sonnet-4-6",
           thinking: "off",
           agentType: "pi",
-          languageModel: textModel("APPROVE"),
+          selfApproveModel: textModel("APPROVE"),
         },
         agent,
       );
@@ -3658,7 +3658,7 @@ Deno.test(
           model: "claude-sonnet-4-6",
           thinking: "off",
           agentType: "pi",
-          languageModel,
+          selfApproveModel: languageModel,
         },
         agent,
       );
@@ -3707,7 +3707,7 @@ Deno.test(
           model: "claude-sonnet-4-6",
           thinking: "off",
           agentType: "pi",
-          languageModel,
+          selfApproveModel: languageModel,
         },
         agent,
       );
@@ -3912,7 +3912,7 @@ Deno.test(
           model: "claude-sonnet-4-6",
           thinking: "off",
           agentType: "pi",
-          languageModel: textModel("APPROVE"),
+          selfApproveModel: textModel("APPROVE"),
         },
         agent,
       );
