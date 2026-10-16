@@ -8,6 +8,7 @@ import {
   resolveGitHubAccount,
   resolveJiraGitHubAccount,
 } from "./compose.ts";
+import { HttpClient } from "./http-client.ts";
 import { PHASE_SEQUENCE } from "./phases/types.ts";
 import { join } from "@std/path";
 import type { Config } from "./state/types.ts";
@@ -445,7 +446,7 @@ Deno.test(
         () =>
           preflightGitHubCredentials(makeConfig(), {
             run: runSpy,
-            fetch: () => Promise.resolve(makeOkResponse("u")),
+            http: new HttpClient(() => Promise.resolve(makeOkResponse("u"))),
           }),
         GitHubAuthError,
         "gh auth token",
@@ -474,7 +475,7 @@ Deno.test(
         () =>
           preflightGitHubCredentials(makeConfig(), {
             run: runSpy,
-            fetch: () => Promise.resolve(makeOkResponse("u")),
+            http: new HttpClient(() => Promise.resolve(makeOkResponse("u"))),
           }),
         GitHubAuthError,
         "gh auth token",
@@ -497,7 +498,7 @@ Deno.test(
           preflightGitHubCredentials(makeConfig(), {
             run: () =>
               Promise.resolve({ code: 0, stdout: "gh-token", stderr: "" }),
-            fetch: () => Promise.resolve(makeErrorResponse(401)),
+            http: new HttpClient(() => Promise.resolve(makeErrorResponse(401))),
           }),
         GitHubAuthError,
         "GitHub authentication failed",
@@ -521,7 +522,7 @@ Deno.test(
             run: spy(() =>
               Promise.resolve({ code: 0, stdout: "", stderr: "" })
             ),
-            fetch: () => Promise.resolve(makeErrorResponse(401)),
+            http: new HttpClient(() => Promise.resolve(makeErrorResponse(401))),
           }),
         GitHubAuthError,
         "GitHub authentication failed",
@@ -543,7 +544,7 @@ Deno.test(
     try {
       await preflightGitHubCredentials(makeConfig(), {
         run: spy(() => Promise.resolve({ code: 0, stdout: "", stderr: "" })),
-        fetch: () => Promise.resolve(makeOkResponse("testuser")),
+        http: new HttpClient(() => Promise.resolve(makeOkResponse("testuser"))),
       });
       assertEquals(Deno.env.get("GITHUB_LOGIN"), "testuser");
     } finally {
@@ -572,7 +573,9 @@ Deno.test(
       );
       await preflightGitHubCredentials(makeConfig(), {
         run: runSpy,
-        fetch: () => Promise.resolve(makeOkResponse("existinguser")),
+        http: new HttpClient(() =>
+          Promise.resolve(makeOkResponse("existinguser"))
+        ),
       });
       assertSpyCalls(runSpy, 0);
     } finally {
@@ -610,7 +613,7 @@ Deno.test(
         () =>
           preflightGitHubCredentials(cfg, {
             run: runSpy,
-            fetch: () => Promise.resolve(makeOkResponse("u")),
+            http: new HttpClient(() => Promise.resolve(makeOkResponse("u"))),
           }),
         GitHubAuthError,
         "GITHUB_TOKEN_PERSONAL is not set",
@@ -641,7 +644,9 @@ Deno.test(
       });
       await preflightGitHubCredentials(cfg, {
         run: spy(() => Promise.resolve({ code: 0, stdout: "", stderr: "" })),
-        fetch: () => Promise.resolve(makeOkResponse("jackjennings")),
+        http: new HttpClient(() =>
+          Promise.resolve(makeOkResponse("jackjennings"))
+        ),
       });
     } finally {
       if (savedEnv !== undefined) {
@@ -676,7 +681,9 @@ Deno.test(
         () =>
           preflightGitHubCredentials(cfg, {
             run: runSpy,
-            fetch: () => Promise.resolve(makeOkResponse("jackjennings")),
+            http: new HttpClient(() =>
+              Promise.resolve(makeOkResponse("jackjennings"))
+            ),
           }),
         GitHubAuthError,
         "gh auth token",
@@ -715,7 +722,9 @@ Deno.test(
       );
       await preflightGitHubCredentials(cfg, {
         run: runSpy,
-        fetch: () => Promise.resolve(makeOkResponse("jackjennings")),
+        http: new HttpClient(() =>
+          Promise.resolve(makeOkResponse("jackjennings"))
+        ),
       });
       assertSpyCalls(runSpy, 0);
     } finally {

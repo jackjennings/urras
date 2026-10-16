@@ -1,5 +1,6 @@
 import type { AncillaryUsageRecord } from "../ancillary-usage.ts";
 import type { LanguageModel, LanguageModelRequest } from "./types.ts";
+import { HttpClient } from "../http-client.ts";
 
 const DEFAULT_URL = "http://localhost:11434";
 
@@ -14,7 +15,7 @@ export class OllamaLanguageModel implements LanguageModel {
   private readonly url: string;
 
   constructor(
-    private readonly _fetch: typeof fetch,
+    private readonly _http: HttpClient,
     private readonly opts: {
       model: string;
       url?: string;
@@ -30,8 +31,7 @@ export class OllamaLanguageModel implements LanguageModel {
     request: LanguageModelRequest & { schema: object },
   ): Promise<T | null> {
     try {
-      const response = await this._fetch(`${this.url}/api/generate`, {
-        method: "POST",
+      const response = await this._http.post(`${this.url}/api/generate`, {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: this.opts.model,
@@ -40,7 +40,6 @@ export class OllamaLanguageModel implements LanguageModel {
           stream: false,
           format: request.schema,
         }),
-        signal: AbortSignal.timeout(30_000),
       });
       if (!response.ok) return null;
       const data = await response.json() as OllamaResponse;
@@ -59,8 +58,7 @@ export class OllamaLanguageModel implements LanguageModel {
 
   async generateText(request: LanguageModelRequest): Promise<string | null> {
     try {
-      const response = await this._fetch(`${this.url}/api/generate`, {
-        method: "POST",
+      const response = await this._http.post(`${this.url}/api/generate`, {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: this.opts.model,
@@ -68,7 +66,6 @@ export class OllamaLanguageModel implements LanguageModel {
           prompt: request.prompt,
           stream: false,
         }),
-        signal: AbortSignal.timeout(30_000),
       });
       if (!response.ok) return null;
       const data = await response.json() as OllamaResponse;
@@ -101,13 +98,11 @@ export class OllamaLanguageModel implements LanguageModel {
 }
 
 export async function checkOllamaAvailable(
-  _fetch: typeof fetch,
+  http: HttpClient,
   url: string,
 ): Promise<boolean> {
   try {
-    const response = await _fetch(`${url}/api/tags`, {
-      signal: AbortSignal.timeout(30_000),
-    });
+    const response = await http.get(`${url}/api/tags`);
     return response.ok;
   } catch {
     return false;

@@ -2,6 +2,7 @@ import { assert, assertEquals, assertFalse } from "@std/assert";
 import { spy } from "@std/testing/mock";
 import type { AncillaryUsageRecord } from "../ancillary-usage.ts";
 import { checkOllamaAvailable, OllamaLanguageModel } from "./ollama.ts";
+import { HttpClient } from "../http-client.ts";
 
 function makeFetch(
   handler: (
@@ -19,7 +20,9 @@ function makeFetch(
 
 Deno.test("OllamaLanguageModel.generateObject: non-200 response returns null", async () => {
   const _fetch = makeFetch(() => ({ status: 500 }));
-  const model = new OllamaLanguageModel(_fetch, { model: "qwen2.5:7b" });
+  const model = new OllamaLanguageModel(new HttpClient(_fetch), {
+    model: "qwen2.5:7b",
+  });
   assertEquals(
     await model.generateObject({ systemPrompt: "s", prompt: "p", schema: {} }),
     null,
@@ -30,7 +33,9 @@ Deno.test("OllamaLanguageModel.generateObject: network error returns null", asyn
   const _fetch = spy(
     (_url: unknown) => Promise.reject(new Error("network error")),
   ) as unknown as typeof fetch;
-  const model = new OllamaLanguageModel(_fetch, { model: "qwen2.5:7b" });
+  const model = new OllamaLanguageModel(new HttpClient(_fetch), {
+    model: "qwen2.5:7b",
+  });
   assertEquals(
     await model.generateObject({ systemPrompt: "s", prompt: "p", schema: {} }),
     null,
@@ -42,7 +47,9 @@ Deno.test("OllamaLanguageModel.generateObject: invalid JSON in response returns 
     status: 200,
     body: JSON.stringify({ response: "not json" }),
   }));
-  const model = new OllamaLanguageModel(_fetch, { model: "qwen2.5:7b" });
+  const model = new OllamaLanguageModel(new HttpClient(_fetch), {
+    model: "qwen2.5:7b",
+  });
   assertEquals(
     await model.generateObject({ systemPrompt: "s", prompt: "p", schema: {} }),
     null,
@@ -54,7 +61,9 @@ Deno.test("OllamaLanguageModel.generateObject: valid JSON returns typed result",
     status: 200,
     body: JSON.stringify({ response: '{"verdict":"KEEP"}' }),
   }));
-  const model = new OllamaLanguageModel(_fetch, { model: "qwen2.5:7b" });
+  const model = new OllamaLanguageModel(new HttpClient(_fetch), {
+    model: "qwen2.5:7b",
+  });
   assertEquals(
     await model.generateObject<{ verdict: string }>({
       systemPrompt: "s",
@@ -72,14 +81,18 @@ Deno.test("OllamaLanguageModel.generateObject: request body contains format key 
     return { status: 200, body: JSON.stringify({ response: '{"ok":true}' }) };
   });
   const schema = { type: "object", properties: { ok: { type: "boolean" } } };
-  const model = new OllamaLanguageModel(_fetch, { model: "qwen2.5:7b" });
+  const model = new OllamaLanguageModel(new HttpClient(_fetch), {
+    model: "qwen2.5:7b",
+  });
   await model.generateObject({ systemPrompt: "s", prompt: "p", schema });
   assertEquals(capturedBody?.format, schema);
 });
 
 Deno.test("OllamaLanguageModel.generateText: non-200 response returns null", async () => {
   const _fetch = makeFetch(() => ({ status: 404 }));
-  const model = new OllamaLanguageModel(_fetch, { model: "qwen2.5:7b" });
+  const model = new OllamaLanguageModel(new HttpClient(_fetch), {
+    model: "qwen2.5:7b",
+  });
   assertEquals(
     await model.generateText({ systemPrompt: "s", prompt: "p" }),
     null,
@@ -91,7 +104,9 @@ Deno.test("OllamaLanguageModel.generateText: blank response after trim returns n
     status: 200,
     body: JSON.stringify({ response: "   " }),
   }));
-  const model = new OllamaLanguageModel(_fetch, { model: "qwen2.5:7b" });
+  const model = new OllamaLanguageModel(new HttpClient(_fetch), {
+    model: "qwen2.5:7b",
+  });
   assertEquals(
     await model.generateText({ systemPrompt: "s", prompt: "p" }),
     null,
@@ -103,7 +118,9 @@ Deno.test("OllamaLanguageModel.generateText: valid response returns trimmed stri
     status: 200,
     body: JSON.stringify({ response: "  Short Title  " }),
   }));
-  const model = new OllamaLanguageModel(_fetch, { model: "qwen2.5:7b" });
+  const model = new OllamaLanguageModel(new HttpClient(_fetch), {
+    model: "qwen2.5:7b",
+  });
   assertEquals(
     await model.generateText({ systemPrompt: "s", prompt: "p" }),
     "Short Title",
@@ -112,19 +129,34 @@ Deno.test("OllamaLanguageModel.generateText: valid response returns trimmed stri
 
 Deno.test("checkOllamaAvailable: 200 from /api/tags returns true", async () => {
   const _fetch = makeFetch(() => ({ status: 200 }));
-  assert(await checkOllamaAvailable(_fetch, "http://localhost:11434"));
+  assert(
+    await checkOllamaAvailable(
+      new HttpClient(_fetch),
+      "http://localhost:11434",
+    ),
+  );
 });
 
 Deno.test("checkOllamaAvailable: non-200 from /api/tags returns false", async () => {
   const _fetch = makeFetch(() => ({ status: 503 }));
-  assertFalse(await checkOllamaAvailable(_fetch, "http://localhost:11434"));
+  assertFalse(
+    await checkOllamaAvailable(
+      new HttpClient(_fetch),
+      "http://localhost:11434",
+    ),
+  );
 });
 
 Deno.test("checkOllamaAvailable: fetch throws returns false", async () => {
   const _fetch = spy(
     (_url: unknown) => Promise.reject(new Error("refused")),
   ) as unknown as typeof fetch;
-  assertFalse(await checkOllamaAvailable(_fetch, "http://localhost:11434"));
+  assertFalse(
+    await checkOllamaAvailable(
+      new HttpClient(_fetch),
+      "http://localhost:11434",
+    ),
+  );
 });
 
 Deno.test("OllamaLanguageModel.generateText: recordUsage fires with token counts when present", async () => {
@@ -141,7 +173,7 @@ Deno.test("OllamaLanguageModel.generateText: recordUsage fires with token counts
       eval_count: 18,
     }),
   }));
-  const model = new OllamaLanguageModel(_fetch, {
+  const model = new OllamaLanguageModel(new HttpClient(_fetch), {
     model: "qwen2.5:7b",
     recordUsage,
   });
@@ -165,7 +197,7 @@ Deno.test("OllamaLanguageModel.generateText: recordUsage omits token fields when
     status: 200,
     body: JSON.stringify({ response: "ok" }),
   }));
-  const model = new OllamaLanguageModel(_fetch, {
+  const model = new OllamaLanguageModel(new HttpClient(_fetch), {
     model: "qwen2.5:7b",
     recordUsage,
   });
@@ -182,7 +214,7 @@ Deno.test("OllamaLanguageModel.generateText: recordUsage does not fire on null r
     return Promise.resolve();
   };
   const _fetch = makeFetch(() => ({ status: 500 }));
-  const model = new OllamaLanguageModel(_fetch, {
+  const model = new OllamaLanguageModel(new HttpClient(_fetch), {
     model: "qwen2.5:7b",
     recordUsage,
   });
@@ -204,7 +236,7 @@ Deno.test("OllamaLanguageModel.generateObject: recordUsage fires with token coun
       eval_count: 8,
     }),
   }));
-  const model = new OllamaLanguageModel(_fetch, {
+  const model = new OllamaLanguageModel(new HttpClient(_fetch), {
     model: "qwen2.5:7b",
     recordUsage,
   });

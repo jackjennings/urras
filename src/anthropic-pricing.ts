@@ -2,6 +2,7 @@ import { join } from "@std/path";
 import type { PhaseModelUsage } from "./state/types.ts";
 import { stat, writeTextFile } from "./filesystem.ts";
 import type { appendTickLog } from "./logger.ts";
+import { HttpClient } from "./http-client.ts";
 
 export interface AnthropicModelPricing {
   inputPerMTok: number;
@@ -200,12 +201,12 @@ export function calculateAnthropicCost(
 
 export interface RefreshAnthropicPricingDeps {
   homeDir: string;
-  fetcher: typeof fetch;
+  http: HttpClient;
   log: typeof appendTickLog;
 }
 
 export async function refreshAnthropicPricingIfStale(
-  { homeDir, fetcher, log }: RefreshAnthropicPricingDeps,
+  { homeDir, http, log }: RefreshAnthropicPricingDeps,
 ): Promise<void> {
   const cachePath = join(homeDir, ".urras", "anthropic-pricing.json");
 
@@ -222,7 +223,7 @@ export async function refreshAnthropicPricingIfStale(
 
   let response: Response;
   try {
-    response = await fetcher(
+    response = await http.get(
       "https://platform.claude.com/docs/en/about-claude/pricing.md",
     );
   } catch (e) {

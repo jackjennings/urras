@@ -1,5 +1,6 @@
 import type { CommandRunner } from "../apfel.ts";
 import { appendAncillaryUsage } from "../ancillary-usage.ts";
+import { HttpClient } from "../http-client.ts";
 import { ApfelLanguageModel } from "./apfel.ts";
 import { ClaudeLanguageModel } from "./claude.ts";
 import { FallbackLanguageModel } from "./fallback.ts";
@@ -16,7 +17,7 @@ export function buildAncillaryChain(options: {
 }): LanguageModel {
   const recordUsage = appendAncillaryUsage(options.callSite);
   const ollama = (options.ollamaModels ?? []).map((entry) =>
-    new OllamaLanguageModel(fetch, { ...entry, recordUsage })
+    new OllamaLanguageModel(new HttpClient(), { ...entry, recordUsage })
   );
   const apfel = new ApfelLanguageModel(options.run, { recordUsage });
   const claude = new ClaudeLanguageModel(options.run, {

@@ -1,6 +1,9 @@
 {
   "lint": {
-    "plugins": ["./lint-plugins/no-fn-suffix.ts"]
+    "plugins": [
+      "./lint-plugins/no-fn-suffix.ts",
+      "./lint-plugins/no-raw-fetch.ts"
+    ]
   },
   "tasks": {
     "start": "deno run --allow-all src/index.ts",
