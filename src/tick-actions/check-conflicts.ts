@@ -80,7 +80,10 @@ export function checkConflictsAction(deps: CheckConflictsDeps): TickAction {
 
       const conflictResults = await Promise.all(
         Object.entries(ticket.worktrees)
-          .filter(([, wt]) => deps.worktreeExists(wt.path))
+          .filter(([slug, wt]) =>
+            deps.worktreeExists(wt.path) &&
+            !(ticket.newRepos ?? []).includes(slug)
+          )
           .map(async ([slug, wt]): Promise<ConflictResult | null> => {
             const symref = await deps.runGit(
               ["symbolic-ref", "--short", "HEAD"],
