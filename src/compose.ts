@@ -223,14 +223,12 @@ type CommandRunner = (
   cmd: string[],
 ) => Promise<{ code: number; stdout: string; stderr: string }>;
 
-type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
-
 async function validateGitHubToken(
-  opts: { fetch: FetchFn },
+  opts: { http: HttpClient },
   token: string,
   errorMessage: string,
 ): Promise<Response> {
-  const res = await opts.fetch("https://api.github.com/user", {
+  const res = await opts.http.get("https://api.github.com/user", {
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: "application/vnd.github+json",
@@ -260,7 +258,7 @@ async function resolveBareGitHubToken(
 
 export async function preflightGitHubCredentials(
   config: Config,
-  opts: { run: CommandRunner; fetch: FetchFn },
+  opts: { run: CommandRunner; http: HttpClient },
 ): Promise<void> {
   if (config.github.accounts) {
     const tokenToEnv = new Map<string, string>();
@@ -1266,7 +1264,7 @@ export function composeTickDeps(
                 : undefined,
             });
           } else if (entry.provider === "ollama") {
-            return new OllamaLanguageModel(fetch, {
+            return new OllamaLanguageModel(http, {
               model: entry.model,
               url: config.ollama?.url,
               recordUsage: callSite
@@ -1745,7 +1743,7 @@ export function composeTickDeps(
     refreshAnthropicPricing: () =>
       refreshAnthropicPricingIfStale({
         homeDir: home,
-        fetcher: fetch,
+        http,
         log: appendTickLog,
       }),
     processLearnings: () =>
@@ -1807,7 +1805,7 @@ export function composeTickDeps(
             stderr: decoder.decode(result.stderr),
           };
         },
-        fetch,
+        http,
       }),
     reconcileRepoIdentities: async () => {
       persistedTable = await tableIO.readTable();
@@ -1878,6 +1876,7 @@ export function composeTickDeps(
 export function composeDoctorChecks(config: Config): Check[] {
   const stateDir = expandHome(config.state.dir);
   const uid = Deno.uid() ?? 0;
+  const http = new HttpClient();
   const repoPath = new URL("../", import.meta.url).pathname;
   const migrationsDir = new URL("../migrations", import.meta.url).pathname;
   const installedPlistPath = plistPath();
@@ -1939,7 +1938,7 @@ export function composeDoctorChecks(config: Config): Check[] {
     hostDependenciesCheck({ runCommand }),
     requiredEnvVarsCheck({ getEnv: (name) => Deno.env.get(name), config }),
     staleHudProcessCheck({ runCommand, repoPath }),
-    ollamaAvailabilityCheck({ config, fetch }),
+    ollamaAvailabilityCheck({ config, http }),
     ghVersionCheck({ runCommand }),
   ];
 }

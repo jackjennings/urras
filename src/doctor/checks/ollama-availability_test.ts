@@ -1,6 +1,7 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
 import { ollamaAvailabilityCheck } from "./ollama-availability.ts";
 import type { Config } from "../../state/types.ts";
+import { HttpClient } from "../../http-client.ts";
 
 function makeConfig(ollama?: Config["ollama"]): Config {
   return {
@@ -35,7 +36,7 @@ function makeThrowingFetch(): typeof fetch {
 Deno.test("ollamaAvailabilityCheck: ollama not configured → pass", async () => {
   const result = await ollamaAvailabilityCheck({
     config: makeConfig(undefined),
-    fetch: makeFetch(200),
+    http: new HttpClient(makeFetch(200)),
   }).run();
   assertEquals(result.status, "pass");
 });
@@ -45,7 +46,7 @@ Deno.test(
   async () => {
     const result = await ollamaAvailabilityCheck({
       config: makeConfig({ models: ["qwen2.5:7b"] }),
-      fetch: makeFetch(200),
+      http: new HttpClient(makeFetch(200)),
     }).run();
     assertEquals(result.status, "pass");
   },
@@ -56,7 +57,7 @@ Deno.test(
   async () => {
     const result = await ollamaAvailabilityCheck({
       config: makeConfig({ models: ["qwen2.5:7b"] }),
-      fetch: makeFetch(503),
+      http: new HttpClient(makeFetch(503)),
     }).run();
     assertEquals(result.status, "fail");
     assertStringIncludes(result.detail, "localhost:11434");
@@ -68,7 +69,7 @@ Deno.test(
   async () => {
     const result = await ollamaAvailabilityCheck({
       config: makeConfig({ models: ["qwen2.5:7b"] }),
-      fetch: makeThrowingFetch(),
+      http: new HttpClient(makeThrowingFetch()),
     }).run();
     assertEquals(result.status, "fail");
   },
@@ -82,7 +83,7 @@ Deno.test(
         models: ["qwen2.5:7b"],
         url: "http://myserver:11434",
       }),
-      fetch: makeFetch(503),
+      http: new HttpClient(makeFetch(503)),
     }).run();
     assertStringIncludes(result.detail, "myserver:11434");
   },

@@ -12,6 +12,7 @@ import {
   refreshAnthropicPricingIfStale,
 } from "./anthropic-pricing.ts";
 import type { PhaseModelUsage } from "./state/types.ts";
+import { HttpClient } from "./http-client.ts";
 
 // ── parseAnthropicPricingPage ────────────────────────────────────────────────
 
@@ -305,7 +306,7 @@ Deno.test(
       );
       await refreshAnthropicPricingIfStale({
         homeDir: tempHome,
-        fetcher: fetcherSpy as typeof fetch,
+        http: new HttpClient(fetcherSpy as typeof fetch),
         log: noopLogFn,
       });
       assertSpyCalls(fetcherSpy, 0);
@@ -326,7 +327,7 @@ Deno.test(
       );
       await refreshAnthropicPricingIfStale({
         homeDir: tempHome,
-        fetcher: fetcherSpy as typeof fetch,
+        http: new HttpClient(fetcherSpy as typeof fetch),
         log: noopLogFn,
       });
       assertSpyCalls(fetcherSpy, 1);
@@ -363,7 +364,7 @@ Deno.test(
       );
       await refreshAnthropicPricingIfStale({
         homeDir: tempHome,
-        fetcher: fetcherSpy as typeof fetch,
+        http: new HttpClient(fetcherSpy as typeof fetch),
         log: noopLogFn,
       });
       assertSpyCalls(fetcherSpy, 1);
@@ -387,7 +388,7 @@ Deno.test(
         Promise.resolve(new Response("", { status: 500 }));
       await refreshAnthropicPricingIfStale({
         homeDir: tempHome,
-        fetcher: fetcher as typeof fetch,
+        http: new HttpClient(fetcher as typeof fetch),
         log: logFnSpy,
       });
       assertSpyCalls(logFnSpy, 1);
@@ -419,7 +420,7 @@ Deno.test(
         Promise.reject(new Error("network failure"));
       await refreshAnthropicPricingIfStale({
         homeDir: tempHome,
-        fetcher: fetcher as typeof fetch,
+        http: new HttpClient(fetcher as typeof fetch),
         log: logFnSpy,
       });
       assertSpyCalls(logFnSpy, 1);
@@ -455,7 +456,7 @@ Deno.test(
         Promise.resolve(new Response("", { status: 503 }));
       await refreshAnthropicPricingIfStale({
         homeDir: tempHome,
-        fetcher: fetcher as typeof fetch,
+        http: new HttpClient(fetcher as typeof fetch),
         log: noopLogFn,
       });
       const raw = await Deno.readTextFile(cachePath);
@@ -481,7 +482,7 @@ Deno.test(
       };
       await refreshAnthropicPricingIfStale({
         homeDir: tempHome,
-        fetcher: fetcher as typeof fetch,
+        http: new HttpClient(fetcher as typeof fetch),
         log: noopLogFn,
       });
       assertEquals(
