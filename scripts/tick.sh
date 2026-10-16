@@ -7,7 +7,7 @@ for dir in /usr/local/bin /opt/homebrew/bin "$HOME/.local/bin"; do
 done
 export PATH
 
-LAZYBOY_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+URRAS_REPOSITORY_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 # cron runs with no keychain access, so gh auth token yields nothing; load
 # credentials from the env file the same way bin/lazyboy does.
@@ -20,8 +20,9 @@ fi
 
 # host-specific additions stay out of the repo; tick.sh owns the append so a
 # malformed value cannot clobber the entry `exec deno` depends on.
-if [ -n "$LAZYBOY_PATH" ]; then
-  export PATH="$LAZYBOY_PATH:$PATH"
+URRAS_PATH="${URRAS_PATH:-$LAZYBOY_PATH}"
+if [ -n "$URRAS_PATH" ]; then
+  export PATH="$URRAS_PATH:$PATH"
 fi
 
-exec deno run --allow-all "$LAZYBOY_DIR/src/index.ts" tick
+exec deno run --allow-all "$URRAS_REPOSITORY_DIR/src/index.ts" tick
