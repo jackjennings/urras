@@ -27,5 +27,5 @@ while true; do
   if [ "$(git -C "$LAZYBOY_DIR" rev-parse HEAD)" != "$started_revision" ]; then
     exit 0
   fi
-  sleep 300
+  sleep "$(deno run --allow-all "$LAZYBOY_DIR/scripts/tick-interval.ts" 2>/dev/null || echo 300)"
 done

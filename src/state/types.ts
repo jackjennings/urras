@@ -193,6 +193,7 @@ export interface Config {
   extensions: { dir: string };
   tick: {
     concurrency: number;
+    intervalSeconds?: number;
     resolveCIFailures: boolean;
     principles: boolean;
     agentsMdMaxTokens: number;

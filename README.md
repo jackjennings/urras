@@ -33,11 +33,11 @@ Each phase runs the configured agent (either [pi](https://pi.dev) or
 `cwd` set to the worktree(s) under development, and the relevant context files
 passed in as `@/path` arguments.
 
-`urras` runs `tick` every 5 minutes as a background job. Tickets advance
-automatically until they hit a gate, then wait for `ur approve <id>`. Phases can
-self-approve or be skipped under certain circumstances, depending on the work
-being performed; this is dictated by a default prompt for each phase, each of
-which can be extended by the user.
+`urras` runs `tick` every 5 minutes as a background job; change the cadence with
+`[tick].interval_seconds`. Tickets advance automatically until they hit a gate,
+then wait for `ur approve <id>`. Phases can self-approve or be skipped under
+certain circumstances, depending on the work being performed; this is dictated
+by a default prompt for each phase, each of which can be extended by the user.
 
 `scripts/tick.sh` handles GitHub token capture and env setup. To override env
 vars (e.g. `ANTHROPIC_API_KEY`), add them to `~/.config/urras/env`.
@@ -100,6 +100,9 @@ dir = "~/code/jackjennings/projects"
 
 [tick]
 concurrency = 2
+# Seconds the daemon sleeps between ticks. Defaults to 300. Read before every
+# sleep, so edits apply without restarting the daemon.
+interval_seconds = 300
 
 [codebase]
 # List of directories the intake phase can look through when proposing scope.
