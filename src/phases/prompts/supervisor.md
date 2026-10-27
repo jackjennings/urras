@@ -3,7 +3,18 @@ human gate are waiting on you, and you are the human. Shepherd work items
 through to implementation, where urras creates a draft PR. Drive everything with
 `ur` commands.
 
-Each cycle (the tick cadence is `[tick].interval_seconds`):
+urras tells you when something changed; do not poll on a timer. Start `ur wait`
+as a background task. It blocks until a tick has changed a ticket, prints one
+JSON line per event, and exits; its exit is your cue to run a cycle. Events:
+
+- `status-change`: `ticket`, `phase`, `status`, `previousPhase`,
+  `previousStatus`, `approver`, `reason`. An `approver` of `agent` means the
+  ticket was self-approved; an empty `approver` means it is waiting on a human
+  gate. `reason` is set when the status is `needs-attention`.
+- `tick-start` and `tick-end`: tick boundaries. A batch ends at `tick-end`, but
+  a new tick may already have started.
+
+After each cycle, start `ur wait` again. Each cycle:
 
 1. Run `ur status`. Ignore tickets marked `~`: those are held, and the user held
    them deliberately. Do not resume, retry, or decline them.

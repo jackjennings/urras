@@ -1106,6 +1106,7 @@ function makeHookTickDeps(opts: {
   sequence: string[];
   before: Partial<TicketState>;
   after: Partial<TicketState>;
+  overrides?: Parameters<typeof makeTickServiceDeps>[0];
 }) {
   let workflowDone = false;
   return makeTickServiceDeps({
@@ -1135,6 +1136,7 @@ function makeHookTickDeps(opts: {
       );
       return Promise.resolve();
     },
+    ...opts.overrides,
   });
 }
 
@@ -1173,6 +1175,64 @@ Deno.test(
     assertStringIncludes(change, '"URRAS_PHASE":"spec"');
     assertStringIncludes(change, '"URRAS_STATUS":"waiting"');
     assertStringIncludes(change, '"URRAS_PREV_STATUS":"running"');
+  },
+);
+
+Deno.test(
+  "TickService: publishes inbox events in order, sweeping first and ending with tick-end",
+  async () => {
+    const sequence: string[] = [];
+    await new TickService(
+      makeHookTickDeps({
+        sequence,
+        before: { phase: "spec", status: "running" },
+        after: { phase: "spec", status: "waiting" },
+        overrides: {
+          sweepInbox: () => {
+            sequence.push("sweep");
+            return Promise.resolve();
+          },
+          publishInboxEvent: (payload) => {
+            sequence.push(`publish:${payload.event}`);
+            return Promise.resolve();
+          },
+        },
+      }),
+    ).run();
+    assertEquals(
+      sequence.filter((entry) =>
+        entry === "sweep" || entry.startsWith("publish:") ||
+        entry === "unlock"
+      ),
+      [
+        "sweep",
+        "publish:tick-start",
+        "unlock",
+        "publish:status-change",
+        "publish:tick-end",
+      ],
+    );
+  },
+);
+
+Deno.test(
+  "TickService: publishes no status-change inbox event when nothing changed",
+  async () => {
+    const published: string[] = [];
+    await new TickService(
+      makeHookTickDeps({
+        sequence: [],
+        before: { phase: "spec", status: "waiting" },
+        after: { phase: "spec", status: "waiting" },
+        overrides: {
+          publishInboxEvent: (payload) => {
+            published.push(payload.event);
+            return Promise.resolve();
+          },
+        },
+      }),
+    ).run();
+    assertEquals(published, ["tick-start", "tick-end"]);
   },
 );
 

@@ -237,6 +237,34 @@ Hooks are best-effort. A hook that exits non-zero, cannot start, or exceeds
 `timeout_seconds` (default 10, killed with `SIGKILL`) is logged as `hook-failed`
 in `tick.ndjson` and never fails the tick or touches ticket state.
 
+## Inbox
+
+Every tick publishes events to a Maildir-style spool under
+`~/.urras/inbox/{tmp,new,cur}`, so a consumer such as the supervisor can wait
+for changes instead of polling `ur status`. This needs no configuration.
+
+A tick writes `tick-start` when it takes its lock. After it releases the lock,
+it writes one `status-change` per ticket whose phase or status changed during
+the tick, then `tick-end`. Each event is one JSON file, written to `tmp/` and
+renamed into `new/`, so a reader never sees a partial file. Filenames start with
+a millisecond timestamp, so they sort in publication order.
+
+`ur wait` blocks until a tick has changed at least one ticket, moves the events
+it returns from `new/` to `cur/`, prints one JSON line per event, and exits. It
+returns the batch through the last `tick-end` in `new/`, or the pending
+`status-change` events after 5 seconds with no new event. Ticks that change
+nothing never wake it.
+
+At the start of each tick, a sweep deletes `tmp/` files older than 36 hours,
+handled events in `cur/` older than 7 days, and unread events in `new/` older
+than 30 days. Dropped unread events are logged as `inbox-events-dropped`.
+
+```toml
+[inbox]
+handled_retention_days = 7
+unread_retention_days = 30
+```
+
 ## Ceremonies
 
 Ceremonies are time- or event-triggered automations that use the system's state
@@ -395,6 +423,7 @@ completion setup is needed when using the plugin.
 | `uca` | `ur capture`      |
 | `ubr` | `ur brainstorm`   |
 | `usu` | `ur supervisor`   |
+| `uwa` | `ur wait`         |
 | `uho` | `ur hold`         |
 | `ure` | `ur resume`       |
 | `upr` | `ur prioritize`   |
