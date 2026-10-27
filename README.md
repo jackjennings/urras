@@ -355,6 +355,7 @@ completion setup is needed when using the plugin.
 | `uus` | `ur usage`        |
 | `uca` | `ur capture`      |
 | `ubr` | `ur brainstorm`   |
+| `usu` | `ur supervisor`   |
 | `uho` | `ur hold`         |
 | `ure` | `ur resume`       |
 | `upr` | `ur prioritize`   |

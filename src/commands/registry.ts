@@ -18,6 +18,7 @@ import { rewind } from "./rewind.ts";
 import { doctor } from "./doctor.ts";
 import { capture } from "./capture.ts";
 import { brainstorm } from "./brainstorm.ts";
+import { supervisor } from "./supervisor.ts";
 import { hold } from "./hold.ts";
 import { resume } from "./resume.ts";
 import { prioritize } from "./prioritize.ts";
@@ -45,6 +46,7 @@ export const commands: Command[] = [
   doctor,
   capture,
   brainstorm,
+  supervisor,
   hold,
   resume,
   prioritize,
