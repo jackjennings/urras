@@ -414,8 +414,9 @@ and `event`. Events: `tick-start`, `tick-end`, `tick-already-running`,
 `repo-renamed`, `repo-identity-collision`, `repo-identity-reconcile-failed`,
 `repo-identity-unavailable`, `repo-org-unmapped`, `pricing-fetch-failed`,
 `learning-processing-failed`, `org-renamed`, `org-identity-reconcile-failed`,
-`hook-failed`. `appendTickLog` (`src/tick.ts`) writes it directly; it is not
-`appendTicketLog` (`src/state/store.ts`).
+`hook-failed`, `inbox-write-failed`, `inbox-sweep-failed`,
+`inbox-events-dropped`. `appendTickLog` (`src/tick.ts`) writes it directly; it
+is not `appendTicketLog` (`src/state/store.ts`).
 
 | Event                            | Trigger                                                                                                                                                                                                                                               |
 | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -429,6 +430,9 @@ and `event`. Events: `tick-start`, `tick-end`, `tick-already-running`,
 | `org-renamed`                    | `currentLogin` changed for a confirmed org identity entry                                                                                                                                                                                             |
 | `org-identity-reconcile-failed`  | Network error, null response, or write failure on an org reconciler API call                                                                                                                                                                          |
 | `hook-failed`                    | A `[hooks]` command failed; `hook` names it, `reason` is `non-zero-exit` (with `code`), `timeout`, or `spawn-failed`, and status hooks carry `ticket`                                                                                                 |
+| `inbox-write-failed`             | Publishing an event to the inbox spool failed; carries `error`. The tick continues                                                                                                                                                                    |
+| `inbox-sweep-failed`             | The start-of-tick inbox sweep failed; carries `error`. The tick continues                                                                                                                                                                             |
+| `inbox-events-dropped`           | The sweep deleted unread events past `[inbox].unread_retention_days`; carries `droppedUnread`                                                                                                                                                         |
 
 The plist from `plistContent()` must **not** include `StandardOutPath` or
 `StandardErrorPath` pointing to `tick.ndjson` — the tick process owns its own

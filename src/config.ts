@@ -309,6 +309,30 @@ export async function loadConfig(path?: string): Promise<Config> {
     };
   }
 
+  const inboxRaw = parsed.inbox as Record<string, unknown> | undefined;
+  let inbox: Config["inbox"];
+  if (inboxRaw !== undefined) {
+    for (
+      const key of ["handled_retention_days", "unread_retention_days"]
+    ) {
+      const value = inboxRaw[key];
+      if (
+        value !== undefined &&
+        (typeof value !== "number" || !Number.isInteger(value) || value <= 0)
+      ) {
+        throw new Error(
+          `config.toml: [inbox].${key} must be a positive integer`,
+        );
+      }
+    }
+    inbox = {
+      handledRetentionDays: inboxRaw.handled_retention_days as
+        | number
+        | undefined,
+      unreadRetentionDays: inboxRaw.unread_retention_days as number | undefined,
+    };
+  }
+
   const codegraphRaw = parsed.codegraph as Record<string, unknown> | undefined;
   let codegraph: Config["codegraph"];
   if (codegraphRaw !== undefined) {
@@ -366,6 +390,7 @@ export async function loadConfig(path?: string): Promise<Config> {
     learnings,
     ceremonies,
     hooks,
+    inbox,
     codegraph,
     repos,
     phases: phasesDefaults !== undefined

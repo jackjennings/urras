@@ -1,5 +1,6 @@
 import { CeremonyRunner } from "./ceremonies.ts";
 import { makeHookRunner } from "./hooks.ts";
+import { publishInboxEvent, sweepInbox } from "./inbox.ts";
 import { appendAncillaryUsage } from "./ancillary-usage.ts";
 import { DocumentationGapsCeremony } from "./ceremonies/documentation-gaps.ts";
 import { AgentsMdConsolidationCeremony } from "./ceremonies/agents-md-consolidation.ts";
@@ -1855,6 +1856,35 @@ export function composeTickDeps(
       ),
     runCeremonies: () => ceremonies.run(),
     runHook: makeHookRunner({ hooks: config.hooks, log: appendTickLog }),
+    publishInboxEvent: async (payload) => {
+      try {
+        await publishInboxEvent(payload);
+      } catch (e) {
+        await appendTickLog({
+          event: "inbox-write-failed",
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+    },
+    sweepInbox: async () => {
+      try {
+        const { droppedUnread } = await sweepInbox({
+          now: Temporal.Now.instant(),
+          windows: {
+            handledDays: config.inbox?.handledRetentionDays,
+            unreadDays: config.inbox?.unreadRetentionDays,
+          },
+        });
+        if (droppedUnread > 0) {
+          await appendTickLog({ event: "inbox-events-dropped", droppedUnread });
+        }
+      } catch (e) {
+        await appendTickLog({
+          event: "inbox-sweep-failed",
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+    },
     generateShortTitle: (title, context) =>
       generateShortTitle(shortTitleModel, title, context),
     agentsMdPaths: config.tick.agentsMdMaxTokens > 0

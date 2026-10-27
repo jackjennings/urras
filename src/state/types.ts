@@ -229,6 +229,7 @@ export interface Config {
   learnings?: { repos: string[] };
   ceremonies?: { timeoutSeconds?: number; enabled?: boolean };
   hooks?: HooksConfig;
+  inbox?: { handledRetentionDays?: number; unreadRetentionDays?: number };
   codegraph?: { enabled: boolean; roots: string[] };
   repos?: Record<string, { verify?: string }>;
 }

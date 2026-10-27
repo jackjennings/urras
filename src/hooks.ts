@@ -1,3 +1,4 @@
+import type { StatusChange } from "./inbox.ts";
 import type { HooksConfig } from "./state/types.ts";
 
 export const DEFAULT_HOOK_TIMEOUT_SECONDS = 10;
@@ -5,6 +6,22 @@ export const DEFAULT_HOOK_TIMEOUT_SECONDS = 10;
 export type HookEvent =
   | { hook: "on_tick_start" | "on_tick_end" }
   | { hook: "on_status_change"; ticket: string; env: Record<string, string> };
+
+export function statusChangeHookEvent(change: StatusChange): HookEvent {
+  return {
+    hook: "on_status_change",
+    ticket: change.ticket,
+    env: {
+      URRAS_TICKET: change.ticket,
+      URRAS_PHASE: change.phase,
+      URRAS_STATUS: change.status,
+      URRAS_PREV_PHASE: change.previousPhase,
+      URRAS_PREV_STATUS: change.previousStatus,
+      URRAS_APPROVER: change.approver,
+      URRAS_REASON: change.reason,
+    },
+  };
+}
 
 export type HookRunner = (event: HookEvent) => Promise<void>;
 

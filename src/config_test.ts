@@ -1532,6 +1532,34 @@ Deno.test("loadConfig: throws when [hooks].timeout_seconds is not positive", asy
   await Deno.remove(dir, { recursive: true });
 });
 
+Deno.test("loadConfig: parses [inbox] retention windows", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `[github]\nrepos = []\n[state]\ndir = "~/tmp"\n[tick]\nconcurrency = 1\n[inbox]\nhandled_retention_days = 3\nunread_retention_days = 14\n`,
+  );
+  const cfg = await loadConfig(join(dir, "config.toml"));
+  assertEquals(cfg.inbox, {
+    handledRetentionDays: 3,
+    unreadRetentionDays: 14,
+  });
+  await Deno.remove(dir, { recursive: true });
+});
+
+Deno.test("loadConfig: throws when an [inbox] retention window is not a positive integer", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `[github]\nrepos = []\n[state]\ndir = "~/tmp"\n[tick]\nconcurrency = 1\n[inbox]\nunread_retention_days = 0\n`,
+  );
+  await assertRejects(
+    () => loadConfig(join(dir, "config.toml")),
+    Error,
+    "config.toml: [inbox].unread_retention_days must be a positive integer",
+  );
+  await Deno.remove(dir, { recursive: true });
+});
+
 Deno.test("loadConfig: parses [codegraph] section with enabled = true and roots", async () => {
   const dir = await Deno.makeTempDir();
   await Deno.writeTextFile(

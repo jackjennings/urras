@@ -14,7 +14,8 @@ import { readTextFile } from "./filesystem.ts";
 import { CorruptRepoIdentitiesError } from "./providers/github/repo-identity.ts";
 import { StaleTicketWriteError } from "./state/store.ts";
 import { readAttentionReason, shouldHideTicket } from "./commands/status.ts";
-import type { HookEvent } from "./hooks.ts";
+import { type HookEvent, statusChangeHookEvent } from "./hooks.ts";
+import type { InboxEventPayload, StatusChange } from "./inbox.ts";
 
 const TICK_DEADLINE_MS = 4 * 60 * 60 * 1000;
 const TICK_ACTION_CONCURRENCY = 10;
@@ -43,6 +44,8 @@ export interface TickServiceDeps {
   agentsMdMaxTokens?: number;
   runCeremonies(): Promise<void>;
   runHook(event: HookEvent): Promise<void>;
+  publishInboxEvent(payload: InboxEventPayload): Promise<void>;
+  sweepInbox(): Promise<void>;
   scaffoldStatePrompts(): Promise<void>;
   generateShortTitle(
     title: string,
@@ -70,7 +73,7 @@ export class TickService {
     const deadlineMs = deps.deadlineMs ?? TICK_DEADLINE_MS;
     let deadlineTimerId: ReturnType<typeof setTimeout> | undefined;
     let workflowStarted = false;
-    let statusChanges: HookEvent[] = [];
+    let statusChanges: StatusChange[] = [];
     try {
       await deps.refreshAnthropicPricing();
       await deps.installPackages(deps.packageSources);
@@ -81,6 +84,8 @@ export class TickService {
               event: "tick-start",
             });
             workflowStarted = true;
+            await deps.sweepInbox();
+            await deps.publishInboxEvent({ event: "tick-start" });
             await deps.runHook({ hook: "on_tick_start" });
             const before = await this.#snapshotTickets(deps);
             try {
@@ -109,8 +114,14 @@ export class TickService {
       } finally {
         clearTimeout(deadlineTimerId);
         if (workflowStarted) {
+          for (const change of statusChanges) {
+            await deps.publishInboxEvent({ event: "status-change", ...change });
+          }
+          await deps.publishInboxEvent({ event: "tick-end" });
           await Promise.all(
-            statusChanges.map((change) => deps.runHook(change)),
+            statusChanges.map((change) =>
+              deps.runHook(statusChangeHookEvent(change))
+            ),
           );
           await deps.runHook({ hook: "on_tick_end" });
         }
@@ -155,10 +166,10 @@ export class TickService {
   async #collectStatusChanges(
     deps: TickServiceDeps,
     before: Map<string, TicketState> | null,
-  ): Promise<HookEvent[]> {
+  ): Promise<StatusChange[]> {
     const after = await this.#snapshotTickets(deps);
     if (before === null || after === null) return [];
-    const changes: HookEvent[] = [];
+    const changes: StatusChange[] = [];
     for (const ticket of after.values()) {
       const previous = before.get(ticket.id);
       if (
@@ -170,17 +181,13 @@ export class TickService {
         ? await readAttentionReason(join(deps.stateDir, ticket.id)) ?? ""
         : "";
       changes.push({
-        hook: "on_status_change",
         ticket: ticket.id,
-        env: {
-          URRAS_TICKET: ticket.id,
-          URRAS_PHASE: ticket.phase,
-          URRAS_STATUS: ticket.status,
-          URRAS_PREV_PHASE: previous?.phase ?? "",
-          URRAS_PREV_STATUS: previous?.status ?? "",
-          URRAS_APPROVER: approver,
-          URRAS_REASON: reason,
-        },
+        phase: ticket.phase,
+        status: ticket.status,
+        previousPhase: previous?.phase ?? "",
+        previousStatus: previous?.status ?? "",
+        approver,
+        reason,
       });
     }
     return changes;
