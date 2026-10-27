@@ -84,6 +84,7 @@ export function makeTickServiceDeps(
     appendTickLog,
     agentsMdPaths: [],
     runCeremonies: () => Promise.resolve(),
+    runHook: () => Promise.resolve(),
     scaffoldStatePrompts: () => Promise.resolve(),
     generateShortTitle: () => Promise.resolve(null),
     notifyTickFailure: () => Promise.resolve(),

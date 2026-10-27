@@ -140,6 +140,13 @@ export interface TicketState {
   revision?: string;
 }
 
+export interface HooksConfig {
+  onTickStart?: string;
+  onTickEnd?: string;
+  onStatusChange?: string;
+  timeoutSeconds?: number;
+}
+
 export function isApproved(ticket: TicketState): boolean {
   const last = ticket.approvals.at(-1);
   if (!last) return false;
@@ -221,6 +228,7 @@ export interface Config {
   ollama?: { models: string[]; url?: string };
   learnings?: { repos: string[] };
   ceremonies?: { timeoutSeconds?: number; enabled?: boolean };
+  hooks?: HooksConfig;
   codegraph?: { enabled: boolean; roots: string[] };
   repos?: Record<string, { verify?: string }>;
 }

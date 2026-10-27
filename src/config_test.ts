@@ -1477,6 +1477,61 @@ Deno.test("loadConfig: throws when [ceremonies].timeout_seconds is not an intege
   await Deno.remove(dir, { recursive: true });
 });
 
+Deno.test("loadConfig: parses [hooks]", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `[github]\nrepos = []\n[state]\ndir = "~/tmp"\n[tick]\nconcurrency = 1\n[hooks]\non_status_change = "echo a"\non_tick_end = "echo b"\non_tick_start = "echo c"\ntimeout_seconds = 5\n`,
+  );
+  const cfg = await loadConfig(join(dir, "config.toml"));
+  assertEquals(cfg.hooks, {
+    onStatusChange: "echo a",
+    onTickEnd: "echo b",
+    onTickStart: "echo c",
+    timeoutSeconds: 5,
+  });
+  await Deno.remove(dir, { recursive: true });
+});
+
+Deno.test("loadConfig: leaves hooks undefined without a [hooks] section", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `[github]\nrepos = []\n[state]\ndir = "~/tmp"\n[tick]\nconcurrency = 1\n`,
+  );
+  const cfg = await loadConfig(join(dir, "config.toml"));
+  assertEquals(cfg.hooks, undefined);
+  await Deno.remove(dir, { recursive: true });
+});
+
+Deno.test("loadConfig: throws when a [hooks] command is not a string", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `[github]\nrepos = []\n[state]\ndir = "~/tmp"\n[tick]\nconcurrency = 1\n[hooks]\non_tick_end = 1\n`,
+  );
+  await assertRejects(
+    () => loadConfig(join(dir, "config.toml")),
+    Error,
+    "config.toml: [hooks].on_tick_end must be a string",
+  );
+  await Deno.remove(dir, { recursive: true });
+});
+
+Deno.test("loadConfig: throws when [hooks].timeout_seconds is not positive", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `[github]\nrepos = []\n[state]\ndir = "~/tmp"\n[tick]\nconcurrency = 1\n[hooks]\ntimeout_seconds = 0\n`,
+  );
+  await assertRejects(
+    () => loadConfig(join(dir, "config.toml")),
+    Error,
+    "config.toml: [hooks].timeout_seconds must be a positive integer",
+  );
+  await Deno.remove(dir, { recursive: true });
+});
+
 Deno.test("loadConfig: parses [codegraph] section with enabled = true and roots", async () => {
   const dir = await Deno.makeTempDir();
   await Deno.writeTextFile(

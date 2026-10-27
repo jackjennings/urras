@@ -201,6 +201,42 @@ controls what the implementation phase produces and what "merge" means:
 | `notion`       | Written document (RFC, proposal, ADR) | Posts to Notion                              |
 | `work` (TODO)  | New work tickets                      | Posts to ticket tracker (Jira, Linear, etc.) |
 
+## Hooks
+
+`[hooks]` in `config.toml` runs shell commands at tick boundaries and when a
+ticket changes phase or status, so a consumer such as the supervisor can react
+without polling `ur status`:
+
+```toml
+[hooks]
+on_tick_start = "..."
+on_tick_end = "..."
+on_status_change = "rex send -s \"$REX_SESSION\" -b \"$SUPERVISOR_BLOCK\" \"$URRAS_TICKET $URRAS_PHASE/$URRAS_STATUS\""
+timeout_seconds = 10
+```
+
+Every hook receives `URRAS_HOOK` (the hook name). `on_status_change` also
+receives:
+
+| Variable                                | Value                                                                        |
+| --------------------------------------- | ---------------------------------------------------------------------------- |
+| `URRAS_TICKET`                          | Ticket id                                                                    |
+| `URRAS_PHASE`, `URRAS_STATUS`           | State at the end of the tick                                                 |
+| `URRAS_PREV_PHASE`, `URRAS_PREV_STATUS` | State at the start of the tick; empty for a ticket captured during the tick  |
+| `URRAS_APPROVER`                        | `human`, `agent` or `unknown` when the current phase is approved, else empty |
+| `URRAS_REASON`                          | Latest attention entry when the status is `needs-attention`, else empty      |
+
+`on_tick_start` runs right after the tick takes its lock. Once the tick
+finishes, the lock is released first, then `on_status_change` runs once per
+ticket that changed during the tick (intermediate transitions are coalesced),
+then `on_tick_end` runs. When `on_tick_end` fires, no tick is in flight, so
+`ur review` is safe. Changes made by `ur approve`, `ur review` and the other
+commands are not reported.
+
+Hooks are best-effort. A hook that exits non-zero, cannot start, or exceeds
+`timeout_seconds` (default 10, killed with `SIGKILL`) is logged as `hook-failed`
+in `tick.ndjson` and never fails the tick or touches ticket state.
+
 ## Ceremonies
 
 Ceremonies are time- or event-triggered automations that use the system's state

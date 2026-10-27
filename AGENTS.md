@@ -413,9 +413,9 @@ and `event`. Events: `tick-start`, `tick-end`, `tick-already-running`,
 `stale-lock`, `lock-failed`, `tick-failed`, `update-skipped`, `update-failed`,
 `repo-renamed`, `repo-identity-collision`, `repo-identity-reconcile-failed`,
 `repo-identity-unavailable`, `repo-org-unmapped`, `pricing-fetch-failed`,
-`learning-processing-failed`, `org-renamed`, `org-identity-reconcile-failed`.
-`appendTickLog` (`src/tick.ts`) writes it directly; it is not `appendTicketLog`
-(`src/state/store.ts`).
+`learning-processing-failed`, `org-renamed`, `org-identity-reconcile-failed`,
+`hook-failed`. `appendTickLog` (`src/tick.ts`) writes it directly; it is not
+`appendTicketLog` (`src/state/store.ts`).
 
 | Event                            | Trigger                                                                                                                                                                                                                                               |
 | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -428,6 +428,7 @@ and `event`. Events: `tick-start`, `tick-end`, `tick-already-running`,
 | `learning-processing-failed`     | `processLearnings` failed to apply a pending learning or check a waiting one's PR state; `reason` is `local-repo-not-found`, `worktree-creation-failed`, `apply-learning-failed`, `git-commit-failed`, `pr-create-failed`, or `pr-state-check-failed` |
 | `org-renamed`                    | `currentLogin` changed for a confirmed org identity entry                                                                                                                                                                                             |
 | `org-identity-reconcile-failed`  | Network error, null response, or write failure on an org reconciler API call                                                                                                                                                                          |
+| `hook-failed`                    | A `[hooks]` command failed; `hook` names it, `reason` is `non-zero-exit` (with `code`), `timeout`, or `spawn-failed`, and status hooks carry `ticket`                                                                                                 |
 
 The plist from `plistContent()` must **not** include `StandardOutPath` or
 `StandardErrorPath` pointing to `tick.ndjson` — the tick process owns its own
