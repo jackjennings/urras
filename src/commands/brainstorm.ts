@@ -54,7 +54,10 @@ async function defaultPrompt(question: string): Promise<string | null> {
   return new TextDecoder().decode(buf.subarray(0, n)).trim();
 }
 
-function makeDefaultSpawn(config: Config): (prompt: string) => Promise<number> {
+export function makeDefaultSpawn(
+  config: Config,
+  options?: { initialMessage?: string },
+): (prompt: string) => Promise<number> {
   if (config.agent.type === "pi") {
     return async (prompt) => {
       const child = new Deno.Command("pi", {
@@ -64,6 +67,7 @@ function makeDefaultSpawn(config: Config): (prompt: string) => Promise<number> {
           "--approve",
           "--provider",
           config.pi.provider,
+          ...(options?.initialMessage ? [options.initialMessage] : []),
         ],
         stdin: "inherit",
         stdout: "inherit",

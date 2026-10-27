@@ -34,6 +34,7 @@ import { findLatestPhaseOutput, ReviewSession } from "../review.ts";
 import { TabbedPane } from "../ui/tabbed-pane.ts";
 import { listCeremonyStatuses } from "../ceremonies.ts";
 import type { CeremonyStatus } from "../ceremonies.ts";
+import { launchSupervisorPane } from "./supervisor.ts";
 
 export type TicketEntry =
   | { ok: true; ticket: TicketState; tokens: number | null; alive: boolean }
@@ -806,6 +807,18 @@ export const hud: Command = {
           }
         }
         tui.requestRender(true);
+      }
+      if (
+        matchesKey(data, "ctrl+g") && !commandEditor.focused &&
+        !reviewSessionActive
+      ) {
+        void launchSupervisorPane().then((result) => {
+          if (result === "already-running") {
+            headerLine = "Supervisor already running";
+            tui.requestRender(true);
+          }
+        }, () => {});
+        return { consume: true };
       }
       if (matchesKey(data, "super+k")) {
         statusPane.focused = false;
