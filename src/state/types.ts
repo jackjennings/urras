@@ -220,7 +220,7 @@ export interface Config {
   };
   ollama?: { models: string[]; url?: string };
   learnings?: { repos: string[] };
-  ceremonies?: { timeoutSeconds: number };
+  ceremonies?: { timeoutSeconds?: number; enabled?: boolean };
   codegraph?: { enabled: boolean; roots: string[] };
   repos?: Record<string, { verify?: string }>;
 }

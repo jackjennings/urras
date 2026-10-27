@@ -47,6 +47,7 @@ export interface CeremonyRunnerDeps {
   commitState(): Promise<void>;
   pushTicket(ticket: { title: string; body: string }): Promise<void>;
   timeoutMs?: number;
+  enabled?: boolean;
   getModel(chain: ModelChainEntry[], callSite?: string): LanguageModel;
 }
 
@@ -255,6 +256,7 @@ export class CeremonyRunner {
   }
 
   async run(): Promise<void> {
+    if (this.#deps.enabled === false) return;
     const ceremoniesDir = join(this.#deps.extensionsDir, "ceremonies");
     const dirEntries: Deno.DirEntry[] = [];
     try {

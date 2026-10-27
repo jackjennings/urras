@@ -220,6 +220,9 @@ pipeline:
     output/
 ```
 
+Set `enabled = false` under `[ceremonies]` in `config.toml` to disable every
+ceremony, built-in and state-dir alike.
+
 Each ceremony directory under `{stateDir}/ceremonies/{name}/` activates the
 named ceremony. The directory contains a `config.toml` with scheduling keys:
 

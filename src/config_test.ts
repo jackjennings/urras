@@ -1438,6 +1438,31 @@ Deno.test("loadConfig: parses [ceremonies].timeout_seconds correctly", async () 
   await Deno.remove(dir, { recursive: true });
 });
 
+Deno.test("loadConfig: parses [ceremonies].enabled = false", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `[github]\nrepos = []\n[state]\ndir = "~/tmp"\n[tick]\nconcurrency = 1\n[ceremonies]\nenabled = false\n`,
+  );
+  const cfg = await loadConfig(join(dir, "config.toml"));
+  assertEquals(cfg.ceremonies?.enabled, false);
+  await Deno.remove(dir, { recursive: true });
+});
+
+Deno.test("loadConfig: throws when [ceremonies].enabled is not a boolean", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `[github]\nrepos = []\n[state]\ndir = "~/tmp"\n[tick]\nconcurrency = 1\n[ceremonies]\nenabled = "no"\n`,
+  );
+  await assertRejects(
+    () => loadConfig(join(dir, "config.toml")),
+    Error,
+    "config.toml: [ceremonies].enabled must be a boolean",
+  );
+  await Deno.remove(dir, { recursive: true });
+});
+
 Deno.test("loadConfig: throws when [ceremonies].timeout_seconds is not an integer", async () => {
   const dir = await Deno.makeTempDir();
   await Deno.writeTextFile(
