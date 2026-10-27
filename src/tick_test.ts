@@ -1061,10 +1061,12 @@ Deno.test(
       }),
     });
     await new TickService(deps).run();
-    assertLess(
-      sequence.indexOf("processLearnings"),
-      sequence.indexOf("listTickets"),
+    const snapshotListIndex = sequence.indexOf("listTickets");
+    const workflowListIndex = sequence.indexOf(
+      "listTickets",
+      snapshotListIndex + 1,
     );
+    assertLess(sequence.indexOf("processLearnings"), workflowListIndex);
   },
 );
 
@@ -1097,6 +1099,103 @@ Deno.test(
       sequence.indexOf("commitState"),
       sequence.indexOf("runCeremonies"),
     );
+  },
+);
+
+function makeHookTickDeps(opts: {
+  sequence: string[];
+  before: Partial<TicketState>;
+  after: Partial<TicketState>;
+}) {
+  let workflowDone = false;
+  return makeTickServiceDeps({
+    listTickets: () => Promise.resolve(["t1"]),
+    readTicket: () =>
+      Promise.resolve(
+        makeTicket({
+          id: "t1",
+          ...(workflowDone ? opts.after : opts.before),
+        }),
+      ),
+    commitState: () => {
+      workflowDone = true;
+      return Promise.resolve();
+    },
+    lock: {
+      withLock: async (fn) => {
+        await fn();
+        opts.sequence.push("unlock");
+      },
+    },
+    runHook: (event) => {
+      opts.sequence.push(
+        event.hook === "on_status_change"
+          ? `${event.hook}:${JSON.stringify(event.env)}`
+          : event.hook,
+      );
+      return Promise.resolve();
+    },
+  });
+}
+
+Deno.test(
+  "TickService: runs tick hooks around the workflow and fires on_tick_end after the lock is released",
+  async () => {
+    const sequence: string[] = [];
+    await new TickService(
+      makeHookTickDeps({
+        sequence,
+        before: { phase: "spec", status: "running" },
+        after: { phase: "spec", status: "running" },
+      }),
+    ).run();
+    assertEquals(sequence, ["on_tick_start", "unlock", "on_tick_end"]);
+  },
+);
+
+Deno.test(
+  "TickService: fires on_status_change for a ticket whose phase or status changed during the tick",
+  async () => {
+    const sequence: string[] = [];
+    await new TickService(
+      makeHookTickDeps({
+        sequence,
+        before: { phase: "spec", status: "running" },
+        after: { phase: "spec", status: "waiting" },
+      }),
+    ).run();
+    assertEquals(sequence.length, 4);
+    assertEquals(sequence[1], "unlock");
+    assertEquals(sequence[3], "on_tick_end");
+    const change = sequence[2];
+    assertStringIncludes(change, "on_status_change:");
+    assertStringIncludes(change, '"URRAS_TICKET":"t1"');
+    assertStringIncludes(change, '"URRAS_PHASE":"spec"');
+    assertStringIncludes(change, '"URRAS_STATUS":"waiting"');
+    assertStringIncludes(change, '"URRAS_PREV_STATUS":"running"');
+  },
+);
+
+Deno.test(
+  "TickService: reports the approving actor when the new state is already approved",
+  async () => {
+    const sequence: string[] = [];
+    await new TickService(
+      makeHookTickDeps({
+        sequence,
+        before: { phase: "implementation", status: "running" },
+        after: {
+          phase: "implementation",
+          status: "waiting",
+          approvals: [{
+            timestamp: "2026-10-27T00:00:00Z",
+            actor: "agent",
+            phase: "implementation",
+          }],
+        },
+      }),
+    ).run();
+    assertStringIncludes(sequence[2], '"URRAS_APPROVER":"agent"');
   },
 );
 

@@ -1,3 +1,4 @@
+import { join } from "@std/path";
 import pLimit from "p-limit";
 import { estimateTokenCount } from "tokenx";
 import { adjudicatePhaseModel } from "./pre-phase-adjudication.ts";
@@ -12,7 +13,8 @@ import { isApproved, type TicketState } from "./state/types.ts";
 import { readTextFile } from "./filesystem.ts";
 import { CorruptRepoIdentitiesError } from "./providers/github/repo-identity.ts";
 import { StaleTicketWriteError } from "./state/store.ts";
-import { shouldHideTicket } from "./commands/status.ts";
+import { readAttentionReason, shouldHideTicket } from "./commands/status.ts";
+import type { HookEvent } from "./hooks.ts";
 
 const TICK_DEADLINE_MS = 4 * 60 * 60 * 1000;
 const TICK_ACTION_CONCURRENCY = 10;
@@ -40,6 +42,7 @@ export interface TickServiceDeps {
   agentsMdPaths: string[];
   agentsMdMaxTokens?: number;
   runCeremonies(): Promise<void>;
+  runHook(event: HookEvent): Promise<void>;
   scaffoldStatePrompts(): Promise<void>;
   generateShortTitle(
     title: string,
@@ -66,6 +69,8 @@ export class TickService {
     const deps = this.#deps;
     const deadlineMs = deps.deadlineMs ?? TICK_DEADLINE_MS;
     let deadlineTimerId: ReturnType<typeof setTimeout> | undefined;
+    let workflowStarted = false;
+    let statusChanges: HookEvent[] = [];
     try {
       await deps.refreshAnthropicPricing();
       await deps.installPackages(deps.packageSources);
@@ -75,6 +80,9 @@ export class TickService {
             await deps.appendTickLog({
               event: "tick-start",
             });
+            workflowStarted = true;
+            await deps.runHook({ hook: "on_tick_start" });
+            const before = await this.#snapshotTickets(deps);
             try {
               await this.#runWorkflow(deps);
             } catch (e) {
@@ -84,6 +92,8 @@ export class TickService {
                 error: e instanceof Error ? e.message : String(e),
               });
               throw e;
+            } finally {
+              statusChanges = await this.#collectStatusChanges(deps, before);
             }
             await deps.appendTickLog({
               event: "tick-end",
@@ -98,6 +108,12 @@ export class TickService {
         ]);
       } finally {
         clearTimeout(deadlineTimerId);
+        if (workflowStarted) {
+          await Promise.all(
+            statusChanges.map((change) => deps.runHook(change)),
+          );
+          await deps.runHook({ hook: "on_tick_end" });
+        }
       }
     } catch (e) {
       if (e instanceof TickDeadlineError) {
@@ -122,6 +138,52 @@ export class TickService {
       }
       deps.exit(1);
     }
+  }
+
+  async #snapshotTickets(
+    deps: TickServiceDeps,
+  ): Promise<Map<string, TicketState> | null> {
+    try {
+      const ids = await deps.listTickets();
+      const tickets = await Promise.all(ids.map((id) => deps.readTicket(id)));
+      return new Map(tickets.map((ticket) => [ticket.id, ticket]));
+    } catch {
+      return null;
+    }
+  }
+
+  async #collectStatusChanges(
+    deps: TickServiceDeps,
+    before: Map<string, TicketState> | null,
+  ): Promise<HookEvent[]> {
+    const after = await this.#snapshotTickets(deps);
+    if (before === null || after === null) return [];
+    const changes: HookEvent[] = [];
+    for (const ticket of after.values()) {
+      const previous = before.get(ticket.id);
+      if (
+        previous?.phase === ticket.phase && previous.status === ticket.status
+      ) continue;
+      const lastApproval = ticket.approvals.at(-1);
+      const approver = isApproved(ticket) ? lastApproval?.actor ?? "" : "";
+      const reason = ticket.status === "needs-attention"
+        ? await readAttentionReason(join(deps.stateDir, ticket.id)) ?? ""
+        : "";
+      changes.push({
+        hook: "on_status_change",
+        ticket: ticket.id,
+        env: {
+          URRAS_TICKET: ticket.id,
+          URRAS_PHASE: ticket.phase,
+          URRAS_STATUS: ticket.status,
+          URRAS_PREV_PHASE: previous?.phase ?? "",
+          URRAS_PREV_STATUS: previous?.status ?? "",
+          URRAS_APPROVER: approver,
+          URRAS_REASON: reason,
+        },
+      });
+    }
+    return changes;
   }
 
   async #runWorkflow(deps: TickServiceDeps): Promise<void> {

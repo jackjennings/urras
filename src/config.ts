@@ -283,6 +283,32 @@ export async function loadConfig(path?: string): Promise<Config> {
     }
   }
 
+  const hooksRaw = parsed.hooks as Record<string, unknown> | undefined;
+  let hooks: Config["hooks"];
+  if (hooksRaw !== undefined) {
+    for (const key of ["on_tick_start", "on_tick_end", "on_status_change"]) {
+      if (hooksRaw[key] !== undefined && typeof hooksRaw[key] !== "string") {
+        throw new Error(`config.toml: [hooks].${key} must be a string`);
+      }
+    }
+    const timeoutRaw = hooksRaw.timeout_seconds;
+    if (
+      timeoutRaw !== undefined &&
+      (typeof timeoutRaw !== "number" || !Number.isInteger(timeoutRaw) ||
+        timeoutRaw <= 0)
+    ) {
+      throw new Error(
+        "config.toml: [hooks].timeout_seconds must be a positive integer",
+      );
+    }
+    hooks = {
+      onTickStart: hooksRaw.on_tick_start as string | undefined,
+      onTickEnd: hooksRaw.on_tick_end as string | undefined,
+      onStatusChange: hooksRaw.on_status_change as string | undefined,
+      timeoutSeconds: timeoutRaw as number | undefined,
+    };
+  }
+
   const codegraphRaw = parsed.codegraph as Record<string, unknown> | undefined;
   let codegraph: Config["codegraph"];
   if (codegraphRaw !== undefined) {
@@ -339,6 +365,7 @@ export async function loadConfig(path?: string): Promise<Config> {
     ollama,
     learnings,
     ceremonies,
+    hooks,
     codegraph,
     repos,
     phases: phasesDefaults !== undefined
