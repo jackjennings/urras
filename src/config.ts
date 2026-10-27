@@ -259,6 +259,10 @@ export async function loadConfig(path?: string): Promise<Config> {
     | undefined;
   let ceremonies: Config["ceremonies"];
   if (ceremoniesRaw !== undefined) {
+    const enabledRaw = ceremoniesRaw.enabled;
+    if (enabledRaw !== undefined && typeof enabledRaw !== "boolean") {
+      throw new Error("config.toml: [ceremonies].enabled must be a boolean");
+    }
     const timeoutSecondsRaw = ceremoniesRaw.timeout_seconds;
     if (timeoutSecondsRaw !== undefined) {
       if (
@@ -270,7 +274,12 @@ export async function loadConfig(path?: string): Promise<Config> {
           "config.toml: [ceremonies].timeout_seconds must be a non-negative integer",
         );
       }
-      ceremonies = { timeoutSeconds: timeoutSecondsRaw };
+    }
+    if (enabledRaw !== undefined || timeoutSecondsRaw !== undefined) {
+      ceremonies = {
+        enabled: enabledRaw,
+        timeoutSeconds: timeoutSecondsRaw as number | undefined,
+      };
     }
   }
 

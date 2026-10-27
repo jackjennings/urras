@@ -58,6 +58,7 @@ function makeRunner(
     commitState?: () => Promise<void>;
     pushTicket?: (ticket: { title: string; body: string }) => Promise<void>;
     timeoutMs?: number;
+    enabled?: boolean;
   } = {},
 ): CeremonyRunner {
   return new CeremonyRunner(
@@ -78,6 +79,7 @@ function makeRunner(
       commitState: opts.commitState ?? (() => Promise.resolve()),
       pushTicket: opts.pushTicket ?? (() => Promise.resolve()),
       timeoutMs: opts.timeoutMs,
+      enabled: opts.enabled,
       getModel: () => {
         throw new Error("getModel not implemented in test");
       },
@@ -213,6 +215,28 @@ Deno.test("CeremonyRunner: standup does not fire before configured time", async 
     const { ceremony, runCount } = makeCountedCeremony("standup");
     await makeRunner(stateDir, { now: () => TEST_NOW, ceremonies: [ceremony] })
       .run();
+    assertEquals(runCount(), 0);
+  } finally {
+    await Deno.remove(stateDir, { recursive: true });
+  }
+});
+
+Deno.test("CeremonyRunner: no ceremony runs when disabled", async () => {
+  const stateDir = await Deno.makeTempDir();
+  try {
+    await Deno.mkdir(join(stateDir, "ceremonies", "standup"), {
+      recursive: true,
+    });
+    await Deno.writeTextFile(
+      join(stateDir, "ceremonies", "standup", "config.toml"),
+      'time = "09:00"',
+    );
+    const { ceremony, runCount } = makeCountedCeremony("standup");
+    await makeRunner(stateDir, {
+      now: () => TEST_NOW,
+      ceremonies: [ceremony],
+      enabled: false,
+    }).run();
     assertEquals(runCount(), 0);
   } finally {
     await Deno.remove(stateDir, { recursive: true });
