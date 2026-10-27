@@ -56,6 +56,7 @@ async function defaultPrompt(question: string): Promise<string | null> {
 
 export function makeDefaultSpawn(
   config: Config,
+  options?: { initialMessage?: string },
 ): (prompt: string) => Promise<number> {
   if (config.agent.type === "pi") {
     return async (prompt) => {
@@ -66,6 +67,7 @@ export function makeDefaultSpawn(
           "--approve",
           "--provider",
           config.pi.provider,
+          ...(options?.initialMessage ? [options.initialMessage] : []),
         ],
         stdin: "inherit",
         stdout: "inherit",

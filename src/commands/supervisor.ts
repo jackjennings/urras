@@ -33,23 +33,44 @@ export async function buildSupervisorPrompt(stateDir: string): Promise<string> {
   return overlay ? `${builtIn}\n\n${overlay}` : builtIn;
 }
 
+const SUPERVISOR_START_MESSAGE = "Begin the first cycle.";
+
+async function claimSupervisorPid(
+  deps?: { isPidAlive?: (pid: number) => boolean; pid?: number },
+): Promise<number | null> {
+  await mkdir(urrasDir(), { recursive: true });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      await writeTextFile(supervisorPidPath(), String(deps?.pid ?? Deno.pid), {
+        createNew: true,
+      });
+      return null;
+    } catch (e) {
+      if (!(e instanceof Deno.errors.AlreadyExists)) throw e;
+    }
+    const existing = await readRunningSupervisorPid(deps);
+    if (existing !== null) return existing;
+    await remove(supervisorPidPath()).catch(() => {});
+  }
+  throw new Error("supervisor: could not claim pid file");
+}
+
 export async function performSupervisor(deps?: {
   loadConfig?: () => Promise<Config>;
   spawn?: (prompt: string) => Promise<number>;
   isPidAlive?: (pid: number) => boolean;
   pid?: number;
 }): Promise<number> {
-  const existing = await readRunningSupervisorPid(deps);
+  const existing = await claimSupervisorPid(deps);
   if (existing !== null) {
     console.error(`supervisor: already running (pid ${existing})`);
     return 1;
   }
-  const config = await (deps?.loadConfig ?? defaultLoadConfig)();
-  const prompt = await buildSupervisorPrompt(expandHome(config.state.dir));
-  const spawnFn = deps?.spawn ?? makeDefaultSpawn(config);
-  await mkdir(urrasDir(), { recursive: true });
-  await writeTextFile(supervisorPidPath(), String(deps?.pid ?? Deno.pid));
   try {
+    const config = await (deps?.loadConfig ?? defaultLoadConfig)();
+    const prompt = await buildSupervisorPrompt(expandHome(config.state.dir));
+    const spawnFn = deps?.spawn ??
+      makeDefaultSpawn(config, { initialMessage: SUPERVISOR_START_MESSAGE });
     return await spawnFn(prompt);
   } finally {
     await remove(supervisorPidPath()).catch(() => {});

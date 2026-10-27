@@ -156,3 +156,24 @@ Deno.test("launchSupervisorPane: reports an existing supervisor instead of start
   assertEquals(result, "already-running");
   assertSpyCalls(runRex, 0);
 });
+
+Deno.test("performSupervisor: only one of two concurrent launches runs the agent", async () => {
+  using _urras = withUrrasDir();
+  const stateDir = await Deno.makeTempDir();
+  const spawn = spy(async (_prompt: string) => {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    return 0;
+  });
+  const options = {
+    loadConfig: () => Promise.resolve(configWithStateDir(stateDir)),
+    spawn,
+    isPidAlive: () => true,
+    pid: 4242,
+  };
+  const codes = await Promise.all([
+    performSupervisor(options),
+    performSupervisor(options),
+  ]);
+  assertEquals(codes.toSorted(), [0, 1]);
+  assertSpyCalls(spawn, 1);
+});
