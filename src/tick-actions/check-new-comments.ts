@@ -43,6 +43,7 @@ function isAfter(timestamp: string, since: string): boolean {
 export function checkNewCommentsAction(deps: CheckNewCommentsDeps): TickAction {
   return {
     label: "Checking comments",
+    usesAgent: false,
     applies(ticket: TicketState): boolean {
       return (
         (ticket.provider === "github" || ticket.provider === "jira") &&

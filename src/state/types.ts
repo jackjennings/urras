@@ -7,6 +7,7 @@ export type TicketStatus =
   | "running"
   | "waiting"
   | "revising"
+  | "paused"
   | "needs-attention"
   | "done";
 
@@ -15,17 +16,24 @@ export const STATUS_SEQUENCE = [
   "running",
   "waiting",
   "revising",
+  "paused",
   "needs-attention",
   "done",
 ] as const;
 
 const VALID_STATUSES: Record<TicketPhase, ReadonlyArray<TicketStatus>> = {
-  intake: ["new", "running", "waiting", "revising", "needs-attention"],
-  enrichment: ["running", "waiting", "revising", "needs-attention"],
-  spec: ["running", "waiting", "revising", "needs-attention"],
-  plan: ["running", "waiting", "revising", "needs-attention"],
-  implementation: ["running", "waiting", "revising", "needs-attention"],
-  merge: ["waiting", "running", "revising", "done", "needs-attention"],
+  intake: ["new", "running", "waiting", "revising", "paused", "needs-attention"],
+  enrichment: ["running", "waiting", "revising", "paused", "needs-attention"],
+  spec: ["running", "waiting", "revising", "paused", "needs-attention"],
+  plan: ["running", "waiting", "revising", "paused", "needs-attention"],
+  implementation: [
+    "running",
+    "waiting",
+    "revising",
+    "paused",
+    "needs-attention",
+  ],
+  merge: ["waiting", "running", "revising", "paused", "done", "needs-attention"],
   "wont-do": ["done"],
 };
 
@@ -130,6 +138,7 @@ export interface TicketState {
   transientRetries?: number;
   phaseSessionIds?: Partial<Record<string, string>>;
   notifiedNeedsAttention?: boolean;
+  isRevisionRun?: boolean;
   created: string;
   updated: string;
   body: string;
@@ -224,4 +233,9 @@ export interface Config {
   ceremonies?: { timeoutSeconds?: number; enabled?: boolean };
   codegraph?: { enabled: boolean; roots: string[] };
   repos?: Record<string, { verify?: string }>;
+  limits?: {
+    pauseOnUsageLimit: boolean;
+    defaultPauseMinutes: number;
+    maxTrips: number;
+  };
 }

@@ -2,7 +2,8 @@
   "lint": {
     "plugins": [
       "./lint-plugins/no-fn-suffix.ts",
-      "./lint-plugins/no-raw-fetch.ts"
+      "./lint-plugins/no-raw-fetch.ts",
+      "./lint-plugins/no-undeclared-agent-use.ts"
     ]
   },
   "tasks": {

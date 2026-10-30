@@ -61,6 +61,7 @@ export function reconcilePRsAction(deps: ReconcilePRsDeps): TickAction {
   const aliasesForSlug = deps.aliasesForSlug ?? ((s: string) => [s]);
   return {
     label: "Reconciling PRs",
+    usesAgent: false,
     applies(ticket: TicketState): boolean {
       return (
         ticket.phase === "implementation" &&

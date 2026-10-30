@@ -18,6 +18,7 @@ export function createRemoteRepoAction(
 ): TickAction {
   return {
     label: "Creating remote repository",
+    usesAgent: false,
     applies(ticket: TicketState): boolean {
       return (
         ticket.phase === "plan" &&

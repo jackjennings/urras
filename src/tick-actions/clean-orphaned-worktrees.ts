@@ -23,6 +23,7 @@ export function cleanOrphanedWorktreesAction(
 ): TickAction {
   return {
     label: "Cleaning worktrees",
+    usesAgent: false,
     applies(ticket: TicketState): boolean {
       return (
         ticket.prs !== undefined &&
