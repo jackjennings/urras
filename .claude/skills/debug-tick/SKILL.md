@@ -7,11 +7,11 @@ description: Use when the tick is not running or not appearing to run, tick.ndjs
 
 ## Overview
 
-The tick's own evidence lives in `~/.lazyboy/tick.ndjson`, one JSON object per
+The tick's own evidence lives in `~/.urras/tick.ndjson`, one JSON object per
 line with `ts` (ISO 8601 UTC) and `event`. It is written by `appendTickLog`
 (`src/tick.ts`) — distinct from `appendTicketLog`, which writes the per-ticket
-log. The runtime dir is resolved by `lazyboyDir()` (`src/paths.ts`):
-`$LAZYBOY_DIR` when set, otherwise `$HOME/.lazyboy`.
+log. The runtime dir is resolved by `urrasDir()` (`src/paths.ts`): `$URRAS_DIR`
+when set, otherwise `$HOME/.urras`.
 
 The LaunchAgent runs the tick every 5 minutes. The plist must never point
 `StandardOutPath` or `StandardErrorPath` at `tick.ndjson` — the tick owns its
@@ -35,16 +35,15 @@ For problems with a specific ticket — wrong output, unexpected park, missing P
    is re-read on every tick with nothing to restart.
 3. **What do the last lines of `tick.ndjson` say?** Tail the file; each line has
    `ts` (ISO 8601 UTC) and `event`.
-4. **Is there a live or stale `tick.pid`?** The pid file is
-   `~/.lazyboy/tick.pid`. Lock behavior: if the pid file exists and the recorded
-   pid is alive, and the file's mtime is under 30 minutes
-   (`STALE_LOCK_MS = 30 * 60 * 1000` at `src/lock.ts:20`), the tick logs
-   `tick-already-running` and returns silently. Past 30 minutes it logs
-   `stale-lock` (with `thresholdMinutes`) and takes the lock anyway. Any throw
-   during acquisition logs `lock-failed`. The pid file is removed in a
-   `finally`, so a leftover `tick.pid` means the process died hard. A run of
-   consecutive `tick-already-running` lines is the normal symptom of one wedged
-   tick blocking all subsequent ones for up to 30 minutes.
+4. **Is there a live or stale `tick.pid`?** The pid file is `~/.urras/tick.pid`.
+   Lock behavior: if the pid file exists and the recorded pid is alive, and the
+   file's mtime is under 30 minutes (`STALE_LOCK_MS = 30 * 60 * 1000` at
+   `src/lock.ts:20`), the tick logs `tick-already-running` and returns silently.
+   Past 30 minutes it logs `stale-lock` (with `thresholdMinutes`) and takes the
+   lock anyway. Any throw during acquisition logs `lock-failed`. The pid file is
+   removed in a `finally`, so a leftover `tick.pid` means the process died hard.
+   A run of consecutive `tick-already-running` lines is the normal symptom of
+   one wedged tick blocking all subsequent ones for up to 30 minutes.
 5. **Did the tick reach `tick-end` or log `tick-failed`?** Both events are in
    `tick.ndjson`.
 6. **Do credentials resolve in a non-GUI context?** See the Credentials section
@@ -69,7 +68,7 @@ In a non-GUI session the login keychain is locked, so `gh auth token` returns
 empty. The tick then sends `Authorization: Bearer` (empty) and GitHub answers
 401. Rotating a token cannot fix this.
 
-Credentials must come from `~/.config/lazyboy/env`, which `scripts/tick.sh`
+Credentials must come from `~/.config/urras/env`, which `scripts/tick.sh`
 sources (lines 12–17) and `bin/lazyboy` also sources. `config.toml` startup
 validation checks only that each `[github.accounts.*].token_env` is _set_, not
 that its value is non-empty, so an empty-but-set variable passes validation and

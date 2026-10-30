@@ -7,7 +7,7 @@ for dir in /usr/local/bin /opt/homebrew/bin "$HOME/.local/bin"; do
 done
 export PATH
 
-LAZYBOY_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+URRAS_REPOSITORY_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 if [ -f "$HOME/.config/urras/env" ]; then
   set -a
@@ -16,15 +16,16 @@ if [ -f "$HOME/.config/urras/env" ]; then
   set +a
 fi
 
-if [ -n "$LAZYBOY_PATH" ]; then
-  export PATH="$LAZYBOY_PATH:$PATH"
+URRAS_PATH="${URRAS_PATH:-$LAZYBOY_PATH}"
+if [ -n "$URRAS_PATH" ]; then
+  export PATH="$URRAS_PATH:$PATH"
 fi
 
-started_revision="$(git -C "$LAZYBOY_DIR" rev-parse HEAD)"
+started_revision="$(git -C "$URRAS_REPOSITORY_DIR" rev-parse HEAD)"
 
 while true; do
-  deno run --allow-all "$LAZYBOY_DIR/src/index.ts" tick
-  if [ "$(git -C "$LAZYBOY_DIR" rev-parse HEAD)" != "$started_revision" ]; then
+  deno run --allow-all "$URRAS_REPOSITORY_DIR/src/index.ts" tick
+  if [ "$(git -C "$URRAS_REPOSITORY_DIR" rev-parse HEAD)" != "$started_revision" ]; then
     exit 0
   fi
   sleep "$(deno run --allow-all "$LAZYBOY_DIR/scripts/tick-interval.ts" 2>/dev/null || echo 300)"
