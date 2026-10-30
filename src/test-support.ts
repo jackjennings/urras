@@ -48,6 +48,16 @@ export function makeTickDeps(overrides: Partial<TickDeps> = {}): TickDeps {
     runVerification: () => Promise.resolve({ exitCode: 0, output: "" }),
     writeVerificationContext: () => Promise.resolve(),
     config: undefined,
+    breaker: {
+      name: "test",
+      status: () => Promise.resolve({ state: "closed" as const }),
+      trip: () => Promise.resolve(),
+      succeed: () => Promise.resolve(),
+      reset: () => Promise.resolve(),
+    },
+    readPhaseUsageLimit: () => Promise.resolve(null),
+    notifyUsageLimitTripped: () => Promise.resolve(),
+    maxTrips: 24,
     ...overrides,
   };
 }
@@ -91,6 +101,13 @@ export function makeTickServiceDeps(
     reconcileRepoIdentities: () => Promise.resolve(),
     canonicalSlugFor: (slug) => slug,
     writeTickProgress: () => Promise.resolve(),
+    breaker: {
+      name: "test",
+      status: () => Promise.resolve({ state: "closed" as const }),
+      trip: () => Promise.resolve(),
+      succeed: () => Promise.resolve(),
+      reset: () => Promise.resolve(),
+    },
     ...overrides,
   };
 }
