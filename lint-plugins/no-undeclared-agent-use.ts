@@ -39,8 +39,9 @@ export default {
             ) {
               ctx.report({
                 node: node.arguments[0],
-                message:
-                  `Direct Deno.Command("${node.arguments[0].value}") in tick-actions; use AgentAccess.spawn or AgentAccess.run instead.`,
+                message: `Direct Deno.Command("${
+                  node.arguments[0].value
+                }") in tick-actions; use AgentAccess.spawn or AgentAccess.run instead.`,
               });
             }
           },

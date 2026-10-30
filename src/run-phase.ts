@@ -33,6 +33,7 @@ import { compactTimestamp } from "./timestamp.ts";
 import { PHASE_MODEL_DEFAULTS } from "./phases/model.ts";
 import { selfApprove } from "./self-approve.ts";
 import { Effect } from "effect";
+import { detectUsageLimit } from "./usage-limit.ts";
 
 export function getPiEnvironmentVariables(
   home: string,
@@ -836,6 +837,24 @@ export async function executePhase(
       );
     } catch {
       // sidecar write failure does not affect the returned exit code
+    }
+
+    if (finalResult.code !== 0) {
+      try {
+        const limitHit = detectUsageLimit({
+          stdout: finalResult.stdout,
+          stderr: finalResult.stderr,
+          now: Temporal.Now.zonedDateTimeISO(),
+        });
+        if (limitHit !== null) {
+          await writeTextFile(
+            join(opts.ticketDir, opts.outputFile + ".limit"),
+            JSON.stringify(limitHit),
+          );
+        }
+      } catch {
+        // sidecar write failure does not affect the returned exit code
+      }
     }
 
     try {

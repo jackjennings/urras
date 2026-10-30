@@ -13,6 +13,7 @@ import { readTextFile } from "./filesystem.ts";
 import { CorruptRepoIdentitiesError } from "./providers/github/repo-identity.ts";
 import { StaleTicketWriteError } from "./state/store.ts";
 import { shouldHideTicket } from "./commands/status.ts";
+import type { CircuitBreaker } from "./circuit-breaker.ts";
 
 const TICK_DEADLINE_MS = 4 * 60 * 60 * 1000;
 const TICK_ACTION_CONCURRENCY = 10;
@@ -51,6 +52,7 @@ export interface TickServiceDeps {
   canonicalSlugFor: (slug: string) => string;
   writeTickProgress: (label: string | null) => Promise<void>;
   deadlineMs?: number;
+  breaker: CircuitBreaker;
 }
 
 class TickDeadlineError extends Error {}
@@ -125,6 +127,22 @@ export class TickService {
   }
 
   async #runWorkflow(deps: TickServiceDeps): Promise<void> {
+    const breakerStatus = await deps.breaker.status(Temporal.Now.instant());
+    const breakerOpen = breakerStatus.state === "open" ||
+      breakerStatus.state === "half-open";
+    const breakerHalfOpen = breakerStatus.state === "half-open";
+    if (breakerStatus.state === "open") {
+      await deps.appendTickLog({
+        event: "tick-paused",
+        retryAt: breakerStatus.retryAt,
+        trips: breakerStatus.trips,
+      });
+    } else if (breakerHalfOpen) {
+      await deps.appendTickLog({
+        event: "usage-limit-probe",
+        retryAt: breakerStatus.retryAt,
+      });
+    }
     await deps.preflightGitHubCredentials();
     let captureEnabled = true;
     try {
@@ -140,8 +158,10 @@ export class TickService {
         throw e;
       }
     }
-    await deps.processLearnings();
-    if (captureEnabled) {
+    if (!breakerOpen) {
+      await deps.processLearnings();
+    }
+    if (captureEnabled && !breakerOpen) {
       const existingIds = new Set(await deps.listTickets());
       for (const provider of deps.providers) {
         const newItems = await provider.fetchNew(existingIds);
@@ -171,7 +191,7 @@ export class TickService {
           });
         }
       }
-    } // end if (captureEnabled)
+    } // end if (captureEnabled && !breakerOpen)
 
     const ids = (await deps.listTickets()).sort();
     const settled = await Promise.allSettled(
@@ -226,6 +246,7 @@ export class TickService {
         if (ticket.phase === "wont-do" || ticket.held) return ticket;
         let current = ticket;
         for (const action of deps.tickActions) {
+          if (breakerOpen && action.usesAgent) continue;
           try {
             if (action.applies(current)) {
               const updated = await action.run(current, deps.stateDir);
@@ -319,14 +340,17 @@ export class TickService {
       await advancePhase(ticket, deps.stateDir, deps.tickDeps);
     }
 
+    const effectiveConcurrency = breakerHalfOpen ? 1 : deps.concurrency;
     let running =
       runningTickets.filter((t) => deps.tickDeps.isProcessAlive(t.id)).length;
     for (const ticket of candidateTickets) {
       if (!selectedSet.has(ticket.id)) continue;
+      if (breakerOpen && ticket.status !== "paused") continue;
       const willSpawn = ticket.status === "new" ||
         ticket.status === "revising" ||
+        ticket.status === "paused" ||
         (ticket.status === "waiting" && isApproved(ticket));
-      if (willSpawn && running >= deps.concurrency) continue;
+      if (willSpawn && running >= effectiveConcurrency) continue;
       if (willSpawn) {
         running++;
         const agentsMdMaxTokens = deps.agentsMdMaxTokens ?? 0;
@@ -353,9 +377,19 @@ export class TickService {
       await advancePhase(ticket, deps.stateDir, deps.tickDeps);
     }
 
+    if (breakerHalfOpen) {
+      const afterStatus = await deps.breaker.status(Temporal.Now.instant());
+      if (afterStatus.state === "half-open") {
+        await deps.breaker.succeed();
+        await deps.appendTickLog({ event: "usage-limit-cleared" });
+      }
+    }
+
     await deps.scaffoldStatePrompts();
     await deps.commitState();
-    await deps.runCeremonies();
+    if (!breakerOpen) {
+      await deps.runCeremonies();
+    }
   }
 }
 

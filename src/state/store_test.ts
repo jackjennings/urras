@@ -1864,6 +1864,7 @@ Deno.test(
           title: "Work item",
         }],
         revision: "placeholder",
+        isRevisionRun: true,
       };
 
       await writeTicket(dir, fixture);

@@ -147,6 +147,9 @@ import { ollamaAvailabilityCheck } from "./doctor/checks/ollama-availability.ts"
 import { ghVersionCheck } from "./doctor/checks/gh-version.ts";
 import type { Check } from "./doctor/checks/types.ts";
 import { plistPath } from "./launchd.ts";
+import { JsonFileBreaker, NoOpBreaker } from "./circuit-breaker.ts";
+import type { UsageLimitHit } from "./usage-limit.ts";
+import { usageLimitBreakerCheck } from "./doctor/checks/usage-limit-breaker.ts";
 
 export async function ensureStatePrompts(
   stateDir: string,
@@ -1354,6 +1357,15 @@ export function composeTickDeps(
     ],
   );
 
+  const breakerDir = join(urrasDir(), "breakers");
+  const breaker = config.limits?.pauseOnUsageLimit !== false
+    ? new JsonFileBreaker("claude-usage", breakerDir, {
+      defaultPauseMinutes: config.limits?.defaultPauseMinutes ?? 60,
+      appendTickLog,
+    })
+    : new NoOpBreaker("claude-usage");
+  const breakerNotifiedPath = join(breakerDir, "claude-usage-notified.txt");
+
   return {
     stateDir,
     concurrency: config.tick.concurrency,
@@ -1672,6 +1684,44 @@ export function composeTickDeps(
         );
       },
       config: { repos: config.repos },
+      breaker,
+      readPhaseUsageLimit: async (
+        ticketDir,
+        phase,
+      ): Promise<UsageLimitHit | null> => {
+        const pattern = new RegExp(`^\\d{8}T\\d{6}-${phase}\\.md\\.limit$`);
+        const matches: string[] = [];
+        try {
+          for await (const entry of readDir(ticketDir)) {
+            if (entry.isFile && pattern.test(entry.name)) {
+              matches.push(entry.name);
+            }
+          }
+        } catch { /* dir missing */ }
+        if (matches.length === 0) return null;
+        matches.sort();
+        try {
+          const content = await readTextFile(
+            join(ticketDir, matches[matches.length - 1]),
+          );
+          return JSON.parse(content) as UsageLimitHit;
+        } catch {
+          return null;
+        }
+      },
+      notifyUsageLimitTripped: async (openedAt: string): Promise<void> => {
+        let last = "";
+        try {
+          last = (await readTextFile(breakerNotifiedPath)).trim();
+        } catch { /* absent */ }
+        if (last === openedAt) return;
+        await desktopNotifier(
+          "Usage limit reached",
+          "Urras is paused until quota resets.",
+        );
+        await writeTextFile(breakerNotifiedPath, openedAt);
+      },
+      maxTrips: config.limits?.maxTrips ?? 24,
     },
     runMigrations: createMigrationRunner({
       listMigrationFiles: async () => {
@@ -1871,6 +1921,7 @@ export function composeTickDeps(
         await writeTextFile(path, JSON.stringify({ label }));
       }
     },
+    breaker,
   };
 }
 
@@ -1941,5 +1992,14 @@ export function composeDoctorChecks(config: Config): Check[] {
     staleHudProcessCheck({ runCommand, repoPath }),
     ollamaAvailabilityCheck({ config, http }),
     ghVersionCheck({ runCommand }),
+    usageLimitBreakerCheck({
+      breaker: config.limits?.pauseOnUsageLimit !== false
+        ? new JsonFileBreaker("claude-usage", join(urrasDirPath, "breakers"), {
+          defaultPauseMinutes: config.limits?.defaultPauseMinutes ?? 60,
+          appendTickLog: () => Promise.resolve(),
+        })
+        : new NoOpBreaker("claude-usage"),
+      maxTrips: config.limits?.maxTrips ?? 24,
+    }),
   ];
 }

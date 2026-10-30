@@ -1,12 +1,8 @@
-import {
-  assert,
-  assertEquals,
-  assertStringIncludes,
-} from "@std/assert";
+import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import { join } from "@std/path";
 import { JsonFileBreaker } from "./circuit-breaker.ts";
 
-async function makeBreaker(dir: string) {
+function makeBreaker(dir: string) {
   return new JsonFileBreaker("test", join(dir, "breakers"), {
     defaultPauseMinutes: 60,
     appendTickLog: () => Promise.resolve(),

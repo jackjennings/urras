@@ -29,6 +29,8 @@ import type {
   SelfReviewModelError,
   SelfReviewOutcome,
 } from "../self-approve.ts";
+import type { CircuitBreaker } from "../circuit-breaker.ts";
+import type { UsageLimitHit } from "../usage-limit.ts";
 
 const DEFAULT_MAX_PROMPT_TOKENS = 5_000;
 
@@ -116,6 +118,13 @@ export interface TickDeps {
     content: string,
   ) => Promise<void>;
   config?: Pick<Config, "repos">;
+  breaker: CircuitBreaker;
+  readPhaseUsageLimit: (
+    ticketDir: string,
+    phase: string,
+  ) => Promise<UsageLimitHit | null>;
+  notifyUsageLimitTripped: (openedAt: string) => Promise<void>;
+  maxTrips?: number;
 }
 
 export async function advancePhase(
@@ -236,15 +245,19 @@ export async function advancePhase(
         sessionId,
         resume: sessionId !== undefined,
       });
-      const updatedConsumedContextFiles = newlyConsumedFilenames.length > 0
-        ? [...(ticket.consumedContextFiles ?? []), ...newlyConsumedFilenames]
+      const updatedConsumed = newlyConsumedFilenames.length > 0
+        ? [
+          ...(ticket.consumedContextFiles ?? []),
+          ...newlyConsumedFilenames,
+        ]
         : ticket.consumedContextFiles;
       await deps.writeTicket(stateDir, {
         ...ticket,
         status: "running",
         updated: now,
         notifiedNeedsAttention: false,
-        consumedContextFiles: updatedConsumedContextFiles,
+        isRevisionRun: true,
+        consumedContextFiles: updatedConsumed,
       });
       await deps.appendLog(stateDir, ticket.id, {
         event: "status-transition",
@@ -327,6 +340,234 @@ export async function advancePhase(
     return;
   }
 
+  if (ticket.status === "paused") {
+    const pausedOutput = await deps.readPhaseOutput(
+      join(stateDir, ticket.id),
+      ticket.phase,
+    );
+    if (pausedOutput !== null && pausedOutput.trim() !== "") {
+      await deps.writeTicket(stateDir, {
+        ...ticket,
+        status: "waiting",
+        updated: now,
+        isRevisionRun: undefined,
+      });
+      await deps.appendLog(stateDir, ticket.id, {
+        event: "usage-limit-released",
+        phase: ticket.phase,
+      });
+      return;
+    }
+
+    const breakerStatus = await deps.breaker.status(Temporal.Now.instant());
+    const maxTrips = deps.maxTrips ?? 24;
+    if (breakerStatus.state !== "closed" && breakerStatus.trips >= maxTrips) {
+      await deps.writeTicket(stateDir, {
+        ...ticket,
+        status: "needs-attention",
+        updated: now,
+      });
+      await deps.appendLog(stateDir, ticket.id, {
+        event: "phase-output-invalid",
+        phase: ticket.phase,
+        reason: "usage-limit-unresolved",
+      });
+      return;
+    }
+
+    if (ticket.isRevisionRun) {
+      const isMergeRevision = ticket.phase === "merge";
+      const activePhase = isMergeRevision
+        ? "implementation"
+        : ticket.phase as ActivePhase;
+      const pausedOutputFile = `${compactTimestamp(zonedNow)}-${
+        isMergeRevision ? "merge" : activePhase
+      }.md`;
+      const revisionPrompt = await loadRevisionPrompt(activePhase);
+      const basePrompt = revisionPrompt || await loadPrompt(activePhase);
+      const revisingSupplement = await loadProviderPrompt(
+        activePhase,
+        ticket.provider,
+      );
+      const revisingArtifactSupplement = await loadArtifactPrompt(
+        activePhase,
+        ticket.artifacts,
+      );
+      const revisingStatePrompt = await loadStatePrompt(
+        activePhase,
+        stateDir,
+        ticket.provider,
+        ticket.id,
+      );
+      const revisingStateRevisionPrompt = await loadStatePrompt(
+        `${activePhase}-revision`,
+        stateDir,
+        ticket.provider,
+        ticket.id,
+      );
+      let commentContext = "";
+      const alreadyConsumed = new Set(ticket.consumedContextFiles ?? []);
+      const pausedRevisionConsumedFilenames: string[] = [];
+      try {
+        const contextFiles: string[] = [];
+        for await (const entry of readDir(join(stateDir, ticket.id))) {
+          if (
+            entry.isFile &&
+            !alreadyConsumed.has(entry.name) &&
+            (entry.name.endsWith("-comment-context.md") ||
+              entry.name.endsWith("-upstream-edit-context.md") ||
+              entry.name.endsWith("-verification-failure-context.md"))
+          ) {
+            contextFiles.push(entry.name);
+          }
+        }
+        contextFiles.sort();
+        const parts: string[] = [];
+        for (const filename of contextFiles) {
+          const content = await readTextFile(
+            join(stateDir, ticket.id, filename),
+          );
+          parts.push(`<!-- ${filename} -->\n${content}`);
+          pausedRevisionConsumedFilenames.push(filename);
+        }
+        if (parts.length > 0) commentContext = parts.join("\n\n---\n\n");
+      } catch { /* dir missing */ }
+      const pausedRevisionPrompt = [
+        basePrompt,
+        revisingSupplement,
+        revisingArtifactSupplement,
+        revisingStatePrompt,
+        revisingStateRevisionPrompt,
+        commentContext,
+      ]
+        .filter((part) => part.length > 0)
+        .join("\n\n");
+      const { model: rModel, thinking: rThinking } = deps.resolveModelConfig(
+        activePhase,
+        ticket,
+      );
+      const { model: rCritiqueModel, thinking: rCritiqueThinking } = deps
+        .resolveModelConfig("critique", ticket);
+      let sessionId: string | undefined;
+      if (activePhase === "implementation") {
+        const stored = ticket.phaseSessionIds?.["implementation"];
+        if (stored && Object.keys(ticket.worktrees).length > 0) {
+          sessionId = stored;
+        }
+      }
+      await deps.spawn({
+        phase: activePhase,
+        ticketDir: join(stateDir, ticket.id),
+        prompt: pausedRevisionPrompt,
+        scope: ticket.scope,
+        worktrees: activePhase === "implementation" ? ticket.worktrees : {},
+        outputFile: pausedOutputFile,
+        model: rModel,
+        thinking: rThinking,
+        critiqueModel: rCritiqueModel,
+        critiqueThinking: rCritiqueThinking,
+        sessionId,
+        resume: sessionId !== undefined,
+      });
+      const pausedRevisionUpdatedConsumed =
+        pausedRevisionConsumedFilenames.length > 0
+          ? [
+            ...(ticket.consumedContextFiles ?? []),
+            ...pausedRevisionConsumedFilenames,
+          ]
+          : ticket.consumedContextFiles;
+      await deps.writeTicket(stateDir, {
+        ...ticket,
+        status: "running",
+        updated: now,
+        isRevisionRun: true,
+        consumedContextFiles: pausedRevisionUpdatedConsumed,
+      });
+    } else {
+      const currentPhase = ticket.phase as ActivePhase;
+      const pausedOutputFile = `${
+        compactTimestamp(zonedNow)
+      }-${currentPhase}.md`;
+      let freshPrompt: string;
+      if (currentPhase === "intake") {
+        const intakeBase = await loadPrompt("intake");
+        const intakeSupplement = await loadProviderPrompt(
+          "intake",
+          ticket.provider,
+        );
+        const intakeArtifactSupplement = await loadArtifactPrompt(
+          "intake",
+          ticket.artifacts,
+        );
+        const corpusText = await deps.buildRepoCorpusText();
+        const intakeStatePrompt = await loadStatePrompt(
+          "intake",
+          stateDir,
+          ticket.provider,
+          ticket.id,
+        );
+        freshPrompt = [
+          intakeBase,
+          intakeSupplement,
+          intakeArtifactSupplement,
+          corpusText,
+          intakeStatePrompt,
+        ]
+          .filter((part) => part.length > 0)
+          .join("\n\n")
+          .replaceAll("{glossaryDir}", glossaryDir(stateDir));
+      } else {
+        const basePrompt = await loadPrompt(currentPhase);
+        const supplement = await loadProviderPrompt(
+          currentPhase,
+          ticket.provider,
+        );
+        const artifactSupplement = await loadArtifactPrompt(
+          currentPhase,
+          ticket.artifacts,
+        );
+        const statePrompt = await loadStatePrompt(
+          currentPhase,
+          stateDir,
+          ticket.provider,
+          ticket.id,
+        );
+        freshPrompt = [basePrompt, supplement, artifactSupplement, statePrompt]
+          .filter((part) => part.length > 0)
+          .join("\n\n");
+      }
+      const { model: fModel, thinking: fThinking } = deps.resolveModelConfig(
+        currentPhase,
+        ticket,
+      );
+      const { model: fCritiqueModel, thinking: fCritiqueThinking } = deps
+        .resolveModelConfig("critique", ticket);
+      await deps.spawn({
+        phase: currentPhase,
+        ticketDir: join(stateDir, ticket.id),
+        prompt: freshPrompt,
+        scope: currentPhase === "intake" ? [] : ticket.scope,
+        worktrees: currentPhase === "implementation" ? ticket.worktrees : {},
+        outputFile: pausedOutputFile,
+        model: fModel,
+        thinking: fThinking,
+        critiqueModel: fCritiqueModel,
+        critiqueThinking: fCritiqueThinking,
+      });
+      await deps.writeTicket(stateDir, {
+        ...ticket,
+        status: "running",
+        updated: now,
+        isRevisionRun: undefined,
+      });
+    }
+    await deps.appendLog(stateDir, ticket.id, {
+      event: "usage-limit-released",
+      phase: ticket.phase,
+    });
+    return;
+  }
+
   if (ticket.status === "running") {
     if (!deps.isProcessAlive(ticket.id)) {
       const storedBootId = await deps.readRunPidBootStamp(
@@ -340,7 +581,7 @@ export async function advancePhase(
       const phaseSessionIds = sessionIdFromSidecar !== null
         ? { ...ticket.phaseSessionIds, [ticket.phase]: sessionIdFromSidecar }
         : ticket.phaseSessionIds;
-      const waitingTicket: TicketState = {
+      let waitingTicket: TicketState = {
         ...ticket,
         outputRetries: undefined,
         transientRetries: undefined,
@@ -421,6 +662,39 @@ export async function advancePhase(
         return;
       }
       if (exitCode !== 0) {
+        const limitHit = await deps.readPhaseUsageLimit(
+          join(stateDir, ticket.id),
+          ticket.phase,
+        );
+        if (limitHit !== null) {
+          await deps.breaker.trip({
+            retryAt: limitHit.resetAt,
+            reason: limitHit.raw,
+          });
+          await deps.notifyUsageLimitTripped(
+            limitHit.resetAt ?? Temporal.Now.instant().toString(),
+          );
+          await deps.writeTicket(stateDir, {
+            ...waitingTicket,
+            status: "paused",
+            outputRetries: undefined,
+            transientRetries: undefined,
+            updated: now,
+          });
+          await deps.appendLog(stateDir, ticket.id, {
+            event: "status-transition",
+            phase: ticket.phase,
+            from: "running",
+            to: "paused",
+          });
+          await deps.appendLog(stateDir, ticket.id, {
+            event: "usage-limit-detected",
+            phase: ticket.phase,
+            scope: limitHit.scope,
+            resetAt: limitHit.resetAt,
+          });
+          return;
+        }
         const stderr = await deps.readPhaseStderr(
           join(stateDir, ticket.id),
           ticket.phase,
@@ -553,6 +827,11 @@ export async function advancePhase(
           reason: "empty",
         });
         return;
+      }
+
+      if (ticket.isRevisionRun) {
+        waitingTicket = { ...waitingTicket, isRevisionRun: undefined };
+        await deps.writeTicket(stateDir, waitingTicket);
       }
 
       if (
