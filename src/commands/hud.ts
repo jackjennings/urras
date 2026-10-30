@@ -35,6 +35,7 @@ import { TabbedPane } from "../ui/tabbed-pane.ts";
 import { listCeremonyStatuses } from "../ceremonies.ts";
 import type { CeremonyStatus } from "../ceremonies.ts";
 import { launchSupervisorPane } from "./supervisor.ts";
+import { createProgramStatusReporter } from "../program-status.ts";
 
 export type TicketEntry =
   | { ok: true; ticket: TicketState; tokens: number | null; alive: boolean }
@@ -448,6 +449,15 @@ export const hud: Command = {
 
     const terminal = new ProcessTerminal();
     const tui = new TUI(terminal);
+    const reportStatus = createProgramStatusReporter({
+      write: (data) => terminal.write(data),
+      app: "urras",
+    });
+    const exitHud = () => {
+      reportStatus({ state: "clear" });
+      tui.stop();
+      Deno.exit(0);
+    };
 
     let currentStatusLines: string[] = [];
     let currentLogLines: string[] = [];
@@ -640,6 +650,7 @@ export const hud: Command = {
       commandRunning = true;
       const label = args.length > 0 ? `${name} ${args.join(" ")}` : name;
       headerLine = `Running: ${label}`;
+      reportStatus({ state: "working", message: headerLine });
       tui.requestRender(true);
       const scriptPath = new URL("../index.ts", import.meta.url).pathname;
       const proc = new Deno.Command("deno", {
@@ -664,6 +675,11 @@ export const hud: Command = {
         display = lines[0];
       }
       headerLine = display;
+      if (result.code === 0) {
+        reportStatus({ state: "idle" });
+      } else {
+        reportStatus({ state: "error", message: `${label}: ${display}` });
+      }
       tui.requestRender(true);
       commandRunning = false;
       setTimeout(() => refresh(), 3000);
@@ -735,10 +751,7 @@ export const hud: Command = {
       if (isKeyRelease(data)) {
         return { consume: true };
       }
-      if (matchesKey(data, "ctrl+c")) {
-        tui.stop();
-        Deno.exit(0);
-      }
+      if (matchesKey(data, "ctrl+c")) exitHud();
       if (matchesKey(data, "escape")) {
         if (
           commandEditor.focused && !reviewSessionActive &&
@@ -829,12 +842,9 @@ export const hud: Command = {
       }
     });
 
-    const sigtermHandler = () => {
-      tui.stop();
-      Deno.exit(0);
-    };
-    Deno.addSignalListener("SIGTERM", sigtermHandler);
+    Deno.addSignalListener("SIGTERM", exitHud);
 
     tui.start();
+    reportStatus({ state: "idle" });
   },
 };
