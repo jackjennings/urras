@@ -240,6 +240,10 @@ const FIELDS: { [K in keyof TicketState]-?: Field<K> } = {
     write: (t) => t.notifiedNeedsAttention,
     read: (d) => d.notifiedNeedsAttention as boolean | undefined,
   },
+  isRevisionRun: {
+    write: (t) => t.isRevisionRun,
+    read: (d) => d.isRevisionRun as boolean | undefined,
+  },
   created: {
     write: (t) => t.created,
     read: (d) => d.created as string,

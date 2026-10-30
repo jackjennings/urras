@@ -10,6 +10,7 @@ export interface PickupWorkItemDeps {
 export function pickupWorkItemAction(deps: PickupWorkItemDeps): TickAction {
   return {
     label: "Picking up work item",
+    usesAgent: false,
     applies(ticket: TicketState): boolean {
       return ticket.status === "new" && !ticket.providerPickedUp;
     },

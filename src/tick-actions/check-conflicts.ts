@@ -39,6 +39,7 @@ export function checkConflictsAction(deps: CheckConflictsDeps): TickAction {
   const fetchQueue = new Map<string, Promise<unknown>>();
   return {
     label: "Checking conflicts",
+    usesAgent: true,
     applies(ticket: TicketState): boolean {
       return (
         ticket.status !== "needs-attention" &&

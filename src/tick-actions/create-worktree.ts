@@ -44,6 +44,7 @@ export interface CreateWorktreeDeps {
 export function createWorktreeAction(deps: CreateWorktreeDeps): TickAction {
   return {
     label: "Creating worktree",
+    usesAgent: false,
     applies(ticket: TicketState): boolean {
       return (
         ticket.phase === "intake" &&
