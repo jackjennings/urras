@@ -22,7 +22,14 @@ export const STATUS_SEQUENCE = [
 ] as const;
 
 const VALID_STATUSES: Record<TicketPhase, ReadonlyArray<TicketStatus>> = {
-  intake: ["new", "running", "waiting", "revising", "paused", "needs-attention"],
+  intake: [
+    "new",
+    "running",
+    "waiting",
+    "revising",
+    "paused",
+    "needs-attention",
+  ],
   enrichment: ["running", "waiting", "revising", "paused", "needs-attention"],
   spec: ["running", "waiting", "revising", "paused", "needs-attention"],
   plan: ["running", "waiting", "revising", "paused", "needs-attention"],
@@ -33,7 +40,14 @@ const VALID_STATUSES: Record<TicketPhase, ReadonlyArray<TicketStatus>> = {
     "paused",
     "needs-attention",
   ],
-  merge: ["waiting", "running", "revising", "paused", "done", "needs-attention"],
+  merge: [
+    "waiting",
+    "running",
+    "revising",
+    "paused",
+    "done",
+    "needs-attention",
+  ],
   "wont-do": ["done"],
 };
 

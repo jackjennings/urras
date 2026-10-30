@@ -28,8 +28,8 @@ function parseResetAt(
   stdout: string,
   now: Temporal.ZonedDateTime,
 ): string | null {
-  const timeMatch =
-    /resets\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm))\s+\(([^)]+)\)/i.exec(stdout);
+  const timeMatch = /resets\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm))\s+\(([^)]+)\)/i
+    .exec(stdout);
   if (!timeMatch) return null;
   const [, timeStr, tzName] = timeMatch;
   try {

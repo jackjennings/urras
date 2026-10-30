@@ -254,6 +254,7 @@ Deno.test(
         return Promise.resolve(tickets);
       }),
       tickActions: [{
+        usesAgent: false,
         applies: (_t) => {
           sequence.push("action");
           return false;
@@ -278,7 +279,7 @@ Deno.test(
     const deps = makeTickServiceDeps({
       listTickets: () => Promise.resolve(["gh-1"]),
       readTicket: () => Promise.resolve(ticket),
-      tickActions: [{ applies: () => true, run: runSpy }],
+      tickActions: [{ usesAgent: false, applies: () => true, run: runSpy }],
       concurrency: 0,
     });
     await new TickService(deps).run();
@@ -302,7 +303,7 @@ Deno.test(
     const deps = makeTickServiceDeps({
       listTickets: () => Promise.resolve(["gh-1"]),
       readTicket: () => Promise.resolve(ticket),
-      tickActions: [{ applies: appliesSpy, run: runSpy }],
+      tickActions: [{ usesAgent: false, applies: appliesSpy, run: runSpy }],
       concurrency: 0,
     });
     await new TickService(deps).run();
@@ -779,8 +780,12 @@ Deno.test(
       listTickets: () => Promise.resolve(["gh-1"]),
       readTicket: () => Promise.resolve(ticket),
       tickActions: [
-        { applies: () => true, run: () => Promise.reject(new Error("boom")) },
-        { applies: () => true, run: runSpy },
+        {
+          usesAgent: false,
+          applies: () => true,
+          run: () => Promise.reject(new Error("boom")),
+        },
+        { usesAgent: false, applies: () => true, run: runSpy },
       ],
       tickDeps: makeTickDeps({ ...makeTickDeps(), appendLog: appendLogSpy }),
       concurrency: 0,
@@ -818,12 +823,13 @@ Deno.test(
       readTicket: () => Promise.resolve(ticket),
       tickActions: [
         {
+          usesAgent: false,
           applies: () => {
             throw new Error("applies boom");
           },
           run: () => Promise.resolve(null),
         },
-        { applies: () => true, run: runSpy },
+        { usesAgent: false, applies: () => true, run: runSpy },
       ],
       tickDeps: makeTickDeps({ ...makeTickDeps(), appendLog: appendLogSpy }),
       concurrency: 0,
@@ -1659,6 +1665,7 @@ Deno.test(
       }),
       tickActions: [
         {
+          usesAgent: false,
           applies: () => true,
           run: async (t: TicketState, stateDir: string) => {
             await deps.tickDeps.writeTicket(stateDir, t);
