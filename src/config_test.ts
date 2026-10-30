@@ -1794,3 +1794,65 @@ github_account = "missing"
     await Deno.remove(dir, { recursive: true });
   }
 });
+
+Deno.test("loadConfig defaults tick.intervalSeconds to 300 when absent", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `
+[github]
+repos = ["jackjennings/lazyboy"]
+
+[state]
+dir = "~/code/jackjennings/projects"
+`,
+  );
+  const cfg = await loadConfig(join(dir, "config.toml"));
+  assertEquals(cfg.tick.intervalSeconds, 300);
+  await Deno.remove(dir, { recursive: true });
+});
+
+Deno.test("loadConfig parses tick.interval_seconds", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `
+[github]
+repos = ["jackjennings/lazyboy"]
+
+[state]
+dir = "~/code/jackjennings/projects"
+
+[tick]
+interval_seconds = 180
+`,
+  );
+  const cfg = await loadConfig(join(dir, "config.toml"));
+  assertEquals(cfg.tick.intervalSeconds, 180);
+  await Deno.remove(dir, { recursive: true });
+});
+
+Deno.test("loadConfig throws when tick.interval_seconds is not a positive integer", async () => {
+  for (const value of ["0", "-5", "1.5", '"soon"']) {
+    const dir = await Deno.makeTempDir();
+    await Deno.writeTextFile(
+      join(dir, "config.toml"),
+      `
+[github]
+repos = ["jackjennings/lazyboy"]
+
+[state]
+dir = "~/code/jackjennings/projects"
+
+[tick]
+interval_seconds = ${value}
+`,
+    );
+    await assertRejects(
+      () => loadConfig(join(dir, "config.toml")),
+      Error,
+      "config.toml: [tick].interval_seconds must be a positive integer",
+    );
+    await Deno.remove(dir, { recursive: true });
+  }
+});

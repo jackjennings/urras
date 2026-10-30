@@ -156,6 +156,17 @@ export async function loadConfig(path?: string): Promise<Config> {
       );
     }
   }
+  const intervalSecondsRaw = tickRaw?.interval_seconds;
+  if (
+    intervalSecondsRaw !== undefined &&
+    (typeof intervalSecondsRaw !== "number" ||
+      !Number.isInteger(intervalSecondsRaw) ||
+      intervalSecondsRaw < 1)
+  ) {
+    throw new Error(
+      "config.toml: [tick].interval_seconds must be a positive integer",
+    );
+  }
   const checkNewCommentsRaw = tickRaw?.check_new_comments;
   if (
     checkNewCommentsRaw !== undefined &&
@@ -324,6 +335,7 @@ export async function loadConfig(path?: string): Promise<Config> {
     extensions: { dir: extensionsDir },
     tick: {
       concurrency: (tickRaw?.concurrency as number) ?? 1,
+      intervalSeconds: (intervalSecondsRaw as number | undefined) ?? 300,
       resolveCIFailures: (resolveCIFailuresRaw as boolean | undefined) ?? true,
       principles: (principlesRaw as boolean | undefined) ?? true,
       agentsMdMaxTokens: (agentsMdMaxTokensRaw as number | undefined) ?? 8000,
