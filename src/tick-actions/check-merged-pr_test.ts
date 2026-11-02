@@ -720,3 +720,103 @@ Deno.test(
     assertSpyCalls(writeTicketSpy, 1);
   },
 );
+
+// ── PRs already flagged closed ───────────────────────────────────────────────
+
+const PR1 = "https://github.com/myorg/myrepo/pull/1";
+const PR2 = "https://github.com/myorg/myrepo/pull/2";
+
+Deno.test(
+  "checkMergedPRAction: PR flagged closed + other open PR → no park, closed PR not polled",
+  async () => {
+    const checked: string[] = [];
+    const written: TicketState[] = [];
+    const result = await makeAction({
+      getPRState: (url) => {
+        checked.push(url);
+        return Promise.resolve("open");
+      },
+      writeTicket: (_dir, t) => {
+        written.push(t);
+        return Promise.resolve();
+      },
+    }).run(
+      makeTicket({
+        ...BASE,
+        prs: [
+          { url: PR1, title: "A", dependsOn: [], merged: false, closed: true },
+          { url: PR2, title: "B", dependsOn: [], merged: false },
+        ],
+      }),
+      "/state",
+    );
+    assertEquals(result, null);
+    assertEquals(checked, [PR2]);
+    assertEquals(written, []);
+  },
+);
+
+Deno.test(
+  "checkMergedPRAction: PR depending on a closed PR is still checked",
+  async () => {
+    const checked: string[] = [];
+    await makeAction({
+      getPRState: (url) => {
+        checked.push(url);
+        return Promise.resolve("open");
+      },
+    }).run(
+      makeTicket({
+        ...BASE,
+        prs: [
+          { url: PR1, title: "A", dependsOn: [], merged: false, closed: true },
+          { url: PR2, title: "B", dependsOn: [PR1], merged: false },
+        ],
+      }),
+      "/state",
+    );
+    assertEquals(checked, [PR2]);
+  },
+);
+
+Deno.test(
+  "checkMergedPRAction: remaining PRs merged, others closed → done",
+  async () => {
+    const result = await makeAction({
+      getPRState: () => Promise.resolve("merged"),
+    }).run(
+      makeTicket({
+        ...BASE,
+        prs: [
+          { url: PR1, title: "A", dependsOn: [], merged: false, closed: true },
+          { url: PR2, title: "B", dependsOn: [], merged: false },
+        ],
+      }),
+      "/state",
+    );
+    assertEquals(result?.status, "done");
+  },
+);
+
+Deno.test(
+  "checkMergedPRAction: all PRs flagged closed → stays waiting, nothing polled",
+  async () => {
+    const checked: string[] = [];
+    const result = await makeAction({
+      getPRState: (url) => {
+        checked.push(url);
+        return Promise.resolve("closed");
+      },
+    }).run(
+      makeTicket({
+        ...BASE,
+        prs: [
+          { url: PR1, title: "A", dependsOn: [], merged: false, closed: true },
+        ],
+      }),
+      "/state",
+    );
+    assertEquals(result, null);
+    assertEquals(checked, []);
+  },
+);
