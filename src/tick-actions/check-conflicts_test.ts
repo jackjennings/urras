@@ -771,6 +771,41 @@ Deno.test(
   },
 );
 
+// ── newRepos skip ────────────────────────────────────────────────────────────
+
+Deno.test(
+  "checkConflictsAction: worktrees in newRepos are skipped — no fetch, no log",
+  async () => {
+    const logged: object[] = [];
+    const fetchCwds: string[] = [];
+
+    await makeAction({
+      runGit: (args, cwd) => {
+        if (args[0] === "fetch") fetchCwds.push(cwd);
+        return Promise.resolve({ code: 0, stdout: "", stderr: "" });
+      },
+      appendLog: (_dir, _id, entry) => {
+        logged.push(entry);
+        return Promise.resolve();
+      },
+    }).run(
+      makeTicket({
+        ...BASE,
+        newRepos: ["new/repo"],
+        worktrees: {
+          "new/repo": { path: "/wt/new/repo", branch: "gh-7" },
+          "existing/repo": { path: "/wt/existing/repo", branch: "gh-7" },
+        },
+      }),
+      "/state",
+    );
+
+    assertFalse(fetchCwds.includes("/wt/new/repo"));
+    assert(fetchCwds.includes("/wt/existing/repo"));
+    assertEquals(logged.length, 0);
+  },
+);
+
 // ── fetch serialization per slug ─────────────────────────────────────────────
 
 Deno.test(
