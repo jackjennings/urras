@@ -29,11 +29,19 @@ export function checkMergedPRAction(deps: CheckMergedPRDeps): TickAction {
       const mergedUrls = new Set(
         prs.filter((pr) => pr.merged).map((pr) => pr.url),
       );
+      const closedUrls = new Set(
+        prs.filter((pr) => pr.closed && !pr.merged).map((pr) => pr.url),
+      );
       const initialMergedCount = mergedUrls.size;
 
       for (const pr of prs) {
-        if (pr.merged) continue;
-        if (pr.dependsOn.some((dep) => !mergedUrls.has(dep))) continue;
+        if (pr.merged || pr.closed) continue;
+        // A closed dependency was dropped on purpose; it must not block dependents.
+        if (
+          pr.dependsOn.some((dep) =>
+            !mergedUrls.has(dep) && !closedUrls.has(dep)
+          )
+        ) continue;
 
         let state: "merged" | "closed" | "open";
         try {
@@ -93,7 +101,8 @@ export function checkMergedPRAction(deps: CheckMergedPRDeps): TickAction {
 
       const now = Temporal.Now.instant().toString();
 
-      if (mergedUrls.size === prs.length) {
+      const allResolved = prs.every((pr) => pr.merged || pr.closed);
+      if (allResolved && mergedUrls.size > 0) {
         const updated: TicketState = {
           ...ticket,
           phase: "merge",
