@@ -9,11 +9,17 @@ The description must answer, in this order:
 1. **Impetus** — the behavior or gap that prompted the work: what was observed,
    why it was wrong, and what the original request asked for. A reviewer learns
    why the change exists before learning what it does.
-2. **Throughline** — how the changes together resolve that request, as a causal
-   chain in which each piece exists because of the one before it. A reviewer
-   must be able to see why every change in the diff is required by the request.
+2. **Approach** — the idea behind the change and why it resolves that request,
+   in terms of behavior rather than code. A reviewer should come away knowing
+   the strategy, not the mechanics.
 3. **Notable decisions** — timing or ordering constraints, alternatives
    rejected, deviations from the plan, and what was deliberately left unchanged.
+
+The description explains what the diff cannot show: the problem, why this
+approach, and what to scrutinize. Leave out anything a reviewer gets by opening
+the changed files — names of functions, files, or fields, step-by-step
+mechanics, and restatements of behavior the tests already demonstrate. Name a
+symbol only when the reviewer cannot follow a decision without it.
 
 Write these as prose paragraphs, with no manual line breaks — let each paragraph
 soft-wrap. Do not write the description as a flat list of files, symbols, or
@@ -28,11 +34,8 @@ you cannot produce, such as a link to a deployed environment, write a single
 line stating it does not apply.
 
 Scale the description's length to the size of the change, not to the template. A
-small, self-contained diff needs only a matter-of-fact paragraph or two covering
-the impetus and why the change is being made — the code itself is faster for a
-reviewer to read than a paragraph restating it, so do not pad the description
-with implementation detail the diff already shows. A large or multi-part change
-needs proportionally more justification: more of the throughline connecting each
-piece, and more explicit notable decisions, because the reviewer cannot hold the
-whole diff in mind at once and depends on the description to see why each piece
-is required.
+small, self-contained diff needs only a matter-of-fact paragraph or two. A large
+or multi-part change needs more of the notable decisions and a clearer statement
+of the approach, not a piece-by-piece walkthrough: the reviewer reads the diff
+for the pieces and depends on the description for the reasoning that connects
+them.

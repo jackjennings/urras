@@ -16,8 +16,9 @@ already shows the "what".
 ## Changes
 
 <!--
-Bullet list of concrete changes, one per file/module/behavior. Omit this
-section entirely for small PRs where the Summary already says it all.
+Bullet list of behavior changes a reviewer should know about. Do not list
+files, functions, or fields — the diff shows those. Omit this section entirely
+for small PRs where the Summary already says it all.
 -->
 
 -
