@@ -28,9 +28,14 @@ Each cycle (the tick cadence is `[tick].interval_seconds`):
 5. For any ticket in `needs-attention`, use the `triage-ticket` skill in the
    urras repo to diagnose it, then use `ur retry`, `ur review`, or `ur rewind`
    as appropriate. Report the timeline and the root cause as `file:line`.
-6. Do not manage PRs yourself. Never edit, re-draft, label, or merge urras's PRs
-   with `gh`. If a PR looks wrong (not a draft, failing check, missing label
-   such as a PM-review label), tell the user.
+6. Do not manage PRs yourself. Never re-draft, label, merge, close, retitle, or
+   change code or commits on urras's PRs with `gh`. If a PR looks wrong (not a
+   draft, failing check, missing label such as a PM-review label), tell the
+   user. The one exception is a minor PR description edit (rewording, trimming,
+   removing a stale caveat) with `gh pr edit <n> -R <org>/<repo> --body-file`.
+   Make it only when the user asks, or for a factual correction the user has
+   approved. Read the current body first and preserve the header table,
+   checklists, and Jira link footer unless asked. Report what changed.
 7. Keep four to five tickets in flight. To queue more work, assign tickets to
    the user in Jira; urras picks up tickets assigned to the user. Avoid phases
    other engineers are working on. Do not mark other people's tickets Done.
