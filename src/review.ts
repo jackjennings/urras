@@ -34,6 +34,7 @@ import {
 import { expandHome, loadConfig } from "./config.ts";
 import { captureCommandRunner, defaultCommandRunner } from "./apfel.ts";
 import { checkHunkAvailable } from "./hunk.ts";
+import { checkRexAvailable } from "./agent-session-launcher.ts";
 import { parsePrUrl } from "./providers/github/identity.ts";
 import { buildAncillaryChain } from "./models/ancillary-chain.ts";
 import type { LanguageModel } from "./models/types.ts";
@@ -600,6 +601,23 @@ export class ReviewSession implements Component, Focusable {
       (() => checkHunkAvailable(defaultCommandRunner()));
     this.spawnHunk = spawnHunkArg ??
       (async (worktreePath: string, prNumber: number): Promise<void> => {
+        const rexAvailable = await checkRexAvailable(defaultCommandRunner());
+        if (rexAvailable && Deno.env.get("REX_SESSION") !== undefined) {
+          new Deno.Command("rex", {
+            args: [
+              "new",
+              `hunk/${prNumber}`,
+              "--cwd",
+              worktreePath,
+              "--",
+              "hunk",
+              "gh",
+              "pr",
+              String(prNumber),
+            ],
+          }).spawn();
+          return;
+        }
         tui.stop();
         const child = new Deno.Command("hunk", {
           args: ["gh", "pr", String(prNumber)],
