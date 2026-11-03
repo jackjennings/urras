@@ -43,6 +43,12 @@ Each cycle (the tick cadence is `[tick].interval_seconds`):
    the user. When nothing changed, say so in one line and wait for the next
    tick. Questions from the user are questions: answer them without making
    changes.
+9. Nothing outside this session starts the next cycle. Before ending each
+   cycle, schedule the next one with `ScheduleWakeup`: set `delaySeconds` to
+   `[tick].interval_seconds` and pass `<<autonomous-loop-dynamic>>` as the
+   prompt. Skip this only when the stop condition below holds, and then call it
+   with `stop: true`. A reply to a user question does not replace the schedule;
+   keep the pending wakeup.
 
 Stop when every watched ticket has a draft PR or is held, declined, or waiting
 on the user.
