@@ -18,6 +18,7 @@ export default {
           ImportDeclaration(node: Deno.lint.ImportDeclaration) {
             for (const spec of node.specifiers) {
               if (spec.type !== "ImportSpecifier") continue;
+              if (spec.imported.type !== "Identifier") continue;
               if (FORBIDDEN_IMPORTS.includes(spec.imported.name)) {
                 ctx.report({
                   node: spec,

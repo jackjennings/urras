@@ -58,6 +58,7 @@ export function makeTickDeps(overrides: Partial<TickDeps> = {}): TickDeps {
     readPhaseUsageLimit: () => Promise.resolve(null),
     notifyUsageLimitTripped: () => Promise.resolve(),
     maxTrips: 24,
+    appendTickLog: () => Promise.resolve(),
     ...overrides,
   };
 }

@@ -125,6 +125,7 @@ export interface TickDeps {
   ) => Promise<UsageLimitHit | null>;
   notifyUsageLimitTripped: (openedAt: string) => Promise<void>;
   maxTrips?: number;
+  appendTickLog: (entry: object) => Promise<void>;
 }
 
 export async function advancePhase(
@@ -172,7 +173,6 @@ export async function advancePhase(
       );
       let commentContext = "";
       const alreadyConsumed = new Set(ticket.consumedContextFiles ?? []);
-      const newlyConsumedFilenames: string[] = [];
       try {
         const contextFiles: string[] = [];
         for await (const entry of readDir(join(stateDir, ticket.id))) {
@@ -192,7 +192,6 @@ export async function advancePhase(
           const filePath = join(stateDir, ticket.id, filename);
           const content = await readTextFile(filePath);
           parts.push(`<!-- ${filename} -->\n${content}`);
-          newlyConsumedFilenames.push(filename);
         }
         if (parts.length > 0) {
           commentContext = parts.join("\n\n---\n\n");
@@ -245,19 +244,12 @@ export async function advancePhase(
         sessionId,
         resume: sessionId !== undefined,
       });
-      const updatedConsumed = newlyConsumedFilenames.length > 0
-        ? [
-          ...(ticket.consumedContextFiles ?? []),
-          ...newlyConsumedFilenames,
-        ]
-        : ticket.consumedContextFiles;
       await deps.writeTicket(stateDir, {
         ...ticket,
         status: "running",
         updated: now,
         notifiedNeedsAttention: false,
         isRevisionRun: true,
-        consumedContextFiles: updatedConsumed,
       });
       await deps.appendLog(stateDir, ticket.id, {
         event: "status-transition",
@@ -407,7 +399,6 @@ export async function advancePhase(
       );
       let commentContext = "";
       const alreadyConsumed = new Set(ticket.consumedContextFiles ?? []);
-      const pausedRevisionConsumedFilenames: string[] = [];
       try {
         const contextFiles: string[] = [];
         for await (const entry of readDir(join(stateDir, ticket.id))) {
@@ -428,7 +419,6 @@ export async function advancePhase(
             join(stateDir, ticket.id, filename),
           );
           parts.push(`<!-- ${filename} -->\n${content}`);
-          pausedRevisionConsumedFilenames.push(filename);
         }
         if (parts.length > 0) commentContext = parts.join("\n\n---\n\n");
       } catch { /* dir missing */ }
@@ -469,19 +459,11 @@ export async function advancePhase(
         sessionId,
         resume: sessionId !== undefined,
       });
-      const pausedRevisionUpdatedConsumed =
-        pausedRevisionConsumedFilenames.length > 0
-          ? [
-            ...(ticket.consumedContextFiles ?? []),
-            ...pausedRevisionConsumedFilenames,
-          ]
-          : ticket.consumedContextFiles;
       await deps.writeTicket(stateDir, {
         ...ticket,
         status: "running",
         updated: now,
         isRevisionRun: true,
-        consumedContextFiles: pausedRevisionUpdatedConsumed,
       });
     } else {
       const currentPhase = ticket.phase as ActivePhase;
@@ -688,8 +670,12 @@ export async function advancePhase(
             to: "paused",
           });
           await deps.appendLog(stateDir, ticket.id, {
-            event: "usage-limit-detected",
+            event: "usage-limit-paused",
             phase: ticket.phase,
+            resetAt: limitHit.resetAt,
+          });
+          await deps.appendTickLog({
+            event: "usage-limit-detected",
             scope: limitHit.scope,
             resetAt: limitHit.resetAt,
           });
@@ -830,7 +816,28 @@ export async function advancePhase(
       }
 
       if (ticket.isRevisionRun) {
-        waitingTicket = { ...waitingTicket, isRevisionRun: undefined };
+        const newlyConsumed: string[] = [];
+        try {
+          const alreadyConsumed = new Set(ticket.consumedContextFiles ?? []);
+          for await (const entry of readDir(join(stateDir, ticket.id))) {
+            if (
+              entry.isFile &&
+              !alreadyConsumed.has(entry.name) &&
+              (entry.name.endsWith("-comment-context.md") ||
+                entry.name.endsWith("-upstream-edit-context.md") ||
+                entry.name.endsWith("-verification-failure-context.md"))
+            ) {
+              newlyConsumed.push(entry.name);
+            }
+          }
+        } catch { /* dir missing */ }
+        waitingTicket = {
+          ...waitingTicket,
+          consumedContextFiles: newlyConsumed.length > 0
+            ? [...(ticket.consumedContextFiles ?? []), ...newlyConsumed]
+            : ticket.consumedContextFiles,
+          isRevisionRun: undefined,
+        };
         await deps.writeTicket(stateDir, waitingTicket);
       }
 

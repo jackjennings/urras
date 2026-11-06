@@ -107,6 +107,7 @@ bookkeeping phases handled explicitly in `advancePhase`.
 | `running`         | A phase agent has been spawned for this phase (live, or crashed and awaiting recovery).               |
 | `waiting`         | The phase output is written and the ticket is waiting on approval (human or self-approve) to advance. |
 | `revising`        | Feedback was recorded (`ur review`); the next tick re-runs the **current** phase with it.             |
+| `paused`          | Phase was cut short by a subscription usage limit; the ticket re-runs once quota resets.              |
 | `needs-attention` | Parked for a human, with a `reason`. Leaves the advance pass until `ur retry`.                        |
 | `done`            | Finished. Valid only for `merge` and `wont-do`.                                                       |
 
@@ -123,6 +124,9 @@ bookkeeping phases handled explicitly in `advancePhase`.
   on the ticket's artifacts: `waiting` for `code` (until every PR merges),
   `done` immediately otherwise, since there is no PR to wait on.
 - Any phase can transition to `needs-attention` on subprocess failure.
+- A phase agent that exits with a usage-limit signal moves to `paused`; the
+  ticket re-runs (as `isRevisionRun: true`) once `checkUsageLimitAction` sees
+  the limit cleared.
 - `{ phase: "merge", status: "done" }` and
   `{ phase: "wont-do", status: "done" }` are the terminal states.
 
@@ -159,6 +163,33 @@ Non-obvious rules:
   event.
 - Directory scanners (e.g. `ur status`) identify these by the `.usage.json`
   suffix.
+
+## Usage limit sidecar (`.limit`)
+
+When a phase subprocess exits non-zero and usage-limit detection finds a hit,
+`run-phase.ts` writes `<timestampedPhase>.limit` alongside the phase output
+directory. The file holds JSON with `scope` (`"day"` / `"month"`) and `resetAt`
+(ISO 8601). `advancePhase` reads it via `TickDeps.readPhaseUsageLimit` to
+distinguish a usage-limit exit from a normal failure:
+
+- Limit present → ticket moves to `paused`; breaker trips; `usage-limit-paused`
+  per-ticket event and `usage-limit-detected` tick event written.
+- Limit absent or unreadable → normal failure path (`needs-attention`).
+
+The `.limit` file is written only on a detected limit; it is never written on a
+clean exit or a non-limit failure.
+
+## Usage limit configuration (`[limits]`)
+
+```toml
+[limits]
+max_trips = 3        # breaker opens after this many consecutive limit hits (default 3)
+```
+
+`config.limits?.maxTrips` feeds `TickDeps.maxTrips` (default `24` when absent).
+`checkUsageLimitAction` polls the breaker each tick when it is open and resets
+paused tickets to `revising` once the limit clears, logging
+`usage-limit-released` per ticket and `usage-limit-cleared` to `tick.ndjson`.
 
 ## Phase output extraction
 
@@ -413,8 +444,10 @@ and `event`. Events: `tick-start`, `tick-end`, `tick-already-running`,
 `stale-lock`, `lock-failed`, `tick-failed`, `update-skipped`, `update-failed`,
 `repo-renamed`, `repo-identity-collision`, `repo-identity-reconcile-failed`,
 `repo-identity-unavailable`, `repo-org-unmapped`, `pricing-fetch-failed`,
-`learning-processing-failed`, `org-renamed`, `org-identity-reconcile-failed`.
-`appendTickLog` (`src/tick.ts`) writes it directly; it is not `appendTicketLog`
+`learning-processing-failed`, `org-renamed`, `org-identity-reconcile-failed`,
+`tick-paused`, `usage-limit-probe`, `usage-limit-cleared`,
+`usage-limit-detected`, `usage-limit-state-unreadable`. `appendTickLog`
+(`src/tick.ts`) writes it directly; it is not `appendTicketLog`
 (`src/state/store.ts`).
 
 | Event                            | Trigger                                                                                                                                                                                                                                               |
@@ -428,6 +461,11 @@ and `event`. Events: `tick-start`, `tick-end`, `tick-already-running`,
 | `learning-processing-failed`     | `processLearnings` failed to apply a pending learning or check a waiting one's PR state; `reason` is `local-repo-not-found`, `worktree-creation-failed`, `apply-learning-failed`, `git-commit-failed`, `pr-create-failed`, or `pr-state-check-failed` |
 | `org-renamed`                    | `currentLogin` changed for a confirmed org identity entry                                                                                                                                                                                             |
 | `org-identity-reconcile-failed`  | Network error, null response, or write failure on an org reconciler API call                                                                                                                                                                          |
+| `tick-paused`                    | Breaker is open at tick start; the advance pass is skipped for this tick; carries `resetAt`                                                                                                                                                           |
+| `usage-limit-detected`           | A phase agent exited with a usage-limit signal; carries `scope` and `resetAt`                                                                                                                                                                         |
+| `usage-limit-probe`              | `checkUsageLimitAction` polled the breaker; carries `state` (`open`/`closed`)                                                                                                                                                                         |
+| `usage-limit-cleared`            | Breaker transitioned from open to closed; carries `resetAt`                                                                                                                                                                                           |
+| `usage-limit-state-unreadable`   | The `.limit` sidecar exists but could not be parsed; the phase is treated as a normal failure                                                                                                                                                         |
 
 The plist from `plistContent()` must **not** include `StandardOutPath` or
 `StandardErrorPath` pointing to `tick.ndjson` — the tick process owns its own
@@ -488,6 +526,8 @@ event rather than coining a synonym:
 | `reconciled-prs`                                                                   | `reconcilePRsAction` populated `prs`; carries `count`.                                                                   |
 | `artifact-corrected`                                                               | Intake artifact parsed; `artifacts` corrected in `meta.md`; carries `artifacts`.                                         |
 | `artifact-defaulted`                                                               | Artifact type absent in intake output; default `["code"]` applied.                                                       |
+| `usage-limit-paused`                                                               | Phase cut short by a subscription usage limit; ticket moves to `paused`; carries `phase` and `resetAt`.                  |
+| `usage-limit-released`                                                             | Paused ticket re-queued after the limit cleared; carries `phase`.                                                        |
 | `error`                                                                            | An action or phase threw; carries the error message.                                                                     |
 
 A `reason` field, where present, is a lowercase kebab-case label naming the
@@ -498,11 +538,12 @@ cause (`agent-failed`, `non-zero-exit`, `missing`, `output-file-missing`,
 `ci-unfixable`, `rerun-failed`, `infra-rerun-exhausted`, `no-commit`,
 `context-file-unreadable`, `new-marker-on-local-path`, `local-repo-init-failed`,
 `repo-creation-failed`, `meta-unreadable`, `llm-failed`,
-`scope-revision-blocked-by-open-pr`, `worktree-pr-repo-mismatch`). Reuse an
-existing label when it fits; add a new one only for a genuinely new cause, and
-never put free prose in `reason` (that belongs in a separate field or the
-`error` message). Work-item identity is the ticket directory itself — do not add
-an `id` or `ticketId` field to per-ticket entries.
+`scope-revision-blocked-by-open-pr`, `worktree-pr-repo-mismatch`,
+`usage-limit-unresolved`). Reuse an existing label when it fits; add a new one
+only for a genuinely new cause, and never put free prose in `reason` (that
+belongs in a separate field or the `error` message). Work-item identity is the
+ticket directory itself — do not add an `id` or `ticketId` field to per-ticket
+entries.
 
 ## Learnings pipeline
 
@@ -675,6 +716,11 @@ exports a `*Deps` interface, a factory, and a `*_test.ts` (pattern:
 `check-merged-pr.ts`). Register them in `src/compose.ts` (not `src/tick.ts` —
 `TickService` receives them via `TickServiceDeps`).
 
+- Each `TickAction` declares `usesAgent: boolean`. When the circuit breaker is
+  open (usage limit hit), `TickService` skips every action where `usesAgent` is
+  `true`. Actions that only read state or push git refs set `usesAgent: false`;
+  actions that call `spawnPhase` or any `CodeAgent` method set
+  `usesAgent: true`.
 - An action's `applies` predicate must exclude tickets where a phase agent is
   live (`isPhaseAlive(ticketDir)` true) — rebasing or pushing under a live agent
   corrupts its git state. Actions that can set `needs-attention` must also

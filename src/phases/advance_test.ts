@@ -3885,8 +3885,49 @@ Deno.test(
         resolveModelConfig: () => ({ model: "m", thinking: "off" }),
       }),
     );
+    // Running ticket must NOT have consumedContextFiles yet — append is deferred to output-accept
     const runningTicket = writtenTickets.find((t) => t.status === "running");
-    assertArrayIncludes(runningTicket?.consumedContextFiles ?? [], [
+    assertExists(runningTicket);
+    assertEquals(runningTicket?.consumedContextFiles, undefined);
+    await Deno.remove(stateDir, { recursive: true });
+  },
+);
+
+Deno.test(
+  "advancePhase: running/isRevisionRun records consumed context files on output-accept",
+  async () => {
+    const stateDir = await Deno.makeTempDir();
+    const ticketDir = join(stateDir, "github", "org", "repo", "1");
+    await Deno.mkdir(ticketDir, { recursive: true });
+    await Deno.writeTextFile(
+      join(ticketDir, "20260101T120000-comment-context.md"),
+      "## New comments\n\nOlder comment",
+    );
+    await Deno.writeTextFile(
+      join(ticketDir, "20260201T080000-comment-context.md"),
+      "## New comments\n\nNewer comment",
+    );
+    const ticket = makeTicket({
+      id: "github/org/repo/1",
+      phase: "plan",
+      status: "running",
+      isRevisionRun: true,
+    });
+    const writtenTickets: TicketState[] = [];
+    await advancePhase(
+      ticket,
+      stateDir,
+      makeTickDeps({
+        writeTicket: (_dir, t) => {
+          writtenTickets.push(t);
+          return Promise.resolve();
+        },
+        readPhaseOutput: () => Promise.resolve("## Plan\n\nContent"),
+      }),
+    );
+    const waitingTicket = writtenTickets.filter((t) => t.status === "waiting")
+      .at(-1);
+    assertArrayIncludes(waitingTicket?.consumedContextFiles ?? [], [
       "20260101T120000-comment-context.md",
       "20260201T080000-comment-context.md",
     ]);
@@ -4649,5 +4690,65 @@ Deno.test(
     );
     assertSpyCalls(runVerificationSpy, 0);
     assertEquals(writtenTickets[writtenTickets.length - 1].status, "waiting");
+  },
+);
+
+Deno.test(
+  "advancePhase: usage-limit hit logs usage-limit-paused per-ticket event",
+  async () => {
+    const ticket = makeTicket({ phase: "plan", status: "running" });
+    const perTicketEvents: Array<{ event: string }> = [];
+    await advancePhase(
+      ticket,
+      "/state",
+      makeTickDeps({
+        readPhaseExitCode: () => Promise.resolve(1),
+        readPhaseUsageLimit: () =>
+          Promise.resolve({
+            raw: "hit",
+            scope: "session" as const,
+            resetAt: null,
+          }),
+        appendLog: (_stateDir, _id, entry) => {
+          perTicketEvents.push(entry as { event: string });
+          return Promise.resolve();
+        },
+      }),
+    );
+    assert(perTicketEvents.some((e) => e.event === "usage-limit-paused"));
+  },
+);
+
+Deno.test(
+  "advancePhase: usage-limit hit writes usage-limit-detected to tick.ndjson",
+  async () => {
+    const ticket = makeTicket({ phase: "plan", status: "running" });
+    const tickEvents: Array<{ event: string }> = [];
+    const perTicketEvents: Array<{ event: string }> = [];
+    await advancePhase(
+      ticket,
+      "/state",
+      makeTickDeps({
+        readPhaseExitCode: () => Promise.resolve(1),
+        readPhaseUsageLimit: () =>
+          Promise.resolve({
+            raw: "hit",
+            scope: "session" as const,
+            resetAt: null,
+          }),
+        appendTickLog: (entry) => {
+          tickEvents.push(entry as { event: string });
+          return Promise.resolve();
+        },
+        appendLog: (_stateDir, _id, entry) => {
+          perTicketEvents.push(entry as { event: string });
+          return Promise.resolve();
+        },
+      }),
+    );
+    assert(tickEvents.some((e) => e.event === "usage-limit-detected"));
+    assertFalse(
+      perTicketEvents.some((e) => e.event === "usage-limit-detected"),
+    );
   },
 );

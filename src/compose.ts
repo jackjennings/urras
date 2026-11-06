@@ -1722,6 +1722,7 @@ export function composeTickDeps(
         await writeTextFile(breakerNotifiedPath, openedAt);
       },
       maxTrips: config.limits?.maxTrips ?? 24,
+      appendTickLog,
     },
     runMigrations: createMigrationRunner({
       listMigrationFiles: async () => {
