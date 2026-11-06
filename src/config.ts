@@ -322,6 +322,17 @@ export async function loadConfig(path?: string): Promise<Config> {
     ? (githubPausedRaw as string[])
     : undefined;
 
+  const limitsRaw = parsed.limits as Record<string, unknown> | undefined;
+  const limits: Config["limits"] = {
+    pauseOnUsageLimit: limitsRaw?.pause_on_usage_limit !== false,
+    defaultPauseMinutes: typeof limitsRaw?.default_pause_minutes === "number"
+      ? limitsRaw.default_pause_minutes
+      : 60,
+    maxTrips: typeof limitsRaw?.max_trips === "number"
+      ? limitsRaw.max_trips
+      : 24,
+  };
+
   return {
     github: {
       repos: githubRaw.repos as string[],
@@ -356,6 +367,7 @@ export async function loadConfig(path?: string): Promise<Config> {
     phases: phasesDefaults !== undefined
       ? { defaults: phasesDefaults }
       : undefined,
+    limits,
   };
 }
 

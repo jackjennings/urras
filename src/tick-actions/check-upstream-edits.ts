@@ -42,6 +42,7 @@ export function checkUpstreamEditsAction(
 ): TickAction {
   return {
     label: "Checking upstream edits",
+    usesAgent: false,
     applies(ticket: TicketState): boolean {
       return (
         (ticket.provider === "github" || ticket.provider === "jira") &&

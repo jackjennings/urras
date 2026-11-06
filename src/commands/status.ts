@@ -18,6 +18,8 @@ import { JiraProvider } from "../providers/jira.ts";
 import { TodoTxtProvider } from "../providers/todo-txt.ts";
 import { compareSortKeys } from "../providers/types.ts";
 import { readDir, readTextFile } from "../filesystem.ts";
+import { urrasDir } from "../paths.ts";
+import type { BreakerStatus } from "../circuit-breaker.ts";
 
 const toSortableMap: Record<string, (id: string) => Array<string | number>> = {
   github: GitHubProvider.toSortable,
@@ -334,10 +336,44 @@ export function formatDetailView(
   return lines.join("\n");
 }
 
+async function loadBreakerStatus(): Promise<BreakerStatus> {
+  const path = join(urrasDir(), "breakers", "claude-usage.json");
+  try {
+    const content = await readTextFile(path);
+    const record = JSON.parse(content) as {
+      openedAt: string;
+      retryAt: string;
+      trips: number;
+      reason: string;
+    };
+    const now = Temporal.Now.instant();
+    if (
+      Temporal.Instant.compare(now, Temporal.Instant.from(record.retryAt)) >= 0
+    ) {
+      return {
+        state: "half-open",
+        retryAt: record.retryAt,
+        trips: record.trips,
+        reason: record.reason,
+      };
+    }
+    return {
+      state: "open",
+      openedAt: record.openedAt,
+      retryAt: record.retryAt,
+      trips: record.trips,
+      reason: record.reason,
+    };
+  } catch {
+    return { state: "closed" };
+  }
+}
+
 function colorizeStatus(status: string): string {
   const padded = status.padEnd(17);
   if (status === "running") return green(padded);
   if (status === "waiting") return yellow(padded);
+  if (status === "paused") return yellow(padded);
   if (status === "needs-attention") return red(padded);
   return padded;
 }
@@ -425,7 +461,11 @@ export const status: Command = {
     const label = enabled
       ? bgGreen(white(" enabled "))
       : bgRed(white(" disabled "));
-    console.log(label);
+    const breakerStatus = await loadBreakerStatus();
+    const breakerBadge = breakerStatus.state !== "closed"
+      ? yellow(` · paused until ${breakerStatus.retryAt}`)
+      : "";
+    console.log(label + breakerBadge);
     console.log();
 
     const config = await loadConfig();

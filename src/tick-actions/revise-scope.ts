@@ -27,6 +27,7 @@ export interface ReviseScopeDeps {
 export function reviseScopeAction(deps: ReviseScopeDeps): TickAction {
   return {
     label: "Revising scope",
+    usesAgent: false,
     applies(ticket: TicketState): boolean {
       return (
         ticket.phase === "enrichment" &&
