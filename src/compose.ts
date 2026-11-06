@@ -81,6 +81,7 @@ import { createRemoteRepoAction } from "./tick-actions/create-remote-repo.ts";
 import { checkMergedPRAction } from "./tick-actions/check-merged-pr.ts";
 import { cleanOrphanedWorktreesAction } from "./tick-actions/clean-orphaned-worktrees.ts";
 import { reconcilePRsAction } from "./tick-actions/reconcile-prs.ts";
+import { createBranchWorktreesAction } from "./tick-actions/create-branch-worktrees.ts";
 import { checkConflictsAction } from "./tick-actions/check-conflicts.ts";
 import { resolveConflictsAction } from "./tick-actions/resolve-conflicts.ts";
 import { spawnCIFixAction } from "./tick-actions/spawn-ci-fix.ts";
@@ -666,6 +667,20 @@ export function composeTickDeps(
       writeTicket,
       appendLog: appendTicketLog,
       aliasesForSlug: (slug) => aliasesFor(persistedTable, slug),
+    }),
+    createBranchWorktreesAction({
+      findLocalRepo: (roots, slug) =>
+        findLocalRepo(
+          roots,
+          slug,
+          (s) => aliasesFor(persistedTable, s),
+        ),
+      createWorktree,
+      writeTicket,
+      appendLog: appendTicketLog,
+      isProcessAlive: (ticketId: string) =>
+        isPhaseAlive(join(stateDir, ticketId)),
+      roots: config.codebase.roots.map(expandHome),
     }),
     checkMergedPRAction({
       getPRState: (url) => githubProvider.prState(url),

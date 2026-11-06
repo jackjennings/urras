@@ -216,25 +216,48 @@ export async function cloneRemoteRepo(
   return repoDir;
 }
 
-export async function createWorktree(
-  repoPath: string,
-  ticketId: string,
-  slug: string,
+export interface CreateWorktreeTestableDeps {
+  repoPath: string;
+  ticketId: string;
+  slug: string;
+  branch?: string;
+  runGit: (
+    args: string[],
+    cwd: string,
+  ) => Promise<{ code: number; stdout: string; stderr: string }>;
+  mkdir: (path: string, options?: { recursive?: boolean }) => Promise<void>;
+}
+
+export async function createWorktreeTestable(
+  deps: CreateWorktreeTestableDeps,
 ): Promise<WorktreeInfo> {
+  const { repoPath, ticketId, slug, branch } = deps;
   const home = Deno.env.get("HOME")!;
   const [org, repo] = slug.split("/");
-  const worktreePath = join(home, ".urras", "worktrees", ticketId, org, repo);
-  await mkdir(join(home, ".urras", "worktrees", ticketId, org), {
-    recursive: true,
-  });
+  const worktreePath = branch
+    ? join(
+      home,
+      ".urras",
+      "worktrees",
+      ticketId,
+      org,
+      repo,
+      encodeURIComponent(branch),
+    )
+    : join(home, ".urras", "worktrees", ticketId, org, repo);
+  const parentDir = branch
+    ? join(home, ".urras", "worktrees", ticketId, org, repo)
+    : join(home, ".urras", "worktrees", ticketId, org);
+  await deps.mkdir(parentDir, { recursive: true });
 
-  const { code: verifyCode } = await runGit(
+  const { code: verifyCode } = await deps.runGit(
     ["rev-parse", "--verify", "origin/main"],
     repoPath,
   );
   const baseRef = verifyCode === 0 ? "origin/main" : "main";
-  const { code } = await runGit(
-    ["worktree", "add", "-b", ticketId, worktreePath, baseRef],
+  const branchName = branch ?? ticketId;
+  const { code } = await deps.runGit(
+    ["worktree", "add", "-b", branchName, worktreePath, baseRef],
     repoPath,
   );
   if (code !== 0) {
@@ -243,7 +266,23 @@ export async function createWorktree(
     );
   }
 
-  return { path: worktreePath, branch: ticketId };
+  return { path: worktreePath, branch: branchName };
+}
+
+export function createWorktree(
+  repoPath: string,
+  ticketId: string,
+  slug: string,
+  branch?: string,
+): Promise<WorktreeInfo> {
+  return createWorktreeTestable({
+    repoPath,
+    ticketId,
+    slug,
+    branch,
+    runGit,
+    mkdir,
+  });
 }
 
 export async function initLocalRepo(slug: string): Promise<string> {

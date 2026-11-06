@@ -579,10 +579,10 @@ Deno.test(
   },
 );
 
-// ── shared worktreeKey (stacked PRs on same branch) ──────────────────────────
+// ── per-branch worktree cleanup ──────────────────────────────────────────────
 
 Deno.test(
-  "shared worktreeKey: first PR merges, second still open → worktree retained, no cleanup, status waiting",
+  "checkMergedPRAction: merged PR always cleans up its own worktree regardless of sibling PRs",
   async () => {
     const cleanups: string[] = [];
     const result = await makeAction({
@@ -598,7 +598,14 @@ Deno.test(
       makeTicket({
         ...BASE,
         worktrees: {
-          "myorg/myrepo": { path: "/wt/myorg/myrepo", branch: "gh-42" },
+          "myorg/myrepo:feat-a": {
+            path: "/wt/myorg/myrepo/feat-a",
+            branch: "feat-a",
+          },
+          "myorg/myrepo:feat-b": {
+            path: "/wt/myorg/myrepo/feat-b",
+            branch: "feat-b",
+          },
         },
         prs: [
           {
@@ -606,104 +613,27 @@ Deno.test(
             title: "A",
             dependsOn: [],
             merged: false,
-            worktreeKey: "myorg/myrepo",
+            worktreeKey: "myorg/myrepo:feat-a",
           },
           {
             url: "https://github.com/myorg/myrepo/pull/2",
             title: "B",
             dependsOn: [],
             merged: false,
-            worktreeKey: "myorg/myrepo",
+            worktreeKey: "myorg/myrepo:feat-b",
           },
         ],
       }),
       "/state",
     );
+
     assertEquals(result?.status, "waiting");
-    assertEquals(cleanups, []);
-    assertEquals(result?.worktrees?.["myorg/myrepo"]?.path, "/wt/myorg/myrepo");
-  },
-);
-
-Deno.test(
-  "shared worktreeKey: both PRs merge in same tick → cleanup called once, status done",
-  async () => {
-    const cleanups: string[] = [];
-    const result = await makeAction({
-      getPRState: () => Promise.resolve("merged"),
-      cleanupWorktree: (wt) => {
-        cleanups.push(wt.path);
-        return Promise.resolve();
-      },
-    }).run(
-      makeTicket({
-        ...BASE,
-        worktrees: {
-          "myorg/myrepo": { path: "/wt/myorg/myrepo", branch: "gh-42" },
-        },
-        prs: [
-          {
-            url: "https://github.com/myorg/myrepo/pull/1",
-            title: "A",
-            dependsOn: [],
-            merged: false,
-            worktreeKey: "myorg/myrepo",
-          },
-          {
-            url: "https://github.com/myorg/myrepo/pull/2",
-            title: "B",
-            dependsOn: [],
-            merged: false,
-            worktreeKey: "myorg/myrepo",
-          },
-        ],
-      }),
-      "/state",
+    assertEquals(cleanups, ["/wt/myorg/myrepo/feat-a"]);
+    assertEquals(result?.worktrees?.["myorg/myrepo:feat-a"], undefined);
+    assertEquals(
+      result?.worktrees?.["myorg/myrepo:feat-b"]?.path,
+      "/wt/myorg/myrepo/feat-b",
     );
-    assertEquals(result?.status, "done");
-    assertEquals(cleanups, ["/wt/myorg/myrepo"]);
-  },
-);
-
-Deno.test(
-  "shared worktreeKey: second PR merges on tick 2 (first pre-merged, no worktree entry for it) → cleanup runs for shared key",
-  async () => {
-    const cleanups: string[] = [];
-    const result = await makeAction({
-      getPRState: (url) =>
-        Promise.resolve(
-          url === "https://github.com/myorg/myrepo/pull/2" ? "merged" : "open",
-        ),
-      cleanupWorktree: (wt) => {
-        cleanups.push(wt.path);
-        return Promise.resolve();
-      },
-    }).run(
-      makeTicket({
-        ...BASE,
-        worktrees: {
-          "myorg/myrepo": { path: "/wt/myorg/myrepo", branch: "gh-42" },
-        },
-        prs: [
-          {
-            url: "https://github.com/myorg/myrepo/pull/1",
-            title: "A",
-            dependsOn: [],
-            merged: true,
-          },
-          {
-            url: "https://github.com/myorg/myrepo/pull/2",
-            title: "B",
-            dependsOn: ["https://github.com/myorg/myrepo/pull/1"],
-            merged: false,
-            worktreeKey: "myorg/myrepo",
-          },
-        ],
-      }),
-      "/state",
-    );
-    assertEquals(result?.status, "done");
-    assertEquals(cleanups, ["/wt/myorg/myrepo"]);
   },
 );
 

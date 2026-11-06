@@ -538,3 +538,24 @@ Deno.test(
     assertEquals(resolvedKey, "org/old-name");
   },
 );
+
+Deno.test("reconcilePRsAction: sets branch from headRefName on each PrEntry", async () => {
+  const written: ReturnType<typeof makeTicket>[] = [];
+  await makeAction({
+    readImplementationOutput: () =>
+      Promise.resolve("https://github.com/myorg/myrepo/pull/1"),
+    getPRInfo: () =>
+      Promise.resolve({
+        url: "https://github.com/myorg/myrepo/pull/1",
+        title: "feat",
+        baseRefName: "main",
+        headRefName: "feature/abc",
+      }),
+    writeTicket: (_dir, t) => {
+      written.push(t as ReturnType<typeof makeTicket>);
+      return Promise.resolve();
+    },
+  }).run(makeTicket(), "/state");
+
+  assertEquals(written[0].prs?.[0].branch, "feature/abc");
+});

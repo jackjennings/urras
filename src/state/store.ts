@@ -78,6 +78,7 @@ function normalizePrEntry(raw: unknown): PrEntry | null {
   };
   if (typeof r.worktreeKey === "string") entry.worktreeKey = r.worktreeKey;
   if (typeof r.closed === "boolean") entry.closed = r.closed;
+  if (typeof r.branch === "string") entry.branch = r.branch;
   return entry;
 }
 

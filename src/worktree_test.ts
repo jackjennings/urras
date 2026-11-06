@@ -14,6 +14,7 @@ import type { RepoCandidate } from "./worktree.ts";
 import {
   cloneRemoteRepo,
   createWorktree,
+  createWorktreeTestable,
   extractGitHubSlug,
   findLocalRepo,
   formatRepoCorpus,
@@ -363,6 +364,64 @@ Deno.test("createWorktree: creates branch and worktree directory", async () => {
     await Deno.remove(repoDir, { recursive: true });
   }
 });
+
+// ── createWorktreeTestable ───────────────────────────────────────────────────
+
+Deno.test(
+  "createWorktreeTestable: with branch uses encodeURIComponent(branch) as path segment and branch as git branch name",
+  async () => {
+    const gitCalls: { args: string[]; cwd: string }[] = [];
+    const mkdirCalls: string[] = [];
+
+    const wt = await createWorktreeTestable({
+      repoPath: "/repos/org/repo",
+      ticketId: "github/org/repo/1",
+      slug: "org/repo",
+      branch: "feature/my-work",
+      runGit: (args, cwd) => {
+        gitCalls.push({ args, cwd });
+        return Promise.resolve({ code: 0, stdout: "", stderr: "" });
+      },
+      mkdir: (path) => {
+        mkdirCalls.push(path);
+        return Promise.resolve();
+      },
+    });
+
+    assert(
+      wt.path.endsWith(`/org/repo/${encodeURIComponent("feature/my-work")}`),
+    );
+    assertEquals(wt.branch, "feature/my-work");
+
+    const addCall = gitCalls.find((c) => c.args[0] === "worktree");
+    assertNotEquals(addCall, undefined);
+    assertEquals(addCall!.args[3], "feature/my-work");
+  },
+);
+
+Deno.test(
+  "createWorktreeTestable: without branch uses existing behavior",
+  async () => {
+    const gitCalls: { args: string[]; cwd: string }[] = [];
+
+    const wt = await createWorktreeTestable({
+      repoPath: "/repos/org/repo",
+      ticketId: "github/org/repo/1",
+      slug: "org/repo",
+      branch: undefined,
+      runGit: (args, cwd) => {
+        gitCalls.push({ args, cwd });
+        return Promise.resolve({ code: 0, stdout: "", stderr: "" });
+      },
+      mkdir: () => Promise.resolve(),
+    });
+
+    assert(wt.path.endsWith("/org/repo"));
+    assertEquals(wt.branch, "github/org/repo/1");
+    const addCall = gitCalls.find((c) => c.args[0] === "worktree");
+    assertEquals(addCall!.args[3], "github/org/repo/1");
+  },
+);
 
 // ── parseIntakeScope ─────────────────────────────────────────────────────────
 
