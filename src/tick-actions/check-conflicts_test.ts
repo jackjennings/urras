@@ -142,6 +142,71 @@ Deno.test("checkConflictsAction: does not apply when worktree path does not exis
   );
 });
 
+Deno.test("checkConflictsAction: does not apply when all prs are merged", () => {
+  assertFalse(
+    makeAction().applies(
+      makeTicket({
+        ...BASE,
+        prs: [{
+          url: "https://github.com/o/r/pull/1",
+          title: "A",
+          dependsOn: [],
+          merged: true,
+        }],
+      }),
+    ),
+  );
+});
+
+Deno.test("checkConflictsAction: does not apply when all prs are closed", () => {
+  assertFalse(
+    makeAction().applies(
+      makeTicket({
+        ...BASE,
+        prs: [{
+          url: "https://github.com/o/r/pull/1",
+          title: "A",
+          dependsOn: [],
+          merged: false,
+          closed: true,
+        }],
+      }),
+    ),
+  );
+});
+
+Deno.test("checkConflictsAction: applies when only some prs are merged", () => {
+  assert(
+    makeAction().applies(
+      makeTicket({
+        ...BASE,
+        prs: [
+          {
+            url: "https://github.com/o/r/pull/1",
+            title: "A",
+            dependsOn: [],
+            merged: true,
+          },
+          {
+            url: "https://github.com/o/r/pull/2",
+            title: "B",
+            dependsOn: [],
+            merged: false,
+          },
+        ],
+      }),
+    ),
+  );
+});
+
+Deno.test("checkConflictsAction: applies when prs is undefined", () => {
+  assert(makeAction().applies(makeTicket({ ...BASE, prs: undefined })));
+});
+
+Deno.test("checkConflictsAction: applies when prs is empty", () => {
+  assert(makeAction().applies(makeTicket({ ...BASE, prs: [] })));
+});
+
 // ── fetch failure ─────────────────────────────────────────────────────────────
 
 Deno.test("checkConflictsAction: fetch failure logs error and returns null", async () => {

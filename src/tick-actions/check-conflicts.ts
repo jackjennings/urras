@@ -46,7 +46,12 @@ export function checkConflictsAction(deps: CheckConflictsDeps): TickAction {
         Object.values(ticket.worktrees).some((wt) =>
           deps.worktreeExists(wt.path)
         ) &&
-        !deps.isProcessAlive(ticket.id)
+        !deps.isProcessAlive(ticket.id) &&
+        !(
+          ticket.prs !== undefined &&
+          ticket.prs.length > 0 &&
+          ticket.prs.every((pr) => pr.merged || pr.closed === true)
+        )
       );
     },
     async run(
