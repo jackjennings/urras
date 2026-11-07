@@ -167,6 +167,39 @@ export function paneHeights(
 }
 
 export const TICK_LOG_TAIL_LINES = 2000;
+
+export const HUD_REFRESH_DELAY_MS = 200;
+export const HUD_REFRESH_MAX_WAIT_MS = 1000;
+
+export function makeDebounce(
+  callback: () => void,
+  opts: { delay: number; maxWait: number },
+): () => void {
+  const { delay, maxWait } = opts;
+  let trailingTimer: ReturnType<typeof setTimeout> | null = null;
+  let maxWaitTimer: ReturnType<typeof setTimeout> | null = null;
+  return function () {
+    if (trailingTimer !== null) clearTimeout(trailingTimer);
+    if (maxWaitTimer === null) {
+      maxWaitTimer = setTimeout(() => {
+        maxWaitTimer = null;
+        if (trailingTimer !== null) {
+          clearTimeout(trailingTimer);
+          trailingTimer = null;
+        }
+        callback();
+      }, maxWait);
+    }
+    trailingTimer = setTimeout(() => {
+      trailingTimer = null;
+      if (maxWaitTimer !== null) {
+        clearTimeout(maxWaitTimer);
+        maxWaitTimer = null;
+      }
+      callback();
+    }, delay);
+  };
+}
 const TICK_LOG_TAIL_BYTES = 256 * 1024;
 
 async function readTail(path: string, maxBytes: number): Promise<string> {
@@ -697,14 +730,10 @@ export const hud: Command = {
     await refresh();
     logPane.scrollToEnd();
 
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-    function scheduleRefresh() {
-      if (debounceTimer !== null) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        debounceTimer = null;
-        refresh();
-      }, 200);
-    }
+    const scheduleRefresh = makeDebounce(refresh, {
+      delay: HUD_REFRESH_DELAY_MS,
+      maxWait: HUD_REFRESH_MAX_WAIT_MS,
+    });
 
     for (const id of initialIds) {
       const watcher = Deno.watchFs(join(stateDir, id), { recursive: true });

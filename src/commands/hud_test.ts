@@ -19,11 +19,14 @@ import {
   handleRootWatcherEvent,
   handleTicketWatcherEvent,
   HUD_CHROME_ROWS,
+  HUD_REFRESH_DELAY_MS,
+  HUD_REFRESH_MAX_WAIT_MS,
   hudAutocompleteProvider,
   type HudWatcherDeps,
   isBlockedCommand,
   loadTicketEntry,
   logPaneLines,
+  makeDebounce,
   openLogWatch,
   paneHeights,
   parseCommand,
@@ -800,3 +803,66 @@ Deno.test("renderCeremonyLines: renders header and one row per ceremony", () => 
   assertStringIncludes(stripAnsiCode(lines[2]), "yes");
   assertStringIncludes(stripAnsiCode(lines[2]), "no config");
 });
+
+// ── makeDebounce ──────────────────────────────────────────────────────────────
+
+Deno.test("makeDebounce: exports HUD_REFRESH_DELAY_MS and HUD_REFRESH_MAX_WAIT_MS", () => {
+  assertEquals(HUD_REFRESH_DELAY_MS, 200);
+  assertEquals(HUD_REFRESH_MAX_WAIT_MS, 1000);
+});
+
+Deno.test("makeDebounce: does not fire when no events are sent", async () => {
+  let callCount = 0;
+  makeDebounce(() => {
+    callCount++;
+  }, { delay: 50, maxWait: 150 });
+  await new Promise<void>((resolve) => setTimeout(resolve, 200));
+  assertEquals(callCount, 0);
+});
+
+Deno.test("makeDebounce: fires once after a single event and quiet period", async () => {
+  let callCount = 0;
+  const debounced = makeDebounce(() => {
+    callCount++;
+  }, {
+    delay: 50,
+    maxWait: 150,
+  });
+  debounced();
+  await new Promise<void>((resolve) => setTimeout(resolve, 100));
+  assertEquals(callCount, 1);
+});
+
+Deno.test(
+  "makeDebounce: fires callback within maxWait under steady event stream",
+  async () => {
+    const callTimestamps: number[] = [];
+    const debounced = makeDebounce(() => {
+      callTimestamps.push(Date.now());
+    }, { delay: 50, maxWait: 150 });
+
+    // Send 10 events at 30ms intervals (300ms total)
+    let firstEventTime = 0;
+    await new Promise<void>((resolve) => {
+      let count = 0;
+      const interval = setInterval(() => {
+        count++;
+        if (count === 1) firstEventTime = Date.now();
+        debounced();
+        if (count >= 10) {
+          clearInterval(interval);
+          resolve();
+        }
+      }, 30);
+    });
+
+    // Wait for any trailing timer to settle
+    await new Promise<void>((resolve) => setTimeout(resolve, 100));
+
+    // Callback must have fired at least once during the event stream
+    assertGreater(callTimestamps.length, 0);
+
+    // First invocation must be within maxWait + 50ms tolerance after first event
+    assert(callTimestamps[0] - firstEventTime <= 150 + 50);
+  },
+);
