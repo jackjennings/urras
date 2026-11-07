@@ -104,16 +104,26 @@ export function checkMergedPRAction(deps: CheckMergedPRDeps): TickAction {
         mergedUrls.add(pr.url);
 
         if (pr.worktreeKey !== undefined && worktrees[pr.worktreeKey]) {
-          try {
-            await deps.cleanupWorktree(worktrees[pr.worktreeKey]);
-          } catch (e) {
-            await deps.appendLog(stateDir, ticket.id, {
-              event: "error",
-              context: "checkMergedPR",
-              message: String(e),
-            });
+          const isLegacyKey = !pr.worktreeKey.includes(":");
+          const hasUnmergedSibling = isLegacyKey &&
+            prs.some(
+              (other) =>
+                other !== pr &&
+                !other.merged &&
+                other.worktreeKey === pr.worktreeKey,
+            );
+          if (!hasUnmergedSibling) {
+            try {
+              await deps.cleanupWorktree(worktrees[pr.worktreeKey]);
+            } catch (e) {
+              await deps.appendLog(stateDir, ticket.id, {
+                event: "error",
+                context: "checkMergedPR",
+                message: String(e),
+              });
+            }
+            delete worktrees[pr.worktreeKey];
           }
-          delete worktrees[pr.worktreeKey];
         }
       }
 
