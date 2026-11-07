@@ -60,6 +60,7 @@ export interface PrEntry {
   merged: boolean;
   closed?: boolean;
   worktreeKey?: string;
+  branch?: string;
 }
 
 export interface ApprovalEntry {

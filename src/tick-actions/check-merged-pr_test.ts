@@ -707,6 +707,64 @@ Deno.test(
   },
 );
 
+// ── per-branch worktree cleanup ──────────────────────────────────────────────
+
+Deno.test(
+  "checkMergedPRAction: merged PR always cleans up its own worktree regardless of sibling PRs",
+  async () => {
+    const cleanups: string[] = [];
+    const result = await makeAction({
+      getPRState: (url) =>
+        Promise.resolve(
+          url === "https://github.com/myorg/myrepo/pull/1" ? "merged" : "open",
+        ),
+      cleanupWorktree: (wt) => {
+        cleanups.push(wt.path);
+        return Promise.resolve();
+      },
+    }).run(
+      makeTicket({
+        ...BASE,
+        worktrees: {
+          "myorg/myrepo:feat-a": {
+            path: "/wt/myorg/myrepo/feat-a",
+            branch: "feat-a",
+          },
+          "myorg/myrepo:feat-b": {
+            path: "/wt/myorg/myrepo/feat-b",
+            branch: "feat-b",
+          },
+        },
+        prs: [
+          {
+            url: "https://github.com/myorg/myrepo/pull/1",
+            title: "A",
+            dependsOn: [],
+            merged: false,
+            worktreeKey: "myorg/myrepo:feat-a",
+          },
+          {
+            url: "https://github.com/myorg/myrepo/pull/2",
+            title: "B",
+            dependsOn: [],
+            merged: false,
+            worktreeKey: "myorg/myrepo:feat-b",
+          },
+        ],
+      }),
+      "/state",
+    );
+
+    assertEquals(result?.status, "waiting");
+    assertEquals(cleanups, ["/wt/myorg/myrepo/feat-a"]);
+    assertEquals(result?.worktrees?.["myorg/myrepo:feat-a"], undefined);
+    assertEquals(
+      result?.worktrees?.["myorg/myrepo:feat-b"]?.path,
+      "/wt/myorg/myrepo/feat-b",
+    );
+  },
+);
+
 // ── assertSpyCalls usage verification ────────────────────────────────────────
 
 Deno.test(

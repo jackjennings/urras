@@ -140,6 +140,7 @@ export function reconcilePRsAction(deps: ReconcilePRsDeps): TickAction {
             ? [headToUrl.get(p.baseRefName)!]
             : [],
           merged: false,
+          branch: p.headRefName,
           ...(worktreeKey !== undefined ? { worktreeKey } : {}),
         };
       });

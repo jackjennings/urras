@@ -1882,3 +1882,44 @@ Deno.test(
     }
   },
 );
+
+Deno.test("writeTicket/readTicket: preserves PrEntry.branch through roundtrip", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    const ticket = makeTicket({
+      id: "github/org/repo/1",
+      prs: [{
+        url: "https://github.com/org/repo/pull/1",
+        title: "feat",
+        dependsOn: [],
+        merged: false,
+        branch: "my-feature-branch",
+      }],
+    });
+    await writeTicket(dir, ticket);
+    const read = await readTicket(dir, ticket.id);
+    assertEquals(read.prs?.[0].branch, "my-feature-branch");
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("readTicket: PrEntry without branch field reads as undefined", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    const ticket = makeTicket({
+      id: "github/org/repo/2",
+      prs: [{
+        url: "https://github.com/org/repo/pull/2",
+        title: "feat",
+        dependsOn: [],
+        merged: false,
+      }],
+    });
+    await writeTicket(dir, ticket);
+    const read = await readTicket(dir, ticket.id);
+    assertEquals(read.prs?.[0].branch, undefined);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});

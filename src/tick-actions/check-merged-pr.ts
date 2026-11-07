@@ -104,12 +104,14 @@ export function checkMergedPRAction(deps: CheckMergedPRDeps): TickAction {
         mergedUrls.add(pr.url);
 
         if (pr.worktreeKey !== undefined && worktrees[pr.worktreeKey]) {
-          const hasUnmergedSibling = prs.some(
-            (other) =>
-              other !== pr &&
-              !other.merged &&
-              other.worktreeKey === pr.worktreeKey,
-          );
+          const isLegacyKey = !pr.worktreeKey.includes(":");
+          const hasUnmergedSibling = isLegacyKey &&
+            prs.some(
+              (other) =>
+                other !== pr &&
+                !other.merged &&
+                other.worktreeKey === pr.worktreeKey,
+            );
           if (!hasUnmergedSibling) {
             try {
               await deps.cleanupWorktree(worktrees[pr.worktreeKey]);

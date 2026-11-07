@@ -117,24 +117,27 @@ export function spawnCIFixAction(deps: SpawnCIFixDeps): TickAction {
           return parked;
         }
 
-        if (
-          pr.worktreeKey &&
-          deps.canonicalSlugFor(pr.worktreeKey) !== deps.canonicalSlugFor(repo)
-        ) {
-          await deps.appendLog(stateDir, ticket.id, {
-            event: "needs-attention",
-            reason: "worktree-pr-repo-mismatch",
-            prUrl: pr.url,
-            worktreeKey: pr.worktreeKey,
-            repo,
-          });
-          const parked: TicketState = {
-            ...ticket,
-            status: "needs-attention",
-            updated: now,
-          };
-          await deps.writeTicket(stateDir, parked);
-          return parked;
+        if (pr.worktreeKey) {
+          const colonIdx = pr.worktreeKey.indexOf(":");
+          const keySlug = colonIdx !== -1
+            ? pr.worktreeKey.slice(0, colonIdx)
+            : pr.worktreeKey;
+          if (deps.canonicalSlugFor(keySlug) !== deps.canonicalSlugFor(repo)) {
+            await deps.appendLog(stateDir, ticket.id, {
+              event: "needs-attention",
+              reason: "worktree-pr-repo-mismatch",
+              prUrl: pr.url,
+              worktreeKey: pr.worktreeKey,
+              repo,
+            });
+            const parked: TicketState = {
+              ...ticket,
+              status: "needs-attention",
+              updated: now,
+            };
+            await deps.writeTicket(stateDir, parked);
+            return parked;
+          }
         }
 
         handledKeys.add(runKey);

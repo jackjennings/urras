@@ -398,3 +398,77 @@ Deno.test("spawnCIFixAction: existing run keys are preserved", async () => {
   ).run(makeTicket({ ...BASE, ciHandledRunIds: ["1001-1"] }), "/state");
   assertArrayIncludes(written[0].ciHandledRunIds ?? [], ["1001-1", "2002-1"]);
 });
+
+Deno.test(
+  "spawnCIFixAction: worktreeKey with org/repo:branch format matches correct repo slug",
+  async () => {
+    const spawnSpy = spy(() => Promise.resolve());
+    const result = await spawnCIFixAction(
+      makeDeps({
+        getPRChecks: () => Promise.resolve(FAILURE_RESULT),
+        spawn: spawnSpy,
+      }),
+    ).run(
+      makeTicket({
+        ...BASE,
+        worktrees: {
+          "jackjennings/lazyboy:feature/abc": {
+            path: "/wt/lazyboy/feature%2Fabc",
+            branch: "feature/abc",
+          },
+        },
+        prs: [{
+          url: "https://github.com/jackjennings/lazyboy/pull/99",
+          title: "feat",
+          dependsOn: [],
+          merged: false,
+          worktreeKey: "jackjennings/lazyboy:feature/abc",
+          branch: "feature/abc",
+        }],
+      }),
+      "/state",
+    );
+    assertSpyCalls(spawnSpy, 1);
+    assertFalse(result?.status === "needs-attention");
+  },
+);
+
+Deno.test(
+  "spawnCIFixAction: worktreeKey with org/repo:branch format for wrong repo parks ticket",
+  async () => {
+    const spawnSpy = spy(() => Promise.resolve());
+    const logged: Record<string, unknown>[] = [];
+    const result = await spawnCIFixAction(
+      makeDeps({
+        getPRChecks: () => Promise.resolve(FAILURE_RESULT),
+        spawn: spawnSpy,
+        appendLog: (_sd, _id, entry) => {
+          logged.push(entry as Record<string, unknown>);
+          return Promise.resolve();
+        },
+      }),
+    ).run(
+      makeTicket({
+        ...BASE,
+        worktrees: {
+          "org/wrong-repo:feature/abc": {
+            path: "/wt/wrong/feature%2Fabc",
+            branch: "feature/abc",
+          },
+        },
+        prs: [{
+          url: "https://github.com/org/correct-repo/pull/1",
+          title: "feat",
+          dependsOn: [],
+          merged: false,
+          worktreeKey: "org/wrong-repo:feature/abc",
+          branch: "feature/abc",
+        }],
+      }),
+      "/state",
+    );
+    assertSpyCalls(spawnSpy, 0);
+    assertEquals(result?.status, "needs-attention");
+    assertEquals(logged[0].reason, "worktree-pr-repo-mismatch");
+  },
+);
