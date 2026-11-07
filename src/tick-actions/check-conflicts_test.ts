@@ -130,6 +130,14 @@ Deno.test("checkConflictsAction: does not apply to a running ticket whose proces
   );
 });
 
+Deno.test("checkConflictsAction: does not apply to a revising ticket", () => {
+  assertFalse(
+    makeAction({ isProcessAlive: () => false }).applies(
+      makeTicket({ ...BASE, status: "revising" }),
+    ),
+  );
+});
+
 Deno.test("checkConflictsAction: does not apply with no worktrees", () => {
   assertFalse(
     makeAction().applies(makeTicket({ ...BASE, worktrees: {} })),
