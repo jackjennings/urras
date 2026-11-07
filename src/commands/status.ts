@@ -356,7 +356,7 @@ export function formatStatusRow(
   const approvedStr = approvedFor ?? "-";
   return `${marker} ${id.padEnd(36)} ${phase.padEnd(16)} ${
     colorizeStatus(status)
-  } ${approvedStr.padEnd(9)} ${tokenStr.padStart(10)} ${title}`;
+  } ${approvedStr.slice(0, 9).padEnd(9)} ${tokenStr.padStart(10)} ${title}`;
 }
 
 export function shouldHideTicket(phase: string, status: string): boolean {

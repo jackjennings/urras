@@ -64,7 +64,7 @@ export interface PrEntry {
 
 export interface ApprovalEntry {
   timestamp: string;
-  actor: "human" | "agent" | "unknown";
+  actor: string;
   phase: TicketPhase;
 }
 

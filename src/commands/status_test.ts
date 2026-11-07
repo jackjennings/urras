@@ -519,6 +519,27 @@ Deno.test(
 );
 
 Deno.test(
+  "formatStatusRow: truncates actor names longer than 9 characters",
+  () => {
+    const row = formatStatusRow(
+      " ",
+      "github/a/repo/1",
+      "intake",
+      "waiting",
+      [{
+        timestamp: "2026-08-17T20:00:00Z",
+        actor: "supervisor-agent",
+        phase: "intake",
+      }],
+      "0",
+      "t",
+    );
+    assertStringIncludes(stripAnsiCode(row), "superviso ");
+    assertFalse(stripAnsiCode(row).includes("supervisor-agent"));
+  },
+);
+
+Deno.test(
   "formatStatusRow: falls back to title when shortTitle is absent",
   () => {
     const ticket = makeTicket({ title: "Full title only" });

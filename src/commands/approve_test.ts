@@ -73,6 +73,29 @@ Deno.test("performApprove: accumulates multiple approvals", async () => {
 });
 
 Deno.test(
+  "performApprove: records custom actor when actor option is provided",
+  async () => {
+    const ticket = makeTicket({ phase: "spec", status: "waiting" });
+    const stateDir = await Deno.makeTempDir();
+    await writeTicket(stateDir, ticket);
+    const commit = spy(() => Promise.resolve());
+    try {
+      await performApprove(stateDir, ticket.id, {
+        commit,
+        actor: "supervisor",
+      });
+      const meta = await Deno.readTextFile(
+        join(stateDir, ticket.id, "meta.md"),
+      );
+      assertStringIncludes(meta, "actor: supervisor");
+      assertStringIncludes(meta, "phase: spec");
+    } finally {
+      await Deno.remove(stateDir, { recursive: true });
+    }
+  },
+);
+
+Deno.test(
   "performApprove: calls commitFn with stateDir, id, and approve message",
   async () => {
     const ticket = makeTicket({ phase: "plan", status: "waiting" });
