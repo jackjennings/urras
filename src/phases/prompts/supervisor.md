@@ -10,7 +10,7 @@ Each cycle (the tick cadence is `[tick].interval_seconds`):
 2. For every ticket `waiting` with no approval, review the actual work in the
    ticket's worktree (`~/.urras/worktrees/<id>/...`, or `ur shell <id>`), not
    only the phase output. Check the phase output's claims against the code.
-   Approve with `ur approve <id>` only when satisfied.
+   Approve with `ur approve <id> --approver supervisor` only when satisfied.
 3. At the implementation gate, do an antagonistic review before approving. First
    verify the ticket's own contents (claims, referenced files and tickets, stale
    premises). Then check each acceptance criterion against the diff, running

@@ -27,9 +27,11 @@ export async function performApprove(
   {
     commit = commitTicket,
     readTicket = readTicketWithPatch,
+    actor = "human",
   }: {
     commit?: typeof commitTicket;
     readTicket?: typeof readTicketWithPatch;
+    actor?: string;
   } = {},
 ): Promise<void> {
   const { ticket, patchTicket } = await readTicket(stateDir, id);
@@ -37,7 +39,7 @@ export async function performApprove(
   await patchTicket({
     approvals: [
       ...ticket.approvals,
-      { timestamp: now, actor: "human" as const, phase: ticket.phase },
+      { timestamp: now, actor, phase: ticket.phase },
     ],
     updated: now,
   });
@@ -107,7 +109,26 @@ export const approve: Command = {
   usage: "ur approve <ticket-id|ceremony/<name>>",
   completesWith: "_ids",
   async run(args) {
-    const id = args[0];
+    const approverFlagIdx = args.indexOf("--approver");
+    let actor: string | undefined;
+    if (approverFlagIdx !== -1) {
+      const value = args[approverFlagIdx + 1];
+      if (!value || value.startsWith("--")) {
+        console.error("--approver requires a value");
+        Deno.exit(1);
+      }
+      const trimmed = value.trim();
+      if (!trimmed) {
+        console.error("--approver value must not be empty");
+        Deno.exit(1);
+      }
+      actor = trimmed;
+    }
+    const id = args.find((a, i) => {
+      if (a.startsWith("--")) return false;
+      if (approverFlagIdx !== -1 && i === approverFlagIdx + 1) return false;
+      return true;
+    });
     if (!id) {
       console.error("Usage: ur approve <ticket-id|ceremony/<name>>");
       Deno.exit(1);
@@ -130,7 +151,7 @@ export const approve: Command = {
       return;
     }
     const ticket = await readTicket(stateDir, id);
-    await performApprove(stateDir, id);
+    await performApprove(stateDir, id, { actor });
     console.log(`Approved ${id} (phase: ${ticket.phase}/${ticket.status})`);
   },
 };
