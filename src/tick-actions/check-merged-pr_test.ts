@@ -820,3 +820,70 @@ Deno.test(
     assertEquals(checked, []);
   },
 );
+
+// ── external dependsOn ────────────────────────────────────────────────────────
+
+const EXT_DEP = "https://github.com/other/repo/pull/794";
+
+Deno.test(
+  "checkMergedPRAction: external dep merged → main PR checked, merged, done, worktree cleaned",
+  async () => {
+    const checked: string[] = [];
+    const cleanups: string[] = [];
+    const result = await makeAction({
+      getPRState: (url) => {
+        checked.push(url);
+        return Promise.resolve("merged");
+      },
+      cleanupWorktree: (wt) => {
+        cleanups.push(wt.path);
+        return Promise.resolve();
+      },
+    }).run(
+      makeTicket({
+        ...BASE,
+        prs: [{
+          url: "https://github.com/myorg/myrepo/pull/99",
+          title: "feat: my change",
+          dependsOn: [EXT_DEP],
+          merged: false,
+          worktreeKey: "myorg/myrepo",
+        }],
+      }),
+      "/state",
+    );
+    assert(checked.includes(EXT_DEP));
+    assert(checked.includes("https://github.com/myorg/myrepo/pull/99"));
+    assertEquals(result?.prs?.[0].merged, true);
+    assertEquals(cleanups.length, 1);
+    assertEquals(result?.status, "done");
+  },
+);
+
+Deno.test(
+  "checkMergedPRAction: external dep open → dep checked, main PR not checked, returns null",
+  async () => {
+    const checked: string[] = [];
+    const result = await makeAction({
+      getPRState: (url) => {
+        checked.push(url);
+        return Promise.resolve("open");
+      },
+    }).run(
+      makeTicket({
+        ...BASE,
+        prs: [{
+          url: "https://github.com/myorg/myrepo/pull/99",
+          title: "feat: my change",
+          dependsOn: [EXT_DEP],
+          merged: false,
+          worktreeKey: "myorg/myrepo",
+        }],
+      }),
+      "/state",
+    );
+    assert(checked.includes(EXT_DEP));
+    assertFalse(checked.includes("https://github.com/myorg/myrepo/pull/99"));
+    assertEquals(result, null);
+  },
+);

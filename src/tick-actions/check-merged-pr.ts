@@ -33,15 +33,41 @@ export function checkMergedPRAction(deps: CheckMergedPRDeps): TickAction {
         prs.filter((pr) => pr.closed && !pr.merged).map((pr) => pr.url),
       );
       const initialMergedCount = mergedUrls.size;
+      const allPrUrls = new Set(prs.map((pr) => pr.url));
+      const resolvedExternalDeps = new Set<string>();
 
       for (const pr of prs) {
         if (pr.merged || pr.closed) continue;
-        // A closed dependency was dropped on purpose; it must not block dependents.
-        if (
-          pr.dependsOn.some((dep) =>
-            !mergedUrls.has(dep) && !closedUrls.has(dep)
-          )
-        ) continue;
+        // Resolve each dependency. Same-ticket deps not yet merged block as before.
+        // External deps (not in this ticket's prs) are fetched via getPRState.
+        let depBlocked = false;
+        for (const dep of pr.dependsOn) {
+          if (
+            mergedUrls.has(dep) || closedUrls.has(dep) ||
+            resolvedExternalDeps.has(dep)
+          ) continue;
+          if (allPrUrls.has(dep)) {
+            depBlocked = true;
+            break;
+          }
+          let depState: "merged" | "closed" | "open";
+          try {
+            depState = await deps.getPRState(dep);
+          } catch (e) {
+            await deps.appendLog(stateDir, ticket.id, {
+              event: "error",
+              context: "checkMergedPR",
+              message: String(e),
+            });
+            return null;
+          }
+          if (depState === "open") {
+            depBlocked = true;
+            break;
+          }
+          resolvedExternalDeps.add(dep);
+        }
+        if (depBlocked) continue;
 
         let state: "merged" | "closed" | "open";
         try {
