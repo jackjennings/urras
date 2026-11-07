@@ -1764,6 +1764,110 @@ verify = 42
   await Deno.remove(dir, { recursive: true });
 });
 
+Deno.test("loadConfig: [repos.*] ciFixIgnoreChecks is parsed as an array of strings", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `
+[github]
+repos = []
+
+[state]
+dir = "~/code"
+
+[tick]
+concurrency = 1
+
+[repos."jackjennings/lazyboy"]
+ci_fix_ignore_checks = ["PM Input Check", "Reviewdog"]
+`,
+  );
+  const cfg = await loadConfig(join(dir, "config.toml"));
+  assertEquals(cfg.repos?.["jackjennings/lazyboy"]?.ciFixIgnoreChecks, [
+    "PM Input Check",
+    "Reviewdog",
+  ]);
+  await Deno.remove(dir, { recursive: true });
+});
+
+Deno.test("loadConfig: [repos.*] absent ciFixIgnoreChecks leaves it undefined", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `
+[github]
+repos = []
+
+[state]
+dir = "~/code"
+
+[tick]
+concurrency = 1
+
+[repos."jackjennings/lazyboy"]
+verify = "deno test"
+`,
+  );
+  const cfg = await loadConfig(join(dir, "config.toml"));
+  assertEquals(
+    cfg.repos?.["jackjennings/lazyboy"]?.ciFixIgnoreChecks,
+    undefined,
+  );
+  await Deno.remove(dir, { recursive: true });
+});
+
+Deno.test("loadConfig: [repos.*] non-array ciFixIgnoreChecks throws", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `
+[github]
+repos = []
+
+[state]
+dir = "~/code"
+
+[tick]
+concurrency = 1
+
+[repos."jackjennings/lazyboy"]
+ci_fix_ignore_checks = "PM Input Check"
+`,
+  );
+  await assertRejects(
+    () => loadConfig(join(dir, "config.toml")),
+    Error,
+    `config.toml: [repos."jackjennings/lazyboy"].ciFixIgnoreChecks must be an array of strings`,
+  );
+  await Deno.remove(dir, { recursive: true });
+});
+
+Deno.test("loadConfig: [repos.*] ciFixIgnoreChecks with non-string element throws", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    join(dir, "config.toml"),
+    `
+[github]
+repos = []
+
+[state]
+dir = "~/code"
+
+[tick]
+concurrency = 1
+
+[repos."jackjennings/lazyboy"]
+ci_fix_ignore_checks = [42]
+`,
+  );
+  await assertRejects(
+    () => loadConfig(join(dir, "config.toml")),
+    Error,
+    `config.toml: [repos."jackjennings/lazyboy"].ciFixIgnoreChecks must be an array of strings`,
+  );
+  await Deno.remove(dir, { recursive: true });
+});
+
 Deno.test("loadConfig rejects [jira.projects.*].github_account naming an unknown account", async () => {
   const dir = await Deno.makeTempDir();
   await Deno.writeTextFile(

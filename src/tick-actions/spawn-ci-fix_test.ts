@@ -43,11 +43,15 @@ const FAILURE_RESULT: CIRunResult = {
   conclusion: "failure",
   failingJobs: ["lint", "test"],
   headSha: HEAD_SHA,
+  baseBranch: "main",
+  failingCheckContexts: ["lint", "test"],
 };
 
 function makeDeps(overrides: Partial<SpawnCIFixDeps> = {}): SpawnCIFixDeps {
   return {
     getPRChecks: () => Promise.resolve(null),
+    getRequiredCheckContexts: () => Promise.resolve(null),
+    getIgnoredCheckContexts: () => [],
     isProcessAlive: () => false,
     writeTicket: () => Promise.resolve(),
     appendLog: () => Promise.resolve(),
@@ -139,6 +143,8 @@ Deno.test("spawnCIFixAction: successful conclusion does not spawn", async () => 
           conclusion: "success",
           failingJobs: [],
           headSha: HEAD_SHA,
+          baseBranch: "main",
+          failingCheckContexts: [],
         }),
       spawn: spawnSpy,
     }),
@@ -170,6 +176,8 @@ Deno.test("spawnCIFixAction: action_required conclusion spawns", async () => {
           conclusion: "action_required",
           failingJobs: [],
           headSha: HEAD_SHA,
+          baseBranch: "main",
+          failingCheckContexts: [],
         }),
       spawn: spawnSpy,
     }),
@@ -216,8 +224,8 @@ Deno.test("spawnCIFixAction: missing worktree parks the ticket without spawning"
   ).run(makeTicket({ ...BASE, worktrees: {} }), "/state");
   assertSpyCalls(spawnSpy, 0);
   assertEquals(result?.status, "needs-attention");
-  assertEquals(logged[0].event, "needs-attention");
-  assertEquals(logged[0].reason, "no-worktrees");
+  const parkEntry = logged.find((e) => e.event === "needs-attention");
+  assertEquals(parkEntry?.reason, "no-worktrees");
 });
 
 Deno.test("spawnCIFixAction: spawn failure rolls the run key back and writes no ticket", async () => {
@@ -344,10 +352,10 @@ Deno.test(
     );
     assertSpyCalls(spawnSpy, 0);
     assertEquals(result?.status, "needs-attention");
-    assertEquals(logged[0].event, "needs-attention");
-    assertEquals(logged[0].reason, "worktree-pr-repo-mismatch");
-    assertEquals(logged[0].worktreeKey, "org/wrong-repo");
-    assertEquals(logged[0].repo, "org/correct-repo");
+    const parkEntry = logged.find((e) => e.event === "needs-attention");
+    assertEquals(parkEntry?.reason, "worktree-pr-repo-mismatch");
+    assertEquals(parkEntry?.worktreeKey, "org/wrong-repo");
+    assertEquals(parkEntry?.repo, "org/correct-repo");
   },
 );
 
@@ -398,3 +406,175 @@ Deno.test("spawnCIFixAction: existing run keys are preserved", async () => {
   ).run(makeTicket({ ...BASE, ciHandledRunIds: ["1001-1"] }), "/state");
   assertArrayIncludes(written[0].ciHandledRunIds ?? [], ["1001-1", "2002-1"]);
 });
+
+Deno.test(
+  "spawnCIFixAction: empty failingCheckContexts falls back and logs unavailable",
+  async () => {
+    const logged: Record<string, unknown>[] = [];
+    const spawnSpy = spy(() => Promise.resolve());
+    await spawnCIFixAction(
+      makeDeps({
+        getPRChecks: () =>
+          Promise.resolve({ ...FAILURE_RESULT, failingCheckContexts: [] }),
+        appendLog: (_sd, _id, entry) => {
+          logged.push(entry as Record<string, unknown>);
+          return Promise.resolve();
+        },
+        spawn: spawnSpy,
+      }),
+    ).run(makeTicket(BASE), "/state");
+    assertSpyCalls(spawnSpy, 1);
+    assert(logged.some((e) => e.event === "ci-fix-check-contexts-unavailable"));
+  },
+);
+
+Deno.test(
+  "spawnCIFixAction: null required checks falls back and logs fallback",
+  async () => {
+    const logged: Record<string, unknown>[] = [];
+    const spawnSpy = spy(() => Promise.resolve());
+    await spawnCIFixAction(
+      makeDeps({
+        getPRChecks: () => Promise.resolve(FAILURE_RESULT),
+        getRequiredCheckContexts: () => Promise.resolve(null),
+        appendLog: (_sd, _id, entry) => {
+          logged.push(entry as Record<string, unknown>);
+          return Promise.resolve();
+        },
+        spawn: spawnSpy,
+      }),
+    ).run(makeTicket(BASE), "/state");
+    assertSpyCalls(spawnSpy, 1);
+    assert(logged.some((e) => e.event === "ci-fix-required-check-fallback"));
+  },
+);
+
+Deno.test(
+  "spawnCIFixAction: empty required check list falls back and logs fallback",
+  async () => {
+    const logged: Record<string, unknown>[] = [];
+    const spawnSpy = spy(() => Promise.resolve());
+    await spawnCIFixAction(
+      makeDeps({
+        getPRChecks: () => Promise.resolve(FAILURE_RESULT),
+        getRequiredCheckContexts: () => Promise.resolve([]),
+        appendLog: (_sd, _id, entry) => {
+          logged.push(entry as Record<string, unknown>);
+          return Promise.resolve();
+        },
+        spawn: spawnSpy,
+      }),
+    ).run(makeTicket(BASE), "/state");
+    assertSpyCalls(spawnSpy, 1);
+    assert(logged.some((e) => e.event === "ci-fix-required-check-fallback"));
+  },
+);
+
+Deno.test(
+  "spawnCIFixAction: non-required failing check skips spawn without recording run key",
+  async () => {
+    const logged: Record<string, unknown>[] = [];
+    const written: TicketState[] = [];
+    const spawnSpy = spy(() => Promise.resolve());
+    const result = await spawnCIFixAction(
+      makeDeps({
+        getPRChecks: () => Promise.resolve(FAILURE_RESULT),
+        getRequiredCheckContexts: () =>
+          Promise.resolve(["other-required-check"]),
+        appendLog: (_sd, _id, entry) => {
+          logged.push(entry as Record<string, unknown>);
+          return Promise.resolve();
+        },
+        writeTicket: (_sd, t) => {
+          written.push(t);
+          return Promise.resolve();
+        },
+        spawn: spawnSpy,
+      }),
+    ).run(makeTicket(BASE), "/state");
+    assertSpyCalls(spawnSpy, 0);
+    assertEquals(result, null);
+    assertEquals(written.length, 0);
+    assert(
+      logged.some((e) => e.event === "ci-fix-skipped-no-required-failures"),
+    );
+  },
+);
+
+Deno.test(
+  "spawnCIFixAction: required failing check spawns",
+  async () => {
+    const spawnSpy = spy(() => Promise.resolve());
+    await spawnCIFixAction(
+      makeDeps({
+        getPRChecks: () => Promise.resolve(FAILURE_RESULT),
+        getRequiredCheckContexts: () => Promise.resolve(["lint"]),
+        spawn: spawnSpy,
+      }),
+    ).run(makeTicket(BASE), "/state");
+    assertSpyCalls(spawnSpy, 1);
+  },
+);
+
+Deno.test(
+  "spawnCIFixAction: ignored required check skips spawn without recording run key",
+  async () => {
+    const logged: Record<string, unknown>[] = [];
+    const written: TicketState[] = [];
+    const spawnSpy = spy(() => Promise.resolve());
+    const result = await spawnCIFixAction(
+      makeDeps({
+        getPRChecks: () => Promise.resolve(FAILURE_RESULT),
+        getRequiredCheckContexts: () => Promise.resolve(["lint", "test"]),
+        getIgnoredCheckContexts: () => ["lint", "test"],
+        appendLog: (_sd, _id, entry) => {
+          logged.push(entry as Record<string, unknown>);
+          return Promise.resolve();
+        },
+        writeTicket: (_sd, t) => {
+          written.push(t);
+          return Promise.resolve();
+        },
+        spawn: spawnSpy,
+      }),
+    ).run(makeTicket(BASE), "/state");
+    assertSpyCalls(spawnSpy, 0);
+    assertEquals(result, null);
+    assertEquals(written.length, 0);
+    assert(logged.some((e) => e.event === "ci-fix-skipped-process-gate"));
+  },
+);
+
+Deno.test(
+  "spawnCIFixAction: partially ignored required failing checks spawns",
+  async () => {
+    const spawnSpy = spy(() => Promise.resolve());
+    await spawnCIFixAction(
+      makeDeps({
+        getPRChecks: () => Promise.resolve(FAILURE_RESULT),
+        getRequiredCheckContexts: () => Promise.resolve(["lint", "test"]),
+        getIgnoredCheckContexts: () => ["lint"],
+        spawn: spawnSpy,
+      }),
+    ).run(makeTicket(BASE), "/state");
+    assertSpyCalls(spawnSpy, 1);
+  },
+);
+
+Deno.test(
+  "spawnCIFixAction: getRequiredCheckContexts called with repo and base branch",
+  async () => {
+    const calls: { repoSlug: string; baseBranch: string }[] = [];
+    await spawnCIFixAction(
+      makeDeps({
+        getPRChecks: () => Promise.resolve(FAILURE_RESULT),
+        getRequiredCheckContexts: (repoSlug, baseBranch) => {
+          calls.push({ repoSlug, baseBranch });
+          return Promise.resolve(null);
+        },
+      }),
+    ).run(makeTicket(BASE), "/state");
+    assertEquals(calls[0].repoSlug, "jackjennings/lazyboy");
+    assertEquals(calls[0].baseBranch, "main");
+  },
+);

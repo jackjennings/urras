@@ -808,6 +808,38 @@ export function composeTickDeps(
           },
         }),
         spawnCIFixAction({
+          getRequiredCheckContexts: (() => {
+            const cache = new Map<string, string[] | null>();
+            return async (repoSlug: string, baseBranch: string) => {
+              const cacheKey = `${repoSlug}/${baseBranch}`;
+              if (cache.has(cacheKey)) return cache.get(cacheKey)!;
+              const { token } = resolveAccount(repoSlug);
+              const res = await http.get(
+                `https://api.github.com/repos/${repoSlug}/branches/${
+                  encodeURIComponent(baseBranch)
+                }/protection`,
+                {
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                    Accept: "application/vnd.github+json",
+                  },
+                },
+              );
+              if (!res.ok) {
+                cache.set(cacheKey, null);
+                return null;
+              }
+              const data = await res.json();
+              const contexts: string[] =
+                data.required_status_checks?.contexts ?? [];
+              cache.set(cacheKey, contexts);
+              return contexts;
+            };
+          })(),
+          getIgnoredCheckContexts: (repoSlug: string) => {
+            const canonical = canonicalSlugFor(persistedTable, repoSlug);
+            return config.repos?.[canonical]?.ciFixIgnoreChecks ?? [];
+          },
           getPRChecks: async (prUrl) => {
             const parsed = parsePrUrl(prUrl);
             if (!parsed) return null;
@@ -826,6 +858,7 @@ export function composeTickDeps(
             const prData = await prRes.json();
             if (prData.state === "closed") return null;
             const headSha: string = prData.head.sha;
+            const baseBranch: string = prData.base.ref;
 
             const runsRes = await http.get(
               `https://api.github.com/repos/${repoSlug}/actions/runs?head_sha=${headSha}&per_page=100`,
@@ -853,6 +886,8 @@ export function composeTickDeps(
                 conclusion: "success",
                 failingJobs: [],
                 headSha,
+                baseBranch,
+                failingCheckContexts: [],
               };
             }
 
@@ -869,12 +904,27 @@ export function composeTickDeps(
                 .map((j) => j.name)
               : [];
 
+            const checkRunsRes = await http.get(
+              `https://api.github.com/repos/${repoSlug}/commits/${headSha}/check-runs?per_page=100`,
+              { headers },
+            );
+            const failingCheckContexts = checkRunsRes.ok
+              ? ((await checkRunsRes.json()).check_runs as Array<{
+                name: string;
+                conclusion: string;
+              }>)
+                .filter((c) => c.conclusion === "failure")
+                .map((c) => c.name)
+              : [];
+
             return {
               runId: String(failed.id),
               attempt: failed.run_attempt,
               conclusion: failed.conclusion as "failure" | "action_required",
               failingJobs,
               headSha,
+              baseBranch,
+              failingCheckContexts,
             };
           },
           isProcessAlive: (ticketId) => isPhaseAlive(join(stateDir, ticketId)),

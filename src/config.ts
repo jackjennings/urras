@@ -254,7 +254,23 @@ export async function loadConfig(path?: string): Promise<Config> {
           `config.toml: [repos."${slug}"].verify must be a string`,
         );
       }
-      repos[slug] = { verify: verifyRaw as string | undefined };
+      const ciFixIgnoreChecksRaw = entry.ci_fix_ignore_checks;
+      if (ciFixIgnoreChecksRaw !== undefined) {
+        if (
+          !Array.isArray(ciFixIgnoreChecksRaw) ||
+          !(ciFixIgnoreChecksRaw as unknown[]).every(
+            (c) => typeof c === "string",
+          )
+        ) {
+          throw new Error(
+            `config.toml: [repos."${slug}"].ciFixIgnoreChecks must be an array of strings`,
+          );
+        }
+      }
+      repos[slug] = {
+        verify: verifyRaw as string | undefined,
+        ciFixIgnoreChecks: ciFixIgnoreChecksRaw as string[] | undefined,
+      };
     }
   }
 
