@@ -223,5 +223,5 @@ export interface Config {
   learnings?: { repos: string[] };
   ceremonies?: { timeoutSeconds?: number; enabled?: boolean };
   codegraph?: { enabled: boolean; roots: string[] };
-  repos?: Record<string, { verify?: string }>;
+  repos?: Record<string, { verify?: string; ciFixIgnoreChecks?: string[] }>;
 }

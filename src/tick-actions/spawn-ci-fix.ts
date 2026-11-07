@@ -15,6 +15,8 @@ export interface CIRunResult {
   conclusion: CIConclusion;
   failingJobs: string[];
   headSha: string;
+  baseBranch: string;
+  failingCheckContexts: string[];
 }
 
 export function ciFixRunKey(runId: string, attempt: number): string {
@@ -23,6 +25,11 @@ export function ciFixRunKey(runId: string, attempt: number): string {
 
 export interface SpawnCIFixDeps {
   getPRChecks: (prUrl: string) => Promise<CIRunResult | null>;
+  getRequiredCheckContexts: (
+    repoSlug: string,
+    baseBranch: string,
+  ) => Promise<string[] | null>;
+  getIgnoredCheckContexts: (repoSlug: string) => string[];
   isProcessAlive: (ticketId: string) => boolean;
   writeTicket: (stateDir: string, t: TicketState) => Promise<void>;
   appendLog: (stateDir: string, id: string, entry: object) => Promise<void>;
@@ -95,6 +102,53 @@ export function spawnCIFixAction(deps: SpawnCIFixDeps): TickAction {
 
         const prParsed = parsePrUrl(pr.url);
         const repo = prParsed ? slugOf(prParsed) : "unknown/unknown";
+
+        if (ciResult.failingCheckContexts.length === 0) {
+          await deps.appendLog(stateDir, ticket.id, {
+            event: "ci-fix-check-contexts-unavailable",
+            runId: ciResult.runId,
+            prUrl: pr.url,
+          });
+        } else {
+          const required = await deps.getRequiredCheckContexts(
+            repo,
+            ciResult.baseBranch,
+          );
+          if (required === null || required.length === 0) {
+            await deps.appendLog(stateDir, ticket.id, {
+              event: "ci-fix-required-check-fallback",
+              repo,
+              baseBranch: ciResult.baseBranch,
+              runId: ciResult.runId,
+            });
+          } else {
+            const requiredFailing = ciResult.failingCheckContexts.filter((c) =>
+              required.includes(c)
+            );
+            if (requiredFailing.length === 0) {
+              await deps.appendLog(stateDir, ticket.id, {
+                event: "ci-fix-skipped-no-required-failures",
+                runId: ciResult.runId,
+                prUrl: pr.url,
+                failingCheckContexts: ciResult.failingCheckContexts,
+              });
+              continue;
+            }
+            const ignored = deps.getIgnoredCheckContexts(repo);
+            if (
+              ignored.length > 0 &&
+              requiredFailing.every((c) => ignored.includes(c))
+            ) {
+              await deps.appendLog(stateDir, ticket.id, {
+                event: "ci-fix-skipped-process-gate",
+                runId: ciResult.runId,
+                prUrl: pr.url,
+                skippedChecks: requiredFailing,
+              });
+              continue;
+            }
+          }
+        }
 
         const worktree = pr.worktreeKey
           ? ticket.worktrees[pr.worktreeKey]
