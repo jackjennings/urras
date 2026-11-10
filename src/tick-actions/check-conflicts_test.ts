@@ -51,6 +51,12 @@ function makeAction(
           return { code: 0, stdout: "gh-7\n", stderr: "" };
         });
       }
+      if (args[0] === "ls-remote") {
+        return baseRunGit(args, cwd).then((result) => {
+          if (result.code !== 0 || result.stdout.trim()) return result;
+          return { code: 0, stdout: "abc123\trefs/heads/gh-7\n", stderr: "" };
+        });
+      }
       return baseRunGit(args, cwd);
     },
     isProcessAlive: () => false,
@@ -254,6 +260,13 @@ Deno.test("checkConflictsAction: clean rebase and push → null, logs branch-pus
       if (args[0] === "symbolic-ref") {
         return Promise.resolve({ code: 0, stdout: "gh-7\n", stderr: "" });
       }
+      if (args[0] === "ls-remote") {
+        return Promise.resolve({
+          code: 0,
+          stdout: "deadbeef\trefs/heads/gh-7\n",
+          stderr: "",
+        });
+      }
       return Promise.resolve({ code: 0, stdout: "up to date", stderr: "" });
     },
     appendLog: (_dir, _id, entry) => {
@@ -279,7 +292,9 @@ Deno.test("checkConflictsAction: clean rebase and push → null, logs branch-pus
   assertNotEquals(rebaseClean, undefined);
   assertEquals(rebaseClean!.worktreePath, "/wt/myorg/myrepo");
   assertEquals(rebaseClean!.branch, "gh-7");
-  assert(calls.some((a) => a[0] === "push"));
+  const pushCall = calls.find((a) => a[0] === "push");
+  assertNotEquals(pushCall, undefined);
+  assertEquals(pushCall![1], "--force-with-lease=refs/heads/gh-7:deadbeef");
 });
 
 Deno.test("checkConflictsAction: clean rebase with no prs → null, no push, no log", async () => {
@@ -335,7 +350,9 @@ Deno.test("checkConflictsAction: clean rebase, no-op push (already up to date) �
     "/state",
   );
   assertEquals(result, null);
-  assert(calls.some((a) => a[0] === "push"));
+  const pushCall = calls.find((a) => a[0] === "push");
+  assertNotEquals(pushCall, undefined);
+  assertEquals(pushCall![1], "--force-with-lease=refs/heads/gh-7:abc123");
   assertEquals(logged.length, 0);
 });
 
@@ -579,7 +596,9 @@ Deno.test("checkConflictsAction: merge/waiting — clean rebase pushes and logs 
     "/state",
   );
   assertEquals(result, null);
-  assert(calls.some((a) => a[0] === "push"));
+  const pushCall = calls.find((a) => a[0] === "push");
+  assertNotEquals(pushCall, undefined);
+  assertEquals(pushCall![1], "--force-with-lease=refs/heads/gh-7:abc123");
   const successEntry = (logged as Record<string, unknown>[]).find(
     (e) => e.event === "branch-pushed",
   );
@@ -1032,6 +1051,96 @@ Deno.test(
     }).run(makeTicket(BASE), "/state");
 
     assert(calls.some((a) => a[0] === "fetch"));
+  },
+);
+
+// ── ls-remote paths ───────────────────────────────────────────────────────────
+
+Deno.test(
+  "checkConflictsAction: clean rebase, branch absent remotely → push skipped, no branch-pushed, no error",
+  async () => {
+    const calls: string[][] = [];
+    const logged: object[] = [];
+    const result = await checkConflictsAction({
+      runGit: (args) => {
+        calls.push(args);
+        if (args[0] === "symbolic-ref") {
+          return Promise.resolve({ code: 0, stdout: "gh-7\n", stderr: "" });
+        }
+        return Promise.resolve({ code: 0, stdout: "", stderr: "" });
+      },
+      isProcessAlive: () => false,
+      worktreeExists: () => true,
+      writeTicket: () => Promise.resolve(),
+      appendLog: (_dir, _id, entry) => {
+        logged.push(entry);
+        return Promise.resolve();
+      },
+      spawn: () => Promise.resolve(),
+      writeContextFile: () => Promise.resolve(""),
+      resolveModelConfig: () => ({
+        model: "claude-opus-4-7",
+        thinking: "high",
+      }),
+    }).run(
+      makeTicket({
+        ...BASE,
+        prs: [{
+          url: "https://github.com/myorg/myrepo/pull/7",
+          title: "",
+          dependsOn: [],
+          merged: false,
+        }],
+      }),
+      "/state",
+    );
+    assertEquals(result, null);
+    assertFalse(calls.some((a) => a[0] === "push"));
+    assertEquals(logged.length, 0);
+  },
+);
+
+Deno.test(
+  "checkConflictsAction: ls-remote failure → error logged, push skipped",
+  async () => {
+    const calls: string[][] = [];
+    const logged: object[] = [];
+    const result = await makeAction({
+      runGit: (args) => {
+        calls.push(args);
+        if (args[0] === "ls-remote") {
+          return Promise.resolve({
+            code: 1,
+            stdout: "",
+            stderr: "ls-remote network error",
+          });
+        }
+        return Promise.resolve({ code: 0, stdout: "", stderr: "" });
+      },
+      appendLog: (_dir, _id, entry) => {
+        logged.push(entry);
+        return Promise.resolve();
+      },
+    }).run(
+      makeTicket({
+        ...BASE,
+        prs: [{
+          url: "https://github.com/myorg/myrepo/pull/7",
+          title: "",
+          dependsOn: [],
+          merged: false,
+        }],
+      }),
+      "/state",
+    );
+    assertEquals(result, null);
+    assertFalse(calls.some((a) => a[0] === "push"));
+    const errorEntries = (logged as Record<string, unknown>[]).filter(
+      (e) => e.event === "error",
+    );
+    assertEquals(errorEntries.length, 1);
+    assertEquals(errorEntries[0].context, "checkConflicts");
+    assertEquals(errorEntries[0].pushStderr, "ls-remote network error");
   },
 );
 

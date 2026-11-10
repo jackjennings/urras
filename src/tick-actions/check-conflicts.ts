@@ -128,26 +128,47 @@ export function checkConflictsAction(deps: CheckConflictsDeps): TickAction {
 
             if (rebase.code === 0) {
               if (ticket.prs !== undefined && ticket.prs.length > 0) {
-                const push = await deps.runGit(
-                  ["push", "--force-with-lease", "origin", wt.branch],
+                const lsRemote = await deps.runGit(
+                  ["ls-remote", "origin", `refs/heads/${wt.branch}`],
                   wt.path,
                 );
-                if (push.code !== 0) {
+                if (lsRemote.code !== 0) {
                   await deps.appendLog(stateDir, ticket.id, {
                     event: "error",
                     context: "checkConflicts",
                     worktreePath: wt.path,
-                    pushStderr: push.stderr,
+                    pushStderr: lsRemote.stderr,
                   });
-                } else if (
-                  !/Everything up-to-date/i.test(push.stderr) &&
-                  !/Everything up-to-date/i.test(push.stdout)
-                ) {
-                  await deps.appendLog(stateDir, ticket.id, {
-                    event: "branch-pushed",
-                    worktreePath: wt.path,
-                    branch: wt.branch,
-                  });
+                } else {
+                  const remoteSha = lsRemote.stdout.split(/\s/)[0] ?? "";
+                  if (remoteSha !== "") {
+                    const push = await deps.runGit(
+                      [
+                        "push",
+                        `--force-with-lease=refs/heads/${wt.branch}:${remoteSha}`,
+                        "origin",
+                        wt.branch,
+                      ],
+                      wt.path,
+                    );
+                    if (push.code !== 0) {
+                      await deps.appendLog(stateDir, ticket.id, {
+                        event: "error",
+                        context: "checkConflicts",
+                        worktreePath: wt.path,
+                        pushStderr: push.stderr,
+                      });
+                    } else if (
+                      !/Everything up-to-date/i.test(push.stderr) &&
+                      !/Everything up-to-date/i.test(push.stdout)
+                    ) {
+                      await deps.appendLog(stateDir, ticket.id, {
+                        event: "branch-pushed",
+                        worktreePath: wt.path,
+                        branch: wt.branch,
+                      });
+                    }
+                  }
                 }
               }
               return null;

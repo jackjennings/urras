@@ -39,6 +39,12 @@ function makeAction(
           return { code: 0, stdout: "gh-7\n", stderr: "" };
         });
       }
+      if (args[0] === "ls-remote") {
+        return baseRunGit(args, cwd).then((result) => {
+          if (result.code !== 0 || result.stdout.trim()) return result;
+          return { code: 0, stdout: "abc123\trefs/heads/gh-7\n", stderr: "" };
+        });
+      }
       return baseRunGit(args, cwd);
     },
     isProcessAlive: () => false,
