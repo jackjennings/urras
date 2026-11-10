@@ -1,4 +1,5 @@
 import { CeremonyRunner } from "./ceremonies.ts";
+import { makeHookRunner } from "./hooks.ts";
 import { appendAncillaryUsage } from "./ancillary-usage.ts";
 import { DocumentationGapsCeremony } from "./ceremonies/documentation-gaps.ts";
 import { AgentsMdConsolidationCeremony } from "./ceremonies/agents-md-consolidation.ts";
@@ -1853,6 +1854,7 @@ export function composeTickDeps(
           : undefined,
       ),
     runCeremonies: () => ceremonies.run(),
+    runHook: makeHookRunner({ hooks: config.hooks, log: appendTickLog }),
     generateShortTitle: (title, context) =>
       generateShortTitle(shortTitleModel, title, context),
     agentsMdPaths: config.tick.agentsMdMaxTokens > 0
