@@ -145,8 +145,39 @@ export function resolveConflictsAction(deps: ResolveConflictsDeps): TickAction {
       }
 
       for (const wt of resolvingWorktrees) {
+        const lsRemote = await deps.runGit(
+          ["ls-remote", "origin", `refs/heads/${wt.branch}`],
+          wt.path,
+        );
+        if (lsRemote.code !== 0) {
+          for (const f of contextFiles) {
+            await deps.remove(f);
+          }
+          await deleteRunPid(join(stateDir, ticket.id));
+          const updated: TicketState = {
+            ...ticket,
+            status: "needs-attention",
+            updated: now,
+          };
+          await deps.writeTicket(stateDir, updated);
+          await deps.appendLog(stateDir, ticket.id, {
+            event: "conflict-resolution-failed",
+            worktreePath: wt.path,
+            branch: wt.branch,
+            reason: "push-failed",
+            ...(sessionId !== null ? { sessionId } : {}),
+          });
+          return updated;
+        }
+        const remoteSha = lsRemote.stdout.split(/\s/)[0] ?? "";
+        if (remoteSha === "") continue;
         const push = await deps.runGit(
-          ["push", "--force-with-lease", "origin", wt.branch],
+          [
+            "push",
+            `--force-with-lease=refs/heads/${wt.branch}:${remoteSha}`,
+            "origin",
+            wt.branch,
+          ],
           wt.path,
         );
         if (push.code !== 0) {
